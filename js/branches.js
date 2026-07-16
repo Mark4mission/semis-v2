@@ -242,10 +242,23 @@
     if (map) { try { map.remove(); } catch (e) { /* 이미 해제된 경우 무시 */ } map = null; }
     try {
       map = L.map(el, { worldCopyJump: true, minZoom: 2, maxZoom: 12, zoomControl: true });
-      L.tileLayer("https://{s}.basemap.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      const carto = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
         subdomains: "abcd", maxZoom: 12
       }).addTo(map);
+      // CARTO 타일 차단 환경 → OSM 표준 타일로 1회 폴백
+      let tileErr = 0, fellBack = false;
+      carto.on("tileerror", () => {
+        tileErr++;
+        if (fellBack || tileErr < 4) return;
+        fellBack = true;
+        try {
+          map.removeLayer(carto);
+          L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom: 12
+          }).addTo(map);
+        } catch (e) { /* 무시 */ }
+      });
 
       const pts = [];
       items.forEach(b => {
