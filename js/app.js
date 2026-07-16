@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.4.0";
+  const VERSION = "2.5.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -252,6 +252,8 @@ const SeMIS = (() => {
       s.assignee = s.assignee || ""; s.memo = s.memo || "";
       s.vehicle = !!s.vehicle; s.room = !!s.room;          // v2.2: 차량/회의실 예약
       if (!Array.isArray(s.reminders)) s.reminders = [];    // v2.2: 리마인더
+      if (!s.repeat || typeof s.repeat !== "object" || !s.repeat.freq)
+        s.repeat = { freq: "none", until: "" };             // v2.5: 반복
       delete s.date;
       return s;
     }).filter(Boolean);

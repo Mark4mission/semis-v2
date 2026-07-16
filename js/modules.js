@@ -18,8 +18,16 @@
       const canWrite = SeMIS.roleRank() >= 2;
       const notices = d.notices.slice().sort((a, b) =>
         (b.pinned - a.pinned) || String(b.created).localeCompare(String(a.created)));
-      const upcoming = d.schedules.filter(s => (s.end || s.start) >= todayISO())
-        .sort((a, b) => String(a.start).localeCompare(String(b.start))).slice(0, 5);
+      const upcoming = [];
+      d.schedules.forEach(s => {
+        const rep = s.repeat && s.repeat.freq && s.repeat.freq !== "none";
+        if (rep && window.SemisCalendar) {
+          const occ = SemisCalendar.nextOccurrence(s, todayISO());
+          if (occ) upcoming.push(Object.assign({}, s, { start: occ.start, end: occ.end }));
+        } else if ((s.end || s.start) >= todayISO()) upcoming.push(s);
+      });
+      upcoming.sort((a, b) => String(a.start).localeCompare(String(b.start)));
+      upcoming.length = Math.min(upcoming.length, 5);
       const quicks = SeMIS.sortedMenus().filter(m => m.type === "link" && m.quick && SeMIS.canSee(m));
       const linkCount = d.menus.filter(m => m.type === "link").length;
 
@@ -208,7 +216,52 @@
     });
     return box.innerHTML;
   }
-  window.SemisNotice = { sanitizeHtml };
+  /* ───── 리치 에디터 공용: 붙여넣기/드래그앤드롭 파일·이미지 삽입 ───── */
+  function wireRichMedia(ed, prefix) {
+    const insert = (html) => {
+      ed.focus();
+      try { if (!document.execCommand("insertHTML", false, html)) ed.innerHTML += html; }
+      catch (e) { ed.innerHTML += html; }
+    };
+    async function addFiles(fileList) {
+      for (const f of Array.from(fileList || [])) {
+        try {
+          if (/^image\//.test(f.type)) {
+            const slim = await shrinkImage(f, 1400);
+            if (window.SemisSync && typeof fetch !== "undefined") {
+              const up = await SemisSync.uploadFile(slim, prefix);
+              insert(`<img src="${esc(up.url)}" alt="${esc(f.name)}">`);
+            } else {
+              await new Promise((res) => {
+                const r = new FileReader();
+                r.onload = () => { insert(`<img src="${r.result}" alt="">`); res(); };
+                r.onerror = () => res();
+                r.readAsDataURL(slim);
+              });
+            }
+          } else {
+            if (f.size > 10 * 1024 * 1024) { toast(f.name + ": 10MB를 초과합니다.", true); continue; }
+            if (!window.SemisSync || typeof fetch === "undefined") { toast("오프라인에서는 파일 첨부가 불가합니다.", true); continue; }
+            const up = await SemisSync.uploadFile(f, prefix);
+            insert(`<a class="nb-file" href="${esc(up.url)}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>&nbsp;`);
+          }
+          toast("추가되었습니다: " + f.name);
+        } catch (err) { toast("업로드 실패: " + f.name, true); }
+      }
+    }
+    ed.addEventListener("paste", (ev) => {
+      const files = ev.clipboardData && ev.clipboardData.files;
+      if (files && files.length) { ev.preventDefault(); addFiles(files); }
+    });
+    ed.addEventListener("dragover", (ev) => ev.preventDefault());
+    ed.addEventListener("drop", (ev) => {
+      const files = ev.dataTransfer && ev.dataTransfer.files;
+      if (files && files.length) { ev.preventDefault(); addFiles(files); }
+    });
+    return { insert, addFiles };
+  }
+
+  window.SemisNotice = { sanitizeHtml, shrinkImage, wireRichMedia };
 
   /* ───── 이미지 축소(1400px, JPEG) — 실패 시 원본 유지 ───── */
   function shrinkImage(file, maxW) {
@@ -269,6 +322,7 @@
 
     const ed = $("#nb-editor");
     ed.innerHTML = n ? (n.bodyHtml || esc(n.body || "").replace(/\n/g, "<br>")) : "";
+    wireRichMedia(ed, "notices"); // 붙여넣기/드래그앤드롭 이미지·파일
 
     const exec = (cmd, val) => { ed.focus(); try { document.execCommand(cmd, false, val); } catch (e) {} };
     const insertHTML = (h) => {

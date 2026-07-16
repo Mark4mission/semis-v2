@@ -592,9 +592,16 @@ function makeFetchStub(server) {
       C.setView("month"); C.setAnchor("2026-07-15"); e.S.renderView();
       eq(qa(e, ".cal-cell").length, 42);
     });
-    t("C18 월 보기: 기간 일정 칩이 매일 표시", () => {
-      C.resizeEvent("ev2", "2026-07-25"); // 7/20~25 (renderView 포함)
-      eq(qa(e, '[data-ev="ev2"]').length, 6, "7/20~25 6일");
+    t("C18 월 보기: 기간 일정 한 줄 연결 바(스패닝)", () => {
+      C.resizeEvent("ev2", "2026-07-25"); // 7/20(월)~25(토) — 같은 주
+      const bars = qa(e, '[data-ev="ev2"]');
+      eq(bars.length, 1, "주 내 기간은 바 1개");
+      ok(bars[0].className.includes("cal-bar"), "바 요소");
+      ok(bars[0].getAttribute("style").includes("grid-column:2/8"), "월~토 열 스팬");
+      C.resizeEvent("ev2", "2026-07-28"); // 다음 주로 넘어감 → 주별 분할
+      eq(qa(e, '[data-ev="ev2"]').length, 2, "2개 주에 걸치면 바 2개");
+      ok(qa(e, '[data-ev="ev2"]')[0].className.includes("cont-r"), "이어짐 표시");
+      C.resizeEvent("ev2", "2026-07-25"); // 원복
     });
     t("C19 주 보기: 7셀", () => {
       C.setView("week"); e.S.renderView();
@@ -628,9 +635,13 @@ function makeFetchStub(server) {
       const chip = q(e, '[data-ev="ev3"]');
       ok(chip && chip.className.includes("done"));
     });
-    t("C26 시간 일정 칩에 시간 표기", () => {
+    t("C26 시간 일정: 투명 칩(cal-tchip) + 색 점 + 시간 표기", () => {
       const chip = q(e, '[data-ev="ev3"]');
+      ok(chip.className.includes("cal-tchip"), "투명 스타일 칩");
+      ok(chip.querySelector(".chip-dot"), "색상 점");
       ok(chip.innerHTML.includes("14:00"));
+      // 종일 일정은 바(cal-bar)로 유지
+      ok(q(e, '[data-ev="ev1"]').className.includes("cal-bar"), "종일은 바");
     });
     t("C27 +N개 더보기 (월 보기 5개 이상)", () => {
       for (let i = 0; i < 6; i++) D.schedules.push({ id: "bulk" + i, title: "일정" + i, memo: "", start: "2026-07-15", end: "2026-07-15", allDay: true, time: "", timeEnd: "", color: "gray", done: false, assignee: "" });
@@ -654,7 +665,7 @@ function makeFetchStub(server) {
       q(e, "#f-time").value = "10:30";
       qa(e, '#f-colors [data-color="red"]')[0].click();
       q(e, "#f-assignee").value = "이순신";
-      q(e, "#f-memo").value = "메모입니다";
+      q(e, "#f-memo").innerHTML = "메모입니다"; // v2.5: 리치 에디터(contenteditable)
       q(e, "#f-save").click();
       const ev = D.schedules.find(x => x.title === "새 점검");
       ok(ev, "저장됨");
@@ -1231,15 +1242,121 @@ function makeFetchStub(server) {
       for (let i = 0; i < 10; i++) e.S.data.schedules.push({ id: "wk" + i, title: "주간항목" + i, memo: "", start: "2026-07-14", end: "2026-07-14", allDay: true, time: "", timeEnd: "", color: "teal", done: false, assignee: "", vehicle: false, room: false, reminders: [] });
       e.S.saveSilent();
       C.setView("week"); C.setAnchor("2026-07-14"); e.S.renderView();
-      const cell = qa(e, ".cal-cell").find(c => c.dataset.day === "2026-07-14");
-      eq(cell.querySelectorAll("[data-ev]").length, 10, "10개 모두 표시");
-      ok(!cell.querySelector(".cal-more"), "더보기 없음");
+      eq(qa(e, '[data-ev][data-from="2026-07-14"]').length, 10, "10개 모두 표시");
+      ok(!q(e, '.cal-more[data-more="2026-07-14"]'), "더보기 없음");
     });
     t("V17 월 보기: 5개까지 표시 후 더보기", () => {
       C.setView("month"); e.S.renderView();
-      const cell = qa(e, ".cal-cell").find(c => c.dataset.day === "2026-07-14");
-      eq(cell.querySelectorAll("[data-ev]").length, 5, "월 5개 표시");
-      ok(cell.querySelector(".cal-more"), "+N개 더보기");
+      eq(qa(e, '[data-ev][data-from="2026-07-14"]').length, 5, "월 5개 표시");
+      const more = q(e, '.cal-more[data-more="2026-07-14"]');
+      ok(more && /\+\d+개/.test(more.textContent), "+N개 더보기");
+    });
+  }
+
+  /* ══════════ [P] 반복 일정 + 리치 메모 (v2.5) ══════════ */
+  {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    const C = e.Cal;
+    const base = { memo: "", allDay: true, time: "", timeEnd: "", color: "blue", done: false,
+      assignee: "", vehicle: false, room: false, reminders: [] };
+    t("P01 occursOn: 매일 반복 + 종료일", () => {
+      const ev = Object.assign({}, base, { id: "rp1", title: "매일", start: "2026-07-01", end: "2026-07-01", repeat: { freq: "daily", until: "2026-07-10" } });
+      eq(C.occursOn(ev, "2026-07-05"), "2026-07-05");
+      eq(C.occursOn(ev, "2026-07-10"), "2026-07-10", "종료일 포함");
+      eq(C.occursOn(ev, "2026-07-11"), null, "종료 이후 없음");
+      eq(C.occursOn(ev, "2026-06-30"), null, "시작 전 없음");
+    });
+    t("P02 occursOn: 매주/2주마다", () => {
+      const w = Object.assign({}, base, { id: "rp2", title: "매주", start: "2026-07-06", end: "2026-07-06", repeat: { freq: "weekly", until: "" } });
+      eq(C.occursOn(w, "2026-07-13"), "2026-07-13");
+      eq(C.occursOn(w, "2026-07-14"), null);
+      eq(C.occursOn(w, "2026-12-28"), "2026-12-28", "장기 반복");
+      const b = Object.assign({}, base, { id: "rp3", title: "격주", start: "2026-07-06", end: "2026-07-06", repeat: { freq: "2week", until: "" } });
+      eq(b && C.occursOn(b, "2026-07-13"), null, "1주 후 없음");
+      eq(C.occursOn(b, "2026-07-20"), "2026-07-20", "2주 후 있음");
+    });
+    t("P03 occursOn: 매월 (없는 날짜 달은 건너뜀)", () => {
+      const m = Object.assign({}, base, { id: "rp4", title: "매월", start: "2026-01-31", end: "2026-01-31", repeat: { freq: "monthly", until: "" } });
+      eq(C.occursOn(m, "2026-03-31"), "2026-03-31");
+      eq(C.occursOn(m, "2026-02-28"), null, "2월 31일 없음 → 건너뜀");
+      eq(C.occursOn(m, "2026-04-30"), null, "4월 31일 없음");
+      eq(C.occursOn(m, "2026-05-31"), "2026-05-31");
+    });
+    t("P04 occursOn: 매년 (윤년 2/29 처리)", () => {
+      const y = Object.assign({}, base, { id: "rp5", title: "매년", start: "2024-02-29", end: "2024-02-29", repeat: { freq: "yearly", until: "" } });
+      eq(C.occursOn(y, "2028-02-29"), "2028-02-29", "다음 윤년");
+      eq(C.occursOn(y, "2026-02-28"), null, "평년은 건너뜀");
+      eq(C.occursOn(y, "2026-03-01"), null);
+    });
+    t("P05 occursOn: 기간(다일) 반복의 중간 일자 커버", () => {
+      const md = Object.assign({}, base, { id: "rp6", title: "3일훈련", start: "2026-07-06", end: "2026-07-08", repeat: { freq: "weekly", until: "" } });
+      eq(C.occursOn(md, "2026-07-14"), "2026-07-13", "다음 주 화요일 → 월요일 시작 occurrence");
+      eq(C.occursOn(md, "2026-07-15"), "2026-07-13");
+      eq(C.occursOn(md, "2026-07-16"), null, "기간 밖");
+    });
+    t("P06 eventsOnDay: 반복 occurrence 전개 (start/end 치환)", () => {
+      e.S.data.schedules.push(Object.assign({}, base, { id: "rp7", title: "주간회의", start: "2026-07-03", end: "2026-07-03", allDay: false, time: "09:00", repeat: { freq: "weekly", until: "" } }));
+      e.S.saveSilent();
+      const hits = C.eventsOnDay("2026-07-17").filter(x => x.id === "rp7");
+      eq(hits.length, 1);
+      eq(hits[0].start, "2026-07-17", "occurrence 날짜로 치환");
+    });
+    t("P07 nextOccurrence + 대시보드 '다가오는 일정' 반복 반영", () => {
+      const nx = C.nextOccurrence(e.S.data.schedules.find(x => x.id === "rp7"), "2026-07-14");
+      eq(nx.start, "2026-07-17");
+      go(e, "dashboard");
+      ok(q(e, "#upcoming-box").innerHTML.includes("주간회의"), "반복 일정의 다음 occurrence 표시");
+    });
+    t("P08 일정 폼: 반복 저장 + 리치 메모 살균", () => {
+      go(e, "schedule");
+      e.Cal.setView("month"); e.Cal.setAnchor("2026-07-15"); e.S.renderView();
+      q(e, "#cal-add").click();
+      ok(q(e, "#f-repeat"), "반복 선택");
+      ok(q(e, "#f-memo").getAttribute("contenteditable") === "true", "리치 메모 에디터");
+      q(e, "#f-title").value = "반복점검";
+      q(e, "#f-start").value = "2026-07-20";
+      q(e, "#f-repeat").value = "weekly";
+      q(e, "#f-runtil").value = "2026-09-30";
+      q(e, "#f-memo").innerHTML = '참고 <a href="https://example.com/doc">문서</a> <img src="https://x/y.png"><script>evil()</script>';
+      q(e, "#f-save").click();
+      const ev = e.S.data.schedules.find(x => x.title === "반복점검");
+      eq(ev.repeat.freq, "weekly"); eq(ev.repeat.until, "2026-09-30");
+      ok(ev.memoHtml.includes('href="https://example.com/doc"'), "링크 보존");
+      ok(ev.memoHtml.includes('src="https://x/y.png"'), "이미지 보존");
+      ok(!ev.memoHtml.includes("<script"), "스크립트 제거");
+      ok(ev.memo.includes("참고"), "텍스트 추출");
+      ok(C.repeatLabel(ev).includes("매주"), "반복 라벨");
+    });
+    t("P09 반복 일정 그리드 표시: 주별 occurrence + 🔁 아이콘", () => {
+      e.S.renderView();
+      const bars = qa(e, '[data-ev]').filter(x => x.dataset.ev === e.S.data.schedules.find(s => s.title === "반복점검").id);
+      ok(bars.length >= 2, "월 보기에서 여러 occurrence 표시 (7/20, 7/27)");
+      ok(bars[0].innerHTML.includes("🔁"), "반복 아이콘");
+    });
+    t("P10 리마인더: 반복 일정의 다음 occurrence 기준 발화", () => {
+      const now = Date.now();
+      const st = new Date(now + 30 * 60000);
+      const pp = (n) => String(n).padStart(2, "0");
+      const iso = st.getFullYear() + "-" + pp(st.getMonth() + 1) + "-" + pp(st.getDate());
+      const hm = pp(st.getHours()) + ":" + pp(st.getMinutes());
+      // 1주 전에 시작된 매주 반복 → 오늘 occurrence가 30분 뒤
+      e.S.data.schedules.push(Object.assign({}, base, {
+        id: "rp8", title: "반복알림", start: C.addDays(iso, -7), end: C.addDays(iso, -7),
+        allDay: false, time: hm, repeat: { freq: "weekly", until: "" }, reminders: ["1h"]
+      }));
+      e.S.saveSilent();
+      const due = C.dueReminders(now).filter(d => d.event.id === "rp8");
+      eq(due.length, 1, "오늘 occurrence 알림");
+      eq(due[0].occStart, iso, "occurrence 일자 기준");
+      C.checkReminders();
+      eq(C.dueReminders(now).filter(d => d.event.id === "rp8").length, 0, "중복 발화 방지");
+    });
+    t("P11 메모 리치미디어: 붙여넣기/드롭 배선 존재", () => {
+      ok(typeof e.w.SemisNotice.wireRichMedia === "function", "공용 헬퍼");
+      q(e, "#cal-add") && q(e, "#cal-add").click();
+      ok(q(e, "#m-img") && q(e, "#m-file") && q(e, "#m-link"), "이미지/파일/링크 버튼");
+      e.S.closeModal();
     });
   }
 
@@ -1310,7 +1427,7 @@ function makeFetchStub(server) {
     const server = { rows: [], fail: false };
     const e = makeEnv({ fetch: makeFetchStub(server) });
     await e.Sync.init();
-    const remote = [{ id: "rt1", title: "실시간일정", memo: "", start: "2026-09-10", end: "2026-09-10", allDay: true, time: "", timeEnd: "", color: "green", done: false, assignee: "", vehicle: false, room: false, reminders: [] }];
+    const remote = [{ id: "rt1", title: "실시간일정", memo: "", start: "2026-09-10", end: "2026-09-10", allDay: true, time: "", timeEnd: "", color: "green", done: false, assignee: "", vehicle: false, room: false, reminders: [], repeat: { freq: "none", until: "" } }];
     const changed = e.Sync.applyRemote("schedules", remote);
     eq(changed, true);
     eq(e.S.data.schedules[0].id, "rt1");
@@ -1424,7 +1541,7 @@ function makeFetchStub(server) {
 
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
-  console.log(`  SeMIS v2.4 테스트: ${passed + failed}건 실행`);
+  console.log(`  SeMIS v2.5 테스트: ${passed + failed}건 실행`);
   console.log(`  ✓ 통과 ${passed}건  ✗ 실패 ${failed}건`);
   console.log("════════════════════════════════════");
   if (failures.length) {
