@@ -234,7 +234,8 @@
       const team = TEAM().map(t => t.name).filter(n => inspectors.includes(n));
       fdCollect();
       const rec = {
-        year, category: $("#i-cat").value, target,
+        year: x ? x.year : year, // 대시보드 등 외부에서 열어도 기존 연도 유지
+        category: $("#i-cat").value, target,
         month: s ? Number(s.slice(5, 7)) : Number($("#i-month").value),
         inspectors: team.concat(extra),
         start: s || "", end: en || (s || ""),
@@ -347,9 +348,16 @@
   });
 
   /* ─────── 테스트/외부 노출 ─────── */
+  /* 외부(대시보드 등)에서 점검 열기 — 권한에 따라 수정 폼/읽기 상세 */
+  function open(id) {
+    if (!(D().inspections || []).some(i => i.id === id)) return;
+    if (SeMIS.roleRank() >= 2) inspForm(id);
+    else inspDetail(id);
+  }
+
   window.SemisInspection = {
     CATEGORIES, STATUSES, CAT_COLOR,
-    FINDING_TYPES, FD_BADGE, fdSummary,
+    FINDING_TYPES, FD_BADGE, fdSummary, open,
     getYear: () => year, setYear: (y) => { year = Number(y) || year; },
     setViewMode: (m) => { if (m === "matrix" || m === "list") viewMode = m; },
     syncCalendar, removeCalendar, moveInsp,

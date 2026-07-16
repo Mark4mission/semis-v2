@@ -1418,6 +1418,32 @@ function makeFetchStub(server) {
       ok(row.innerHTML.includes("개선1"), "개선권고 1건 배지");
     });
 
+    t("FD07 대시보드 점검 행 클릭 → 권한별 수정 폼/상세 모달", () => {
+      const mkData = (e) => {
+        e.S.data.inspections.push({ id: "ifd7", year: new Date().getFullYear(), category: "국내정기",
+          target: "FD클릭지점", month: new Date().getMonth() + 1, inspectors: [], start: "", end: "",
+          status: "계획", note: "", linkCal: false, findings: [] });
+        e.S.saveSilent();
+      };
+      // manager → 수정 폼
+      const e = makeEnv();
+      loginAs(e, "manager");
+      mkData(e);
+      go(e, "dashboard");
+      q(e, '#insp-box [data-insp-open="ifd7"]').click();
+      ok(q(e, "#i-save"), "수정 폼(저장 버튼)");
+      ok(q(e, "#modal-box").textContent.includes("점검 수정"), "점검 수정 모달");
+      ok(q(e, "#i-findings"), "결과 편집 영역 포함");
+      // user → 읽기 상세
+      const e2 = makeEnv();
+      loginAs(e2, "user");
+      mkData(e2);
+      go(e2, "dashboard");
+      q(e2, '#insp-box [data-insp-open="ifd7"]').click();
+      ok(!q(e2, "#i-save"), "저장 버튼 없음");
+      ok(q(e2, "#modal-box").textContent.includes("FD클릭지점"), "읽기 상세 모달");
+    });
+
     t("FD04 일반 사용자 상세: 결과 내용 표시", () => {
       const e = makeEnv();
       const x = e.S.data.inspections.find(i => i.target === "LSG");
