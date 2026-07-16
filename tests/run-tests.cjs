@@ -1398,8 +1398,24 @@ function makeFetchStub(server) {
       go(e, "inspection");
       const row = qa(e, "[data-insp-row]").find(r => r.textContent.includes("LSG"));
       ok(row.innerHTML.includes("시정2"), "시정조치 2건 요약");
-      ok(row.innerHTML.includes("권고1"), "개선권고 1건 요약");
+      ok(row.innerHTML.includes("개선1"), "개선권고 1건 요약");
       e.w.SemisInspection.setViewMode("matrix");
+    });
+
+    t("FD06 대시보드 이번 달 목록: 지점 옆 결과 배지 요약", () => {
+      const e = makeEnv();
+      const nowMonth = new Date().getMonth() + 1;
+      e.S.data.inspections.push({ id: "ifd6", year: new Date().getFullYear(), category: "국내정기",
+        target: "FDTEST지점", month: nowMonth, inspectors: [], start: "", end: "",
+        status: "완료", note: "", linkCal: false,
+        findings: [{ type: "개선권고", text: "a" }, { type: "시정조치", text: "b" }, { type: "시정조치", text: "c" }] });
+      e.S.saveSilent();
+      loginAs(e, "user");
+      go(e, "dashboard");
+      const row = qa(e, "#insp-box div").find(el => el.textContent.includes("FDTEST지점"));
+      ok(row, "이번 달 행");
+      ok(row.innerHTML.includes("시정2"), "시정조치 2건 배지");
+      ok(row.innerHTML.includes("개선1"), "개선권고 1건 배지");
     });
 
     t("FD04 일반 사용자 상세: 결과 내용 표시", () => {

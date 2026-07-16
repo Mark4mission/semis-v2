@@ -22,7 +22,7 @@
   // 점검 결과 유형 (v2.6.1): findings = [{ type, text }] — 유형별 복수 등록 가능
   const FINDING_TYPES = ["시정조치", "개선권고", "현장시정", "관찰사항"];
   const FD_BADGE = { "시정조치": "badge-red", "개선권고": "badge-amber", "현장시정": "badge-blue", "관찰사항": "badge-gray" };
-  const FD_SHORT = { "시정조치": "시정", "개선권고": "권고", "현장시정": "현장", "관찰사항": "관찰" };
+  const FD_SHORT = { "시정조치": "시정", "개선권고": "개선", "현장시정": "현장", "관찰사항": "관찰" };
   function fdSummary(x) {
     const cnt = {};
     (x.findings || []).forEach(f => { cnt[f.type] = (cnt[f.type] || 0) + 1; });

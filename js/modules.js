@@ -166,8 +166,9 @@
         <div style="font-size:.74rem;font-weight:700;color:var(--text-3);margin:10px 0 4px">이번 달 (${thisMonth}월)</div>
         ${monthList.length ? monthList.map(x => `
           <div style="display:flex;align-items:center;gap:6px;font-size:.8rem;padding:3px 0">
-            <span class="badge ${x.status === "완료" ? "badge-green" : x.status === "연기" ? "badge-amber" : x.status === "취소" ? "badge-gray" : "badge-blue"}">${esc(x.status)}</span>
+            <span class="badge ${x.status === "완료" ? "badge-green" : x.status === "연기" ? "badge-amber" : x.status === "취소" ? "badge-gray" : "badge-blue"}" style="flex-shrink:0">${esc(x.status)}</span>
             <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">[${esc(x.category)}] ${esc(x.target)}</span>
+            ${window.SemisInspection ? `<span style="flex-shrink:0;white-space:nowrap">${SemisInspection.fdSummary(x)}</span>` : ""}
           </div>`).join("") : '<div style="font-size:.8rem;color:var(--text-3)">이번 달 예정 점검이 없습니다.</div>'}`;
       $("#btn-go-insp").onclick = () => SeMIS.navigate("inspection");
 
