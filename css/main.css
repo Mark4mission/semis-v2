@@ -54,6 +54,7 @@ input, select, textarea { font-family: inherit; font-size: .95rem; }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 .login-logo { font-size: 2.6rem; }
+.login-logo img { height: 84px; display: inline-block; }
 .login-title { font-size: 1.7rem; letter-spacing: -.5px; margin-top: 6px; }
 .login-title span { color: var(--primary); }
 .login-sub { color: var(--text-2); font-size: .82rem; margin: 8px 0 24px; }
@@ -87,7 +88,8 @@ input, select, textarea { font-family: inherit; font-size: .95rem; }
 }
 .icon-btn:hover { background: rgba(255,255,255,.12); }
 .brand { display: flex; align-items: baseline; gap: 8px; color: #fff; }
-.brand-logo { font-size: 1.2rem; align-self: center; }
+.brand-logo { font-size: 1.2rem; align-self: center; display: flex; align-items: center; }
+.brand-logo img { height: 30px; display: block; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
 .brand-text { font-size: 1.15rem; font-weight: 700; letter-spacing: -.3px; }
 .brand-text b { color: #60a5fa; }
 .brand-sub { font-size: .74rem; color: #94a3b8; }
