@@ -17,7 +17,7 @@
   const REST = SUPA_URL + "/rest/v1/" + TABLE;
   const HEADERS = { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json" };
 
-  const SYNC_KEYS = ["menus", "notices", "schedules", "levelHistory", "pwOverrides", "customUsers", "gcal", "inspections", "contacts"];
+  const SYNC_KEYS = ["menus", "notices", "schedules", "levelHistory", "pwOverrides", "customUsers", "gcal", "inspections", "contacts", "branches"];
   const LS_PENDING = "semis2:pendingSync";
   const LS_FORCE = "semis2:forcePush";
   const CLIENT_ID = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);

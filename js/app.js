@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.6.1";
+  const VERSION = "2.7.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -109,6 +109,7 @@ const SeMIS = (() => {
       lk("rule-ssi", "비밀 취급 / SSI", "㊙️", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EB%B9%84%EB%B0%80-%EC%B7%A8%EA%B8%89ssi", "grp-rule", { vis: "mgr" }),
 
       g("grp-branch", "지점 / 협력업체"),
+      m("branches", "지점 관리", "🌍", "branches", "all", "grp-branch"),
       lk("br-sys", "지점보안시스템", "💻", "https://sites.google.com/view/kjsemis/%EC%A7%80%EC%A0%90%ED%98%91%EB%A0%A5%EC%97%85%EC%B2%B4/%EC%A7%80%EC%A0%90%EB%B3%B4%EC%95%88%EC%8B%9C%EC%8A%A4%ED%85%9C", "grp-branch", { quick: true }),
       lk("br-contract", "계약서 관리", "💼", "https://sites.google.com/view/kjsemis/%EC%A7%80%EC%A0%90%ED%98%91%EB%A0%A5%EC%97%85%EC%B2%B4/%EA%B3%84%EC%95%BD%EC%84%9C-%EA%B4%80%EB%A6%AC", "grp-branch", { vis: "mgr" }),
       lk("br-supervisor", "보안감독자 현황", "👥", "https://docs.google.com/spreadsheets/d/1RlxvnrjDWMy4lSTDdbF6JTKCgL45EuTW0O1mjGd8RtQ/edit?usp=sharing", "grp-branch", { vis: "mgr" }),
@@ -164,7 +165,8 @@ const SeMIS = (() => {
       schedules: [],     // v2.2: [{id,title,memo,start,end,allDay,time,timeEnd,color,done,assignee,vehicle,room,reminders,gcalId?}]
       gcal: { enabled: false, calendarId: "airzetaavsec@gmail.com", apiKey: "" },
       inspections: seedInspections(), // v2.4: 보안점검 일정
-      contacts: { sections: [] }      // v2.6: 보고체계 연락망 (실데이터는 공용 DB 동기화 — 코드에 미시드)
+      contacts: { sections: [] },     // v2.6: 보고체계 연락망 (실데이터는 공용 DB 동기화 — 코드에 미시드)
+      branches: []                    // v2.7: 지점 관리 (해외지점 세계지도)
     };
   }
 
@@ -291,6 +293,16 @@ const SeMIS = (() => {
     // 기존 시트 링크는 유지하되 "(구버전)"으로 구분
     const abOld = DATA.menus.find(m => m && m.id === "ab-contact");
     if (abOld && abOld.label === "보고체계 연락망") abOld.label = "보고체계 연락망 (구버전)";
+    // v2.7: 지점 관리 — 기본 빈 배열 + 메뉴 자동 삽입 (grp-branch 최상단)
+    if (!Array.isArray(DATA.branches)) DATA.branches = [];
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "branches")) {
+      const grp = DATA.menus.find(m => m && m.id === "grp-branch" && m.type === "group");
+      const children = grp ? DATA.menus.filter(m => m && m.parent === "grp-branch") : [];
+      const seq = children.length ? Math.min.apply(null, children.map(c => c.seq || 0)) - 0.5
+        : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
+      DATA.menus.push({ id: "branches", seq, type: "module", label: "지점 관리",
+        icon: "🌍", module: "branches", vis: "all", parent: grp ? "grp-branch" : null });
+    }
     return JSON.stringify(DATA) !== before;
   }
   const saveHooks = [];

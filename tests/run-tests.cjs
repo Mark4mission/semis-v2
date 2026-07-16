@@ -16,6 +16,7 @@ const modJS = read("js/modules.js");
 const calJS = read("js/calendar.js");
 const inspJS = read("js/inspection.js");
 const ctJS = read("js/contacts.js");
+const brJS = read("js/branches.js");
 const caresJS = read("js/cares.js");
 const syncJS = read("js/sync.js");
 const HTML = read("index.html").replace(/<script[\s\S]*?<\/script>/g, "");
@@ -47,7 +48,7 @@ function makeEnv(opts = {}) {
   if (opts.preLS) Object.entries(opts.preLS).forEach(([k, v]) => w.localStorage.setItem(k, v));
   if (opts.fetch) w.fetch = opts.fetch;
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + caresJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + caresJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) S.boot();
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -1475,6 +1476,155 @@ function makeFetchStub(server) {
     });
   }
 
+  /* ══════════ [BR] 지점 관리 (v2.7 — 세계지도) ══════════
+     ※ jsdom에는 Leaflet 미로드 → 목록 폴백 경로 검증. 테스트 데이터는 가상. */
+  {
+    const seed = (e) => {
+      e.S.data.branches.push(
+        { id: "br1", region: "유럽", code: "FRASF", iata: "FRA", manager: "김가상", security: "이가상",
+          staff: 12, catering: true, layover: true, hotel: "테스트에어포트호텔", mechanic: "박정비",
+          lat: "", lng: "", note: "", extras: [{ label: "GSA", value: "테스트GSA" }] },
+        { id: "br2", region: "아시아", code: "BKKSU", iata: "BKK", manager: "최가상", security: "",
+          staff: 8, catering: false, layover: false, hotel: "", mechanic: "",
+          lat: "", lng: "", note: "", extras: [] },
+        { id: "br3", region: "미주", code: "XXXSF", iata: "", manager: "", security: "",
+          staff: "", catering: false, layover: false, hotel: "", mechanic: "",
+          lat: "", lng: "", note: "좌표 미지정", extras: [] });
+      e.S.saveSilent();
+    };
+
+    t("BR01 normalize: branches 배열 + 메뉴 자동 삽입(grp-branch 최상단)", () => {
+      const e = makeEnv();
+      ok(Array.isArray(e.S.data.branches), "기본 빈 배열");
+      const mn = e.S.data.menus.find(m => m.type === "module" && m.module === "branches");
+      ok(mn, "모듈 메뉴 존재");
+      eq(mn.parent, "grp-branch", "지점/협력업체 그룹");
+      const sibs = e.S.data.menus.filter(m => m.parent === "grp-branch" && m.id !== mn.id);
+      ok(sibs.every(s => mn.seq <= (s.seq || 0)), "그룹 최상단");
+      // 구버전 데이터에도 삽입
+      const e2 = makeEnv({ preData: { version: 1, menus: [
+        { id: "grp-branch", seq: 1, type: "group", label: "지점 / 협력업체" }], notices: [], schedules: [] } });
+      ok(e2.S.data.menus.some(m => m.module === "branches"), "구데이터 normalize 삽입");
+      ok(Array.isArray(e2.S.data.branches), "구데이터 branches 보장");
+    });
+
+    t("BR02 IATA → 좌표 매핑 / coordOf 우선순위", () => {
+      const e = makeEnv();
+      const B = e.w.SemisBranches;
+      const fra = B.iataCoord("fra");
+      ok(fra && Math.abs(fra[0] - 50.03) < .1, "FRA 좌표 (소문자 허용)");
+      ok(B.iataCoord("ZZZ") === null, "미등록 공항 null");
+      eq(B.coordOf({ lat: "10.5", lng: "20.5", iata: "FRA" })[0], 10.5, "수동 좌표 우선");
+      ok(B.coordOf({ lat: "", lng: "", iata: "BKK" }), "IATA 폴백");
+      ok(B.coordOf({ lat: "", lng: "", iata: "" }) === null, "좌표 없음 null");
+    });
+
+    t("BR03 렌더(목록 폴백): 구역 필터 칩 + 권한별 등록 버튼", () => {
+      const e = makeEnv();
+      loginAs(e, "user");
+      seed(e);
+      go(e, "branches");
+      ok(!e.w.L, "jsdom에 Leaflet 없음 (폴백 경로)");
+      ok(q(e, "#br-list"), "목록 폴백 표시");
+      eq(qa(e, "[data-br-region]").length, 6, "전체+5개 구역 칩");
+      ok(!q(e, "#br-add"), "일반 사용자 등록 버튼 없음");
+      const html = q(e, "#br-list").innerHTML;
+      ok(html.includes("FRASF") && html.includes("BKKSU"), "지점 행");
+      ok(html.includes("테스트에어포트호텔"), "L/O 호텔 표시");
+      ok(html.includes("⚠️"), "좌표 없는 지점 경고 표시");
+      const e2 = makeEnv();
+      loginAs(e2, "manager");
+      go(e2, "branches");
+      ok(q(e2, "#br-add"), "관리자 등록 버튼");
+    });
+
+    t("BR04 구역 필터 + 검색", () => {
+      const e = makeEnv();
+      loginAs(e, "user");
+      seed(e);
+      go(e, "branches");
+      qa(e, "[data-br-region]").find(b => b.dataset.brRegion === "유럽").click();
+      ok(q(e, "#br-list").innerHTML.includes("FRASF"), "유럽 필터: FRASF 표시");
+      ok(!q(e, "#br-list").innerHTML.includes("BKKSU"), "유럽 필터: BKKSU 제외");
+      e.w.SemisBranches.setRegionFilter("");
+      e.S.renderView();
+      const si = q(e, "#br-search");
+      si.value = "박정비";
+      si.dispatchEvent(new e.w.Event("input", { bubbles: true }));
+      ok(q(e, "#br-list").innerHTML.includes("FRASF"), "정비사명 검색 매칭");
+      ok(!q(e, "#br-list").innerHTML.includes("BKKSU"), "미매칭 제외");
+      e.w.SemisBranches.setQuery("");
+    });
+
+    t("BR05 상세 모달: 행 클릭 → 필드 표시 (user는 수정 버튼 없음)", () => {
+      const e = makeEnv();
+      loginAs(e, "user");
+      seed(e);
+      go(e, "branches");
+      q(e, '[data-br-row="br1"]').click();
+      const mb = q(e, "#modal-box");
+      ok(mb.textContent.includes("FRASF"), "지점코드");
+      ok(mb.textContent.includes("김가상"), "지점장");
+      ok(mb.textContent.includes("테스트에어포트호텔"), "호텔명");
+      ok(mb.textContent.includes("GSA"), "추가 항목 라벨");
+      ok(mb.textContent.includes("테스트GSA"), "추가 항목 값");
+      ok(mb.textContent.includes("12명"), "총원");
+      ok(!q(e, "#br-edit"), "일반 사용자 수정 버튼 없음");
+    });
+
+    t("BR06 등록/수정 CRUD: 저장 → 데이터 반영 (IATA 자동 좌표 힌트)", () => {
+      const e = makeEnv();
+      loginAs(e, "manager");
+      go(e, "branches");
+      q(e, "#br-add").click();
+      q(e, "#b-code").value = "sfosf";
+      q(e, "#b-iata").value = "SFO";
+      q(e, "#b-iata").dispatchEvent(new e.w.Event("input", { bubbles: true }));
+      ok(q(e, "#b-iata-hint").textContent.includes("✓"), "IATA 좌표 자동 힌트");
+      q(e, "#b-manager").value = "정가상";
+      q(e, "#b-staff").value = "15";
+      q(e, "#b-catering").checked = true;
+      q(e, "#b-layover").checked = true;
+      q(e, "#b-hotel").value = "베이호텔";
+      // 추가 항목
+      q(e, "#b-extra-add").click();
+      q(e, "#b-extras .br-ex-label").value = "조업사";
+      q(e, "#b-extras .br-ex-value").value = "테스트조업";
+      q(e, "#b-save").click();
+      const b = e.S.data.branches.find(x => x.code === "SFOSF");
+      ok(b, "저장됨 (코드 대문자 정규화)");
+      eq(b.region, "아시아", "기본 구역");
+      eq(b.staff, 15);
+      eq(b.hotel, "베이호텔");
+      eq(b.extras.length, 1);
+      eq(b.extras[0].label, "조업사");
+      ok(e.w.SemisBranches.coordOf(b), "IATA로 지도 좌표 확보");
+      // 수정: 상세 → 수정 → 저장
+      go(e, "branches");
+      q(e, `[data-br-row="${b.id}"]`).click();
+      q(e, "#br-edit").click();
+      q(e, "#b-security").value = "신보안";
+      q(e, "#b-save").click();
+      eq(e.S.data.branches.find(x => x.id === b.id).security, "신보안", "수정 반영");
+      // 삭제
+      go(e, "branches");
+      q(e, `[data-br-row="${b.id}"]`).click();
+      q(e, "#br-del").click();
+      q(e, "#modal-box [data-act=ok]").click();
+      ok(!e.S.data.branches.some(x => x.id === b.id), "삭제 반영");
+    });
+
+    t("BR07 빈 지점코드 저장 거부", () => {
+      const e = makeEnv();
+      loginAs(e, "manager");
+      go(e, "branches");
+      q(e, "#br-add").click();
+      q(e, "#b-save").click();
+      ok(q(e, "#b-save"), "모달 유지 (저장 안 됨)");
+      eq(e.S.data.branches.length, 0, "데이터 미추가");
+    });
+  }
+
   await ta("S14 구버전 서버 데이터 pull 후에도 신규 모듈 메뉴/시드 유지", async () => {
     const server = {
       fail: false,
@@ -1717,7 +1867,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "contacts,customUsers,gcal,inspections,levelHistory,menus,notices,pwOverrides,schedules");
+    eq(keys, "branches,contacts,customUsers,gcal,inspections,levelHistory,menus,notices,pwOverrides,schedules");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -1870,7 +2020,7 @@ function makeFetchStub(server) {
 
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
-  console.log(`  SeMIS v2.6 테스트: ${passed + failed}건 실행`);
+  console.log(`  SeMIS v2.7 테스트: ${passed + failed}건 실행`);
   console.log(`  ✓ 통과 ${passed}건  ✗ 실패 ${failed}건`);
   console.log("════════════════════════════════════");
   if (failures.length) {
