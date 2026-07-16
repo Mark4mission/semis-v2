@@ -28,7 +28,7 @@
       });
       upcoming.sort((a, b) => String(a.start).localeCompare(String(b.start)));
       upcoming.length = Math.min(upcoming.length, 5);
-      const quicks = SeMIS.sortedMenus().filter(m => m.type === "link" && m.quick && SeMIS.canSee(m));
+      const quicks = SeMIS.sortedMenus().filter(m => (m.type === "link" || m.type === "module") && m.quick && SeMIS.canSee(m));
       const linkCount = d.menus.filter(m => m.type === "link").length;
 
       const cur = SeMIS.secCurrent();
@@ -83,7 +83,10 @@
             <div class="card">
               <div class="card-title">⚡ 바로가기</div>
               <div class="quick-links">
-                ${quicks.map(m => `<a class="quick-link" href="${esc(m.url)}" target="_blank" rel="noopener">
+                ${quicks.map(m => m.type === "module"
+                  ? `<a class="quick-link" href="#/${esc(m.module)}">
+                  <span>${esc(m.icon || "▪")}</span><span>${esc(m.label)}</span></a>`
+                  : `<a class="quick-link" href="${esc(m.url)}" target="_blank" rel="noopener">
                   <span>${esc(m.icon || "🔗")}</span><span>${esc(m.label)}</span></a>`).join("") ||
                   '<div class="empty">등록된 바로가기가 없습니다.</div>'}
               </div>
@@ -571,7 +574,7 @@
           <option value="mgr" ${m && m.vis === "mgr" ? "selected" : ""}>보안관리자 이상</option>
           <option value="admin" ${m && m.vis === "admin" ? "selected" : ""}>시스템관리자만</option>
         </select></div>
-      <div class="form-row" id="row-quick" ${type !== "link" ? 'style="display:none"' : ""}>
+      <div class="form-row" id="row-quick" ${type !== "link" && type !== "module" ? 'style="display:none"' : ""}>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="f-quick" style="width:auto" ${m && m.quick ? "checked" : ""}> 대시보드 바로가기에 표시</label></div>
       <div class="modal-actions">
@@ -603,8 +606,9 @@
         if (m) Object.assign(m, { label });
         else D().menus.push({ id: uid("g"), seq: nextSeq(), type: "group", label });
       } else if (isCore) {
-        // 내부 모듈: 이름/아이콘/권한/그룹만 수정 가능
-        Object.assign(m, { label, icon, parent: $("#f-parent").value || null, vis: $("#f-vis").value });
+        // 내부 모듈: 이름/아이콘/권한/그룹/바로가기만 수정 가능
+        Object.assign(m, { label, icon, parent: $("#f-parent").value || null, vis: $("#f-vis").value,
+          quick: $("#f-quick") ? $("#f-quick").checked : !!m.quick });
       }
       SeMIS.save(); closeModal(); SeMIS.renderNav(); renderMenuTab($("#tab-body")); toast("저장되었습니다.");
     };

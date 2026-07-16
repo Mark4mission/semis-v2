@@ -17,7 +17,7 @@
   const REST = SUPA_URL + "/rest/v1/" + TABLE;
   const HEADERS = { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json" };
 
-  const SYNC_KEYS = ["menus", "notices", "schedules", "levelHistory", "pwOverrides", "customUsers", "gcal", "inspections"];
+  const SYNC_KEYS = ["menus", "notices", "schedules", "levelHistory", "pwOverrides", "customUsers", "gcal", "inspections", "contacts"];
   const LS_PENDING = "semis2:pendingSync";
   const LS_FORCE = "semis2:forcePush";
   const CLIENT_ID = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -258,6 +258,16 @@
              url: SUPA_URL + "/storage/v1/object/public/semis-files/" + path };
   }
 
+  /* ─── 단일 KV 조회 (SYNC_KEYS 외 설정 행 — 예: caresCfg) ─── */
+  async function fetchKV(key) {
+    if (typeof fetch === "undefined") return null;
+    const res = await fetch(REST + "?key=eq." + encodeURIComponent(key) + "&select=key,value", { headers: HEADERS });
+    if (!res.ok) throw new Error("GET " + res.status);
+    const rows = await res.json();
+    const row = Array.isArray(rows) ? rows.find(r => r && r.key === key) : null;
+    return row ? row.value : null;
+  }
+
   /* ─── 수동 동기화 ─── */
   async function syncNow() {
     if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
@@ -293,7 +303,7 @@
   }
 
   window.SemisSync = {
-    init, stop, syncNow, uploadFile,
+    init, stop, syncNow, uploadFile, fetchKV,
     push, pull, applyRemote,
     dirtyKeys, pendingKeys, snapAll,
     get status() { return status; },

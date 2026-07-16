@@ -12,7 +12,27 @@
 (() => {
   const { $, $$, esc, toast, openModal, closeModal } = SeMIS;
 
-  const API_KEY = "AIzaSyC1WRvtCRCkQbsPQ28Zjrr16kfdPIrZeYo"; // CARES 웹앱 공개 설정값
+  // Firebase 웹 API 키 — 코드(공개 repo)에 두지 않고 공용 DB(semis_store "caresCfg")에서
+  // 런타임 로드. (GitHub secret scanning 대응 — 키 자체는 공개 설계값이나 노출 최소화)
+  let apiKey = null;
+  const KEY_CACHE = "semis2:caresKey"; // 기기 로컬 캐시
+  async function getKey() {
+    if (apiKey) return apiKey;
+    try { const c = localStorage.getItem(KEY_CACHE); if (c) { apiKey = c; return apiKey; } } catch (e) {}
+    if (window.SemisSync && SemisSync.fetchKV) {
+      const v = await SemisSync.fetchKV("caresCfg");
+      if (v && v.apiKey) {
+        apiKey = v.apiKey;
+        try { localStorage.setItem(KEY_CACHE, apiKey); } catch (e) {}
+        return apiKey;
+      }
+    }
+    throw new Error("연동 키 미설정 (공용 DB caresCfg)");
+  }
+  function clearKeyCache() {
+    apiKey = null;
+    try { localStorage.removeItem(KEY_CACHE); } catch (e) {}
+  }
   const PROJECT = "airzeta-security-system";
   const FS_DOCS = "https://firestore.googleapis.com/v1/projects/" + PROJECT + "/databases/(default)/documents";
   const DEVICE = { id: "ICN_CARGO_B", name: "인천 화물터미널 B동" };
@@ -62,7 +82,7 @@
   const docToObj = (fields) => parseFs({ mapValue: { fields: fields || {} } });
 
   async function runQuery(body) {
-    const res = await fetch(FS_DOCS + ":runQuery?key=" + API_KEY, {
+    const res = await fetch(FS_DOCS + ":runQuery?key=" + (await getKey()), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -81,7 +101,7 @@
   }
   async function fetchThresholds() {
     try {
-      const res = await fetch(FS_DOCS + "/sensorThresholds/" + DEVICE.id + "?key=" + API_KEY);
+      const res = await fetch(FS_DOCS + "/sensorThresholds/" + DEVICE.id + "?key=" + (await getKey()));
       if (!res.ok) return DEFAULT_TH;
       const j = await res.json();
       const th = docToObj(j.fields);
@@ -139,6 +159,7 @@
     }
     box.innerHTML = '<div class="empty" style="padding:20px 10px">환경센서 데이터를 불러오는 중…</div>';
     try {
+      await getKey(); // 연동 키 확보 (공용 DB caresCfg → 로컬 캐시)
       const [readings, th, alarms] = await Promise.all([fetchReadings(120), fetchThresholds(), fetchAlarms()]);
       if (!document.body.contains(box)) return false; // 화면 이탈
       if (!readings.length) { box.innerHTML = '<div class="empty">센서 데이터가 없습니다.</div>'; return false; }
@@ -181,6 +202,7 @@
       }, 60000);
       return true;
     } catch (e) {
+      clearKeyCache(); // 키 회전/오류 대비 — 재시도 시 공용 DB에서 재조회
       if (document.body.contains(box)) box.innerHTML =
         `<div class="empty" style="padding:16px 10px">⚠ CARES 연결 실패 — ${esc(e.message || "네트워크 오류")}<br>
         <button class="btn btn-ghost btn-sm" id="cares-retry" style="margin-top:8px">다시 시도</button></div>`;
@@ -217,6 +239,6 @@
     renderInto, settingsForm,
     parseFs, docToObj, isExceed, sparkSVG,
     METRICS, DEFAULT_TH, DEVICE,
-    cfg, setCfg
+    cfg, setCfg, getKey, clearKeyCache
   };
 })();

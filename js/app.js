@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.5.0";
+  const VERSION = "2.6.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -130,7 +130,8 @@ const SeMIS = (() => {
       lk("edu-campaign", "보안 캠페인", "📣", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A6%9D%EC%A7%84/%EB%B3%B4%EC%95%88-%EC%BA%A0%ED%8E%98%EC%9D%B8", "grp-edu"),
 
       g("grp-abnormal", "비정상 상황"),
-      lk("ab-contact", "보고체계 연락망", "☎️", "https://docs.google.com/spreadsheets/d/1DpNibLZVClfEDjNsKZR-LkXWX5SvE1jlM8JsubD_aIM/edit?usp=sharing", "grp-abnormal", { quick: true }),
+      Object.assign(m("contacts", "보고체계 연락망", "☎️", "contacts", "all", "grp-abnormal"), { quick: true }),
+      lk("ab-contact", "보고체계 연락망 (구버전)", "☎️", "https://docs.google.com/spreadsheets/d/1DpNibLZVClfEDjNsKZR-LkXWX5SvE1jlM8JsubD_aIM/edit?usp=sharing", "grp-abnormal", { quick: true }),
       lk("ab-munjasin", "문자의 신 (보안동보)", "📨", "https://www.munjasin.co.kr/", "grp-abnormal", { quick: true }),
       lk("ab-guide", "문자의 신 이용 안내", "📖", "https://sites.google.com/view/kjsemis/%EB%B9%84%EC%A0%95%EC%83%81-%EC%83%81%ED%99%A9/%EB%AC%B8%EC%9E%90%EC%9D%98-%EC%8B%A0-%EB%B3%B4%EA%B3%A0-%EB%B0%A9%EB%B2%95-%EC%95%88%EB%82%B4", "grp-abnormal"),
 
@@ -162,7 +163,8 @@ const SeMIS = (() => {
       customUsers: [],   // [{id, name, role, hash}]
       schedules: [],     // v2.2: [{id,title,memo,start,end,allDay,time,timeEnd,color,done,assignee,vehicle,room,reminders,gcalId?}]
       gcal: { enabled: false, calendarId: "airzetaavsec@gmail.com", apiKey: "" },
-      inspections: seedInspections() // v2.4: 보안점검 일정
+      inspections: seedInspections(), // v2.4: 보안점검 일정
+      contacts: { sections: [] }      // v2.6: 보고체계 연락망 (실데이터는 공용 DB 동기화 — 코드에 미시드)
     };
   }
 
@@ -272,6 +274,21 @@ const SeMIS = (() => {
       DATA.menus.push({ id: "insp-mgmt", seq, type: "module", label: "보안점검 일정관리",
         icon: "🕵️", module: "inspection", vis: "all", parent: grp ? "grp-inspect" : null });
     }
+    // v2.6: 보고체계 연락망 — 기본 빈 구조 (실데이터는 공용 DB에서 동기화, 코드 미시드)
+    if (!DATA.contacts || typeof DATA.contacts !== "object" || Array.isArray(DATA.contacts)) DATA.contacts = { sections: [] };
+    if (!Array.isArray(DATA.contacts.sections)) DATA.contacts.sections = [];
+    // v2.6: 연락망 모듈 메뉴 보장 (grp-abnormal 최상단 자동 삽입)
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "contacts")) {
+      const grp = DATA.menus.find(m => m && m.id === "grp-abnormal" && m.type === "group");
+      const children = grp ? DATA.menus.filter(m => m && m.parent === "grp-abnormal") : [];
+      const seq = children.length ? Math.min.apply(null, children.map(c => c.seq || 0)) - 0.5
+        : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
+      DATA.menus.push({ id: "contacts", seq, type: "module", label: "보고체계 연락망",
+        icon: "☎️", module: "contacts", vis: "all", parent: grp ? "grp-abnormal" : null, quick: true });
+    }
+    // 기존 시트 링크는 유지하되 "(구버전)"으로 구분
+    const abOld = DATA.menus.find(m => m && m.id === "ab-contact");
+    if (abOld && abOld.label === "보고체계 연락망") abOld.label = "보고체계 연락망 (구버전)";
     return JSON.stringify(DATA) !== before;
   }
   const saveHooks = [];

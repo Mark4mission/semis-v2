@@ -575,3 +575,79 @@ a.nb-file:hover { border-color: var(--primary); color: var(--primary); }
   .sync-dot { font-size: 0; gap: 0; padding: 6px; }
   .sync-dot .sync-dot-ico { width: 9px; height: 9px; }
 }
+
+/* ═══════ 보고체계 연락망 (v2.6) ═══════ */
+.ct-hero {
+  background: linear-gradient(120deg, #7f1d1d 0%, #b91c1c 55%, #dc2626 120%);
+  color: #fff; border-radius: var(--radius); padding: 18px 22px; margin-bottom: 14px;
+  box-shadow: var(--shadow);
+}
+.ct-hero-main { font-size: 1.12rem; font-weight: 700; letter-spacing: -.2px; }
+.ct-hero-main b { background: rgba(255,255,255,.18); border-radius: 6px; padding: 1px 8px; text-decoration: underline; text-underline-offset: 3px; }
+.ct-hero-sub { font-size: .82rem; opacity: .92; margin-top: 6px; }
+.ct-searchwrap { position: sticky; top: 0; z-index: 5; padding: 2px 0 10px; background: var(--bg); }
+.ct-search {
+  width: 100%; padding: 11px 16px; font-size: .95rem;
+  border: 1.5px solid var(--border); border-radius: 24px; background: var(--surface);
+  box-shadow: var(--shadow); outline: none;
+}
+.ct-search:focus { border-color: var(--primary); }
+.ct-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.ct-sec { margin-bottom: 14px; }
+.ct-grid .ct-sec { margin-bottom: 0; }
+.ct-sec mark { background: #fde68a; border-radius: 3px; padding: 0 2px; }
+.ct-danger { border: 1.5px solid #fca5a5; background: var(--danger-soft); }
+.ct-duty {
+  font-size: .78rem; font-weight: 700; color: var(--danger);
+  background: var(--danger-soft); border: 1px solid #fecaca; border-radius: 14px;
+  padding: 3px 10px; margin-right: 6px; white-space: nowrap;
+}
+.ct-duty:hover { background: #fee2e2; }
+.ct-row { padding: 8px 2px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.ct-row:last-of-type { border-bottom: none; }
+.ct-who { min-width: 150px; flex: 1 1 150px; }
+.ct-role { font-size: .78rem; color: var(--text-2); margin-right: 6px; }
+.ct-name { font-size: .92rem; }
+.ct-dutytxt { display: block; font-size: .75rem; color: var(--text-3); }
+.ct-nums { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.ct-num { display: inline-flex; align-items: center; gap: 5px; font-size: .88rem; white-space: nowrap; }
+.ct-tel { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+a.ct-tel:hover { color: var(--primary); }
+.ct-mini {
+  font-size: .7rem; font-weight: 700; color: var(--primary);
+  border: 1px solid var(--primary); border-radius: 10px; padding: 0 7px;
+}
+.ct-mini:hover { background: var(--primary-soft); }
+.ct-copy { background: none; border: none; font-size: .82rem; opacity: .55; padding: 2px; }
+.ct-copy:hover { opacity: 1; }
+.ct-note { flex-basis: 100%; font-size: .76rem; color: var(--text-3); }
+.ct-secnote { margin-top: 10px; font-size: .78rem; color: var(--text-2); background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px 12px; }
+.ct-mailall { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+/* 보고 절차 아코디언 */
+.ct-acc { border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px; background: var(--surface-2); }
+.ct-acc summary { cursor: pointer; padding: 10px 14px; font-weight: 700; font-size: .9rem; list-style: none; }
+.ct-acc summary::before { content: "▸ "; color: var(--primary); }
+.ct-acc[open] summary::before { content: "▾ "; }
+.ct-acc-body { padding: 2px 16px 12px; font-size: .86rem; color: var(--text); white-space: normal; }
+/* 사건별 보고처 */
+.ct-inc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ct-inc { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--surface-2); }
+.ct-inc-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+.ct-inc-no { font-size: 1.3rem; line-height: 1.2; }
+.ct-inc-to { flex: 1; font-size: .82rem; font-weight: 700; color: var(--danger); background: var(--danger-soft); border-radius: var(--radius-sm); padding: 6px 10px; }
+.ct-inc-tolabel { display: block; font-size: .68rem; color: var(--text-3); font-weight: 600; }
+.ct-inc-items { font-size: .8rem; color: var(--text-2); }
+/* 편집 모달 */
+.ct-editlist { max-height: 46vh; overflow-y: auto; padding-right: 4px; }
+.ct-editrow { display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 8px; background: var(--surface-2); }
+.ct-editfields { flex: 1; display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.ct-ef { display: flex; flex-direction: column; flex: 1 1 130px; }
+.ct-ef-sm { flex: 0 0 56px; }
+.ct-ef-wide { flex: 1 1 100%; }
+.ct-ef span { font-size: .68rem; color: var(--text-3); font-weight: 600; }
+.ct-ef input, .ct-ef textarea { padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: .84rem; }
+.ct-editrow-btns { display: flex; flex-direction: column; gap: 2px; }
+.ct-editrow-btns .btn { padding: 2px 7px; }
+@media (max-width: 900px) {
+  .ct-grid, .ct-inc-grid { grid-template-columns: 1fr; }
+}

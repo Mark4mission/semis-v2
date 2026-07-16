@@ -15,6 +15,7 @@ const appJS = read("js/app.js");
 const modJS = read("js/modules.js");
 const calJS = read("js/calendar.js");
 const inspJS = read("js/inspection.js");
+const ctJS = read("js/contacts.js");
 const caresJS = read("js/cares.js");
 const syncJS = read("js/sync.js");
 const HTML = read("index.html").replace(/<script[\s\S]*?<\/script>/g, "");
@@ -46,7 +47,7 @@ function makeEnv(opts = {}) {
   if (opts.preLS) Object.entries(opts.preLS).forEach(([k, v]) => w.localStorage.setItem(k, v));
   if (opts.fetch) w.fetch = opts.fetch;
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + caresJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + caresJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) S.boot();
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -1134,7 +1135,7 @@ function makeFetchStub(server) {
       if (u.includes("sensorThresholds")) return Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({}) });
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
     };
-    const e = makeEnv({ fetch: stub });
+    const e = makeEnv({ fetch: stub, preLS: { "semis2:caresKey": "test-api-key" } });
     loginAs(e, "manager");
     e.w.SemisCares.setCfg({ enabled: true, email: "v@a.com", pw: "p" });
     const box = q(e, "#cares-box");
@@ -1145,6 +1146,166 @@ function makeFetchStub(server) {
     ok(q(e, ".cares-spark"), "스파크라인");
     e.Sync.stop();
   });
+
+  /* ══════════ [CT] 보고체계 연락망 (v2.6) ══════════
+     ※ 테스트 데이터는 전부 가상 — 실연락처는 repo에 두지 않음(공용 DB 동기화) */
+  {
+    const SAMPLE = { sections: [
+      { id: "proc", type: "procedure", title: "보고 절차", note: "하기 조치 시에도 보고", rows: [
+        { id: "p1", title: "해외지점", body: "1) 현지 경찰 인계\n※ 30분 이내 전송" },
+        { id: "p2", title: "국내지점", body: "1차 SMS, 2차 별지서식" }] },
+      { id: "inc", type: "incidents", title: "사건별 보고처", rows: [
+        { id: "g1", no: "①", items: "27. 무효출입증 사용", to: "지방항공청 감독관\n+ 항공보안팀" },
+        { id: "g4", no: "④", items: "1. 항공기 파손\n2. 납치 시도", to: "국가위기관리센터 외" }] },
+      { id: "team", type: "people", title: "안전보안실", duty: "", rows: [
+        { id: "t1", role: "보안팀장", name: "홍모범", mobile: "010-1234-5678", office: "02-1234-5678" }] },
+      { id: "raa", type: "people", title: "테스트지방항공청", duty: "032-123-4567", rows: [
+        { id: "r1", role: "감독관", name: "김가상", mobile: "010-9876-5432" }] },
+      { id: "tsa", type: "people", title: "TSA TSOC", accent: "danger", rows: [
+        { id: "s1", role: "TSOC 미주 내", mobile: "1-866-555-0100" }] },
+      { id: "mail", type: "emails", title: "서면보고 발송처", rows: [
+        { id: "e1", name: "박문서", email: "test1@example.kr" },
+        { id: "e2", name: "이서식", email: "test2@example.kr" }] }
+    ] };
+    const withData = (e) => { e.S.data.contacts = JSON.parse(JSON.stringify(SAMPLE)); e.S.saveSilent(); };
+
+    t("CT01 normalize: contacts 기본 구조 + 메뉴 자동 삽입(grp-abnormal 최상단)", () => {
+      const e = makeEnv();
+      ok(e.S.data.contacts && Array.isArray(e.S.data.contacts.sections), "기본 빈 구조");
+      const mn = e.S.data.menus.find(m => m.type === "module" && m.module === "contacts");
+      ok(mn, "모듈 메뉴 존재");
+      eq(mn.parent, "grp-abnormal", "비정상 상황 그룹");
+      const sibs = e.S.data.menus.filter(m => m.parent === "grp-abnormal" && m.id !== mn.id);
+      ok(sibs.every(s => mn.seq <= (s.seq || 0)), "그룹 최상단");
+      const ab = e.S.data.menus.find(m => m.id === "ab-contact");
+      ok(ab && ab.label.includes("구버전"), "기존 시트 링크 (구버전) 라벨");
+    });
+
+    t("CT02 구버전 데이터에도 normalize로 메뉴/구조 복원", () => {
+      const e = makeEnv({ preData: { version: 1, menus: [
+        { id: "grp-abnormal", seq: 1, type: "group", label: "비정상 상황" },
+        { id: "ab-contact", seq: 2, type: "link", label: "보고체계 연락망", icon: "☎️", url: "https://x.example", parent: "grp-abnormal" }
+      ], notices: [], schedules: [] } });
+      ok(e.S.data.menus.some(m => m.type === "module" && m.module === "contacts"), "메뉴 삽입");
+      eq(e.S.data.menus.find(m => m.id === "ab-contact").label, "보고체계 연락망 (구버전)", "라벨 갱신");
+      ok(Array.isArray(e.S.data.contacts.sections), "contacts 구조 보장");
+    });
+
+    t("CT03 빈 데이터: 히어로 배너 + 동기화 대기 안내", () => {
+      const e = makeEnv();
+      loginAs(e, "user");
+      go(e, "contacts");
+      ok(q(e, ".ct-hero"), "히어로 배너");
+      ok(q(e, ".ct-hero").textContent.includes("30분"), "30분 이내 보고 강조");
+      ok(q(e, "#ct-body").textContent.includes("동기화 대기"), "동기화 대기 안내");
+    });
+
+    t("CT04 실데이터 렌더: 섹션/전화/문자/메일/당직실/사건카드", () => {
+      const e = makeEnv();
+      loginAs(e, "user");
+      withData(e);
+      go(e, "contacts");
+      const html = q(e, "#ct-body").innerHTML;
+      ok(html.includes("안전보안실") && html.includes("홍모범"), "인물 행");
+      ok(html.includes('href="tel:01012345678"'), "tel: 링크");
+      ok(html.includes('href="sms:01012345678"'), "sms: 링크");
+      ok(html.includes('href="mailto:test1@example.kr"'), "mailto: 링크");
+      ok(html.includes('tel:+18665550100'), "미주 국제전화 링크");
+      ok(q(e, ".ct-duty"), "당직실 강조");
+      eq(qa(e, ".ct-inc").length, 2, "사건별 그룹 카드");
+      ok(html.includes("보고처"), "보고처 표시");
+      ok(q(e, ".ct-danger"), "TSA 긴급 카드");
+      ok(qa(e, ".ct-acc").length >= 2, "절차 아코디언");
+      ok(html.includes("전체 주소 복사"), "이메일 전체 복사");
+    });
+
+    t("CT05 통합 검색: 이름/번호 필터 + 하이라이트", () => {
+      const e = makeEnv();
+      loginAs(e, "user");
+      withData(e);
+      go(e, "contacts");
+      const input = q(e, "#ct-search");
+      input.value = "김가상";
+      input.dispatchEvent(new e.w.Event("input", { bubbles: true }));
+      const html = q(e, "#ct-body").innerHTML;
+      ok(html.includes("<mark>김가상</mark>"), "하이라이트");
+      ok(!html.includes("서면보고 발송처"), "미매칭 섹션 숨김");
+      // 번호 검색 (하이픈 무시)
+      input.value = "98765432";
+      input.dispatchEvent(new e.w.Event("input", { bubbles: true }));
+      ok(q(e, "#ct-body").innerHTML.includes("김가상"), "번호 검색 매칭");
+      e.w.SemisContacts.setQuery("");
+    });
+
+    t("CT06 telHref/smsHref 유틸", () => {
+      const e = makeEnv();
+      const CT = e.w.SemisContacts;
+      eq(CT.telHref("032-740-2107"), "tel:0327402107");
+      eq(CT.telHref("1-866-555-0100"), "tel:+18665550100");
+      eq(CT.smsHref("010-1234-5678"), "sms:01012345678");
+      eq(CT.telHref(""), "");
+      eq(CT.isMobile("010-1111-2222"), true);
+      eq(CT.isMobile("02-123-4567"), false);
+    });
+
+    t("CT07 편집 권한: user 없음 / manager 있음", () => {
+      const e = makeEnv();
+      loginAs(e, "user");
+      withData(e);
+      go(e, "contacts");
+      ok(!q(e, "[data-ct-edit]"), "일반 사용자 편집 버튼 없음");
+      const e2 = makeEnv();
+      loginAs(e2, "manager");
+      withData(e2);
+      go(e2, "contacts");
+      ok(q(e2, "[data-ct-edit]"), "관리자 편집 버튼 있음");
+    });
+
+    t("CT08 편집 CRUD: 행 수정/추가 저장 → 데이터 반영", () => {
+      const e = makeEnv();
+      loginAs(e, "manager");
+      withData(e);
+      go(e, "contacts");
+      q(e, '[data-ct-edit="team"]').click();
+      ok(q(e, "#cte-rows"), "편집 모달");
+      // 기존 행 수정
+      const nameInp = qa(e, '#cte-rows [data-f="name"]')[0];
+      nameInp.value = "홍수정";
+      // 행 추가
+      q(e, "#cte-add").click();
+      const rows2 = qa(e, '#cte-rows [data-f="name"]');
+      rows2[rows2.length - 1].value = "신규자";
+      qa(e, '#cte-rows [data-f="mobile"]')[rows2.length - 1].value = "010-0000-1111";
+      q(e, "#cte-save").click();
+      const sec = e.S.data.contacts.sections.find(s => s.id === "team");
+      eq(sec.rows[0].name, "홍수정", "행 수정 반영");
+      eq(sec.rows.length, 2, "행 추가 반영");
+      eq(sec.rows[1].name, "신규자");
+    });
+
+    t("CT09 편집: 행 삭제 저장", () => {
+      const e = makeEnv();
+      loginAs(e, "manager");
+      withData(e);
+      go(e, "contacts");
+      q(e, '[data-ct-edit="mail"]').click();
+      q(e, '#cte-rows [data-del="0"]').click();
+      q(e, "#cte-save").click();
+      const sec = e.S.data.contacts.sections.find(s => s.id === "mail");
+      eq(sec.rows.length, 1, "삭제 반영");
+      eq(sec.rows[0].name, "이서식");
+    });
+
+    t("CT10 대시보드 바로가기에 모듈 quick 링크(내부 이동)", () => {
+      const e = makeEnv();
+      loginAs(e, "user");
+      go(e, "dashboard");
+      const links = qa(e, ".quick-link");
+      const inner = links.find(a => (a.getAttribute("href") || "") === "#/contacts");
+      ok(inner, "연락망 내부 바로가기");
+      ok(!inner.getAttribute("target"), "내부 이동(새 창 아님)");
+    });
+  }
 
   await ta("S14 구버전 서버 데이터 pull 후에도 신규 모듈 메뉴/시드 유지", async () => {
     const server = {
@@ -1388,7 +1549,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "customUsers,gcal,inspections,levelHistory,menus,notices,pwOverrides,schedules");
+    eq(keys, "contacts,customUsers,gcal,inspections,levelHistory,menus,notices,pwOverrides,schedules");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -1541,7 +1702,7 @@ function makeFetchStub(server) {
 
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
-  console.log(`  SeMIS v2.5 테스트: ${passed + failed}건 실행`);
+  console.log(`  SeMIS v2.6 테스트: ${passed + failed}건 실행`);
   console.log(`  ✓ 통과 ${passed}건  ✗ 실패 ${failed}건`);
   console.log("════════════════════════════════════");
   if (failures.length) {
