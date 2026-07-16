@@ -1013,6 +1013,39 @@ function makeFetchStub(server) {
       ok(/\d+ \/ \d+건/.test(box.textContent.replace(/\s+/g, " ")) || box.innerHTML.includes("건"), "계획 대비 완료");
       ok(q(e, ".insp-bar-fill"), "진행 바");
     });
+    t("I09 매트릭스 칩: 대상/점검관 줄 분리", () => {
+      e.Insp.setViewMode("matrix");
+      go(e, "inspection");
+      const c = qa(e, ".insp-chip").find(el => el.textContent.includes("프로에스콤"));
+      ok(c.querySelector(".insp-target"), "대상 줄");
+      ok(c.querySelector(".insp-people .insp-tag"), "점검관 태그 줄");
+    });
+    t("I10 매트릭스 드래그: 계획월 이동 + 확정일자/캘린더 연동 이동", () => {
+      const I = e.Insp;
+      // 월만 지정된 건: 10월 ICNKF → 12월
+      const a = e.S.data.inspections.find(x => x.target === "ICNKF");
+      ok(I.moveInsp(a.id, "국내정기", 12));
+      eq(e.S.data.inspections.find(x => x.id === a.id).month, 12);
+      // 확정 일자 + 캘린더 연동 건: 일자도 같은 날짜로 월 이동
+      e.S.data.inspections.push({ id: "imv1", year: 2026, category: "해외공항", target: "MOVSF", month: 9,
+        inspectors: [], start: "2026-09-10", end: "2026-09-12", status: "계획", note: "", resultUrl: "", linkCal: true });
+      I.syncCalendar(e.S.data.inspections.find(x => x.id === "imv1"));
+      e.S.saveSilent();
+      ok(I.moveInsp("imv1", "해외공항", 11));
+      const m = e.S.data.inspections.find(x => x.id === "imv1");
+      eq(m.month, 11); eq(m.start, "2026-11-10"); eq(m.end, "2026-11-12", "기간 유지");
+      eq(e.S.data.schedules.find(s => s.id === "insp_imv1").start, "2026-11-10", "캘린더 연동 이동");
+      // DnD 배선: dragstart→drop
+      e.S.renderView();
+      const chip = qa(e, '[data-insp="imv1"]')[0];
+      chip.dispatchEvent(new e.w.Event("dragstart", { bubbles: true, cancelable: true }));
+      const cell = qa(e, ".insp-cell").find(c => c.dataset.cat === "해외공항" && c.dataset.month === "3");
+      cell.dispatchEvent(new e.w.Event("drop", { bubbles: true, cancelable: true }));
+      eq(e.S.data.inspections.find(x => x.id === "imv1").month, 3, "드롭으로 월 변경");
+      e.S.data.inspections = e.S.data.inspections.filter(x => x.id !== "imv1");
+      I.removeCalendar("imv1");
+      e.S.saveSilent();
+    });
     t("I08 일반 사용자: 등록 버튼 없음 + 상세 열람", () => {
       const e2 = makeEnv();
       loginAs(e2, "user");
@@ -1029,10 +1062,16 @@ function makeFetchStub(server) {
     const e = makeEnv();
     loginAs(e, "manager");
     const CA = e.w.SemisCares;
-    t("CA01 미설정 시 안내 표시 (대시보드 카드)", () => {
+    t("CA01 기본 표시 + 오프라인 안내 (계정 불필요)", () => {
       const box = q(e, "#cares-box");
       ok(box, "CARES 카드 존재");
-      ok(box.innerHTML.includes("연동이 설정되지"), "설정 안내");
+      ok(box.innerHTML.includes("오프라인"), "무인증 기본 표시, fetch 불가 시 오프라인 안내");
+    });
+    t("CA07 표시 끄기 설정", () => {
+      CA.setCfg({ enabled: false });
+      e.S.renderView();
+      ok(q(e, "#cares-box").innerHTML.includes("꺼져"), "명시적 비활성 안내");
+      CA.setCfg({});
     });
     t("CA02 Firestore REST 값 파서", () => {
       eq(CA.parseFs({ doubleValue: 3.5 }), 3.5);

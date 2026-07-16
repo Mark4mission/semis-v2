@@ -3,9 +3,9 @@
    CARES(airzeta-security-system, Firebase/Firestore)의 환경센서 데이터를
    REST API로 조회하여 임계치 초과 항목과 추이 그래프를 표시.
 
-   - CARES Firestore 규칙상 읽기에 인증 필요 → CARES 계정으로 REST 로그인
-   - 계정 정보는 이 브라우저의 localStorage에만 저장 (공용 DB 미동기화)
-   - 컬렉션: sensorLogs(1분 주기), sensorThresholds/{deviceId}, alarmHistory
+   - 센서 컬렉션(sensorLogs/sensorThresholds/alarmHistory)은 공개 읽기 규칙
+     (2026-07-16 배포)이라 무인증 REST 조회 — 계정 불필요
+   - 표시 여부(enabled)만 이 브라우저의 localStorage에 저장
    ═══════════════════════════════════════════════════════ */
 "use strict";
 
@@ -41,22 +41,6 @@
   }
   function setCfg(c) { localStorage.setItem(CFG_KEY, JSON.stringify(c)); }
 
-  /* ─────── Firebase Auth (REST) ─────── */
-  let authState = { token: null, exp: 0 };
-  async function ensureToken() {
-    if (authState.token && Date.now() < authState.exp - 60000) return authState.token;
-    const c = cfg();
-    if (!c.email || !c.pw) throw new Error("계정 미설정");
-    const res = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + API_KEY, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: c.email, password: c.pw, returnSecureToken: true })
-    });
-    if (!res.ok) throw new Error("로그인 실패 (" + res.status + ")");
-    const j = await res.json();
-    authState = { token: j.idToken, exp: Date.now() + (Number(j.expiresIn) || 3600) * 1000 };
-    return authState.token;
-  }
-
   /* ─────── Firestore REST 값 파서 ─────── */
   function parseFs(v) {
     if (v == null || typeof v !== "object") return null;
@@ -78,10 +62,9 @@
   const docToObj = (fields) => parseFs({ mapValue: { fields: fields || {} } });
 
   async function runQuery(body) {
-    const token = await ensureToken();
-    const res = await fetch(FS_DOCS + ":runQuery", {
+    const res = await fetch(FS_DOCS + ":runQuery?key=" + API_KEY, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
     if (!res.ok) throw new Error("조회 실패 (" + res.status + ")");
@@ -98,10 +81,7 @@
   }
   async function fetchThresholds() {
     try {
-      const token = await ensureToken();
-      const res = await fetch(FS_DOCS + "/sensorThresholds/" + DEVICE.id, {
-        headers: { Authorization: "Bearer " + token }
-      });
+      const res = await fetch(FS_DOCS + "/sensorThresholds/" + DEVICE.id + "?key=" + API_KEY);
       if (!res.ok) return DEFAULT_TH;
       const j = await res.json();
       const th = docToObj(j.fields);
@@ -149,8 +129,12 @@
   let refreshTimer = null;
   async function renderInto(box, canWrite) {
     const c = cfg();
-    if (!c.enabled || !c.email || !c.pw) {
-      box.innerHTML = `<div class="empty" style="padding:20px 10px">CARES 연동이 설정되지 않았습니다.${canWrite ? "<br>우측 상단 ⚙ 버튼에서 CARES 계정을 연결하세요." : ""}</div>`;
+    if (c.enabled === false) { // 명시적으로 끈 경우만 숨김 (기본: 표시)
+      box.innerHTML = `<div class="empty" style="padding:20px 10px">환경센서 표시가 꺼져 있습니다.${canWrite ? " ⚙ 버튼에서 켤 수 있습니다." : ""}</div>`;
+      return false;
+    }
+    if (typeof fetch === "undefined") {
+      box.innerHTML = '<div class="empty" style="padding:20px 10px">오프라인 — 네트워크 연결 후 표시됩니다.</div>';
       return false;
     }
     box.innerHTML = '<div class="empty" style="padding:20px 10px">환경센서 데이터를 불러오는 중…</div>';
@@ -206,32 +190,26 @@
     }
   }
 
-  /* ─────── 연동 설정 (계정은 이 기기에만 저장) ─────── */
+  /* ─────── 표시 설정 (이 기기에만 저장) ─────── */
   function settingsForm() {
     const c = cfg();
     openModal(`
       <h3>🌡 CARES 환경센서 연동</h3>
       <div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" id="c-enabled" style="width:auto" ${c.enabled ? "checked" : ""}> 대시보드에 환경센서 표시</label></div>
-      <div class="form-row"><label>CARES 계정 이메일</label>
-        <input id="c-email" type="email" value="${esc(c.email || "")}" placeholder="viewer@airzeta.com"></div>
-      <div class="form-row"><label>암호</label>
-        <input id="c-pw" type="password" value="${esc(c.pw || "")}" autocomplete="new-password">
-        <div class="form-hint">CARES(airzeta-security-system) 로그인 계정입니다. 조회 전용 계정 사용을 권장합니다.
-        계정 정보는 <b>이 브라우저에만</b> 저장되며 공용 DB로 동기화되지 않습니다. (기기마다 1회 설정)</div></div>
+        <input type="checkbox" id="c-enabled" style="width:auto" ${c.enabled !== false ? "checked" : ""}> 대시보드에 환경센서 표시</label>
+        <div class="form-hint" style="margin-top:8px">CARES(${esc(DEVICE.name)})의 센서 데이터를 공개 조회 방식으로 표시합니다.
+        별도 계정이 필요 없으며, 표시 여부는 이 브라우저에만 적용됩니다.
+        임계값 변경은 <a href="https://airzeta-security-system.web.app" target="_blank" rel="noopener">CARES 앱</a>에서 관리합니다.</div></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="c-cancel">취소</button>
-        <button class="btn btn-primary" id="c-save">저장 후 연결 테스트</button>
+        <button class="btn btn-primary" id="c-save">저장</button>
       </div>`);
     $("#c-cancel").onclick = closeModal;
-    $("#c-save").onclick = async () => {
-      setCfg({ enabled: $("#c-enabled").checked, email: $("#c-email").value.trim(), pw: $("#c-pw").value });
-      authState = { token: null, exp: 0 };
+    $("#c-save").onclick = () => {
+      setCfg({ enabled: $("#c-enabled").checked });
       closeModal();
-      if ($("#c-enabled") && !cfg().enabled) { SeMIS.renderView(); return; }
-      try { await ensureToken(); toast("CARES 연결 성공"); }
-      catch (e) { toast("연결 실패: " + (e.message || ""), true); }
       SeMIS.renderView();
+      toast("저장되었습니다.");
     };
   }
 

@@ -426,10 +426,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .insp-cell.now { background: #fefce8; }
 .insp-sum { text-align: center; font-weight: 800; font-size: .8rem; background: var(--surface-2); padding: 8px 2px; }
 .insp-chip {
-  display: flex; align-items: center; gap: 3px; flex-wrap: wrap;
-  font-size: .68rem; font-weight: 600; padding: 2px 5px; border-radius: 4px;
+  display: block;
+  font-size: .68rem; font-weight: 600; padding: 3px 6px; border-radius: 4px;
   margin-bottom: 2px; cursor: pointer; line-height: 1.35; word-break: break-all;
 }
+.insp-chip.dragging { opacity: .4; }
+.insp-target { font-weight: 800; font-size: .72rem; }
+.insp-people { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 2px; }
 .insp-chip.st-완료 { opacity: .62; }
 .insp-chip.st-취소 { opacity: .45; text-decoration: line-through; }
 .insp-chip.st-연기 { outline: 1.5px dashed #d97706; outline-offset: -1.5px; }

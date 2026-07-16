@@ -52,14 +52,42 @@
     D().schedules = D().schedules.filter(s => s.id !== "insp_" + inspId);
   }
 
-  /* ─────── 점검 칩 ─────── */
+  /* ─────── 점검 칩 (대상/점검관 줄 분리) ─────── */
   function chip(x, canWrite) {
     const insp = (x.inspectors || []).map(n => `<span class="insp-tag">${esc(tagOf(n))}</span>`).join("");
-    return `<div class="insp-chip st-${esc(x.status)} ev-${CAT_COLOR[x.category] || "gray"}" data-insp="${esc(x.id)}"
+    const mark = x.status === "완료" ? "✓ " : x.status === "연기" ? "⏸ " : x.status === "취소" ? "✕ " : "";
+    return `<div class="insp-chip st-${esc(x.status)} ev-${CAT_COLOR[x.category] || "gray"}" data-insp="${esc(x.id)}" ${canWrite ? 'draggable="true"' : ""}
         title="${esc(x.target)} · ${esc(x.status)}${x.inspectors && x.inspectors.length ? " · " + esc(x.inspectors.join(", ")) : ""}${x.note ? "\n" + esc(x.note) : ""}">
-      ${x.status === "완료" ? "✓ " : x.status === "연기" ? "⏸ " : x.status === "취소" ? "✕ " : ""}${esc(x.target)}${insp}
+      <div class="insp-target">${mark}${esc(x.target)}</div>
+      ${insp ? `<div class="insp-people">${insp}</div>` : ""}
     </div>`;
   }
+
+  /* ─────── 매트릭스 드래그: 계획월(및 구분) 이동 ─────── */
+  function moveInsp(id, category, month) {
+    const x = (D().inspections || []).find(i => i.id === id);
+    month = Number(month);
+    if (!x || !(month >= 1 && month <= 12)) return false;
+    if (x.month === month && (!category || x.category === category)) return false;
+    // 확정 일자가 있으면 같은 일자로 월만 이동 (기간 길이 유지, 말일 초과 시 보정)
+    if (x.start) {
+      const y = Number(x.start.slice(0, 4));
+      const day = Number(x.start.slice(8, 10));
+      const lastDay = new Date(y, month, 0).getDate();
+      const dur = Math.round((new Date(x.end || x.start) - new Date(x.start)) / 86400000);
+      const p2 = (n) => String(n).padStart(2, "0");
+      const ns = y + "-" + p2(month) + "-" + p2(Math.min(day, lastDay));
+      const ne = new Date(y, month - 1, Math.min(day, lastDay) + dur);
+      x.start = ns;
+      x.end = ne.getFullYear() + "-" + p2(ne.getMonth() + 1) + "-" + p2(ne.getDate());
+    }
+    x.month = month;
+    if (category && CATEGORIES.includes(category)) x.category = category;
+    syncCalendar(x);
+    SeMIS.save(); SeMIS.renderView();
+    return true;
+  }
+  let dragCtx = null;
 
   /* ─────── 연간 매트릭스 뷰 ─────── */
   function matrixHTML(canWrite) {
@@ -245,6 +273,32 @@
         if (ev.target.closest(".insp-chip")) return;
         inspForm(null, { category: cell.dataset.cat, month: Number(cell.dataset.month) });
       });
+
+      /* ── 매트릭스 드래그앤드롭: 칩을 다른 칸으로 → 계획월(/구분) 변경 ── */
+      if (canWrite) {
+        $$(".insp-chip[draggable]", root).forEach(el => {
+          el.addEventListener("dragstart", (ev) => {
+            dragCtx = { id: el.dataset.insp };
+            el.classList.add("dragging");
+            if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = "move"; try { ev.dataTransfer.setData("text/plain", el.dataset.insp); } catch (e) {} }
+          });
+          el.addEventListener("dragend", () => { el.classList.remove("dragging"); dragCtx = null; });
+        });
+        $$(".insp-cell", root).forEach(cell => {
+          cell.addEventListener("dragover", (ev) => { ev.preventDefault(); cell.classList.add("drop-hover"); });
+          cell.addEventListener("dragleave", () => cell.classList.remove("drop-hover"));
+          cell.addEventListener("drop", (ev) => {
+            ev.preventDefault();
+            cell.classList.remove("drop-hover");
+            if (!dragCtx) return;
+            const x = (D().inspections || []).find(i => i.id === dragCtx.id);
+            const catChanged = x && x.category !== cell.dataset.cat;
+            if (moveInsp(dragCtx.id, cell.dataset.cat, Number(cell.dataset.month)))
+              toast(cell.dataset.month + "월로 이동되었습니다." + (catChanged ? " (구분: " + cell.dataset.cat + ")" : ""));
+            dragCtx = null;
+          });
+        });
+      }
     }
   });
 
@@ -253,7 +307,7 @@
     CATEGORIES, STATUSES, CAT_COLOR,
     getYear: () => year, setYear: (y) => { year = Number(y) || year; },
     setViewMode: (m) => { if (m === "matrix" || m === "list") viewMode = m; },
-    syncCalendar, removeCalendar,
+    syncCalendar, removeCalendar, moveInsp,
     list
   };
 })();
