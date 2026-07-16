@@ -115,7 +115,9 @@
     </div>`;
   }
   function incidentCard(r, q) {
-    return `<div class="ct-inc">
+    // 시트 원본 색 단계: ① 노랑 → ② 호박 → ③ 주황 → ④ 짙은 빨강 (중대)
+    const lvl = { "①": 1, "②": 2, "③": 3, "④": 4 }[String(r.no || "").trim()] || 0;
+    return `<div class="ct-inc${lvl ? " ct-lv" + lvl : ""}">
       <div class="ct-inc-head">
         <span class="ct-inc-no">${esc(r.no || "•")}</span>
         <div class="ct-inc-to"><span class="ct-inc-tolabel">보고처 (SMS)</span>${nl2br(r.to || "", q)}</div>

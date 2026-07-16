@@ -168,19 +168,24 @@
       const exceeded = METRICS.filter(m => isExceed(last[m.key], th[m.key]));
       const active = alarms.filter(a => !a.endedAt);
 
+      // 기본: 임계치 초과 지표만 표시 (대시보드 공간 축소). "전체 표시" 토글로 8개 전체.
+      const showAll = c.showAll === true;
+      const shown = showAll ? METRICS : exceeded;
+
       box.innerHTML = `
         <div class="cares-head">
           <span class="badge ${exceeded.length ? "badge-red" : "badge-green"}">${exceeded.length ? "⚠ 임계치 초과 " + exceeded.length + "건" : "✓ 전체 정상"}</span>
           <span style="font-size:.76rem;color:var(--text-3)">${esc(DEVICE.name)} · ${esc(lastTs)}</span>
           <span class="spacer"></span>
+          <button class="btn btn-ghost btn-sm" id="cares-mode">${showAll ? "초과만 보기" : "전체 표시"}</button>
           <button class="btn btn-ghost btn-sm" id="cares-refresh">↻</button>
         </div>
         ${active.length ? `<div class="cares-alarms">${active.map(a => `
           <div class="cares-alarm">🔴 <b>${esc(a.metricLabel || a.metric)}</b>
             ${a.type === "max" ? "상한" : "하한"} ${esc(String(a.threshold))}${esc(a.unit || "")} 초과 진행 중
             <span style="color:var(--text-3)">(최고 ${esc(String(a.peakValue))}${esc(a.unit || "")})</span></div>`).join("")}</div>` : ""}
-        <div class="cares-grid">
-          ${METRICS.map(m => {
+        ${shown.length ? `<div class="cares-grid">
+          ${shown.map(m => {
             const v = last[m.key];
             const ex = isExceed(v, th[m.key]);
             const series = readings.map(r => (typeof r[m.key] === "number" ? r[m.key] : null));
@@ -191,8 +196,13 @@
             </div>`;
           }).join("")}
         </div>
-        <div class="form-hint" style="margin-top:6px">최근 2시간 추이 · 점선=임계값 · 1분마다 자동 갱신</div>`;
+        <div class="form-hint" style="margin-top:6px">최근 2시간 추이 · 점선=임계값 · 1분마다 자동 갱신</div>`
+        : `<div class="cares-allok">모든 지표가 임계값 이내입니다. <span style="color:var(--text-3)">(1분마다 자동 갱신)</span></div>`}`;
       $("#cares-refresh", box).onclick = () => renderInto(box, canWrite);
+      $("#cares-mode", box).onclick = () => {
+        setCfg(Object.assign(cfg(), { showAll: !showAll }));
+        renderInto(box, canWrite);
+      };
 
       if (refreshTimer) clearInterval(refreshTimer);
       refreshTimer = setInterval(() => {

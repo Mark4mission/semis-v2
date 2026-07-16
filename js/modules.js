@@ -29,7 +29,6 @@
       upcoming.sort((a, b) => String(a.start).localeCompare(String(b.start)));
       upcoming.length = Math.min(upcoming.length, 5);
       const quicks = SeMIS.sortedMenus().filter(m => (m.type === "link" || m.type === "module") && m.quick && SeMIS.canSee(m));
-      const linkCount = d.menus.filter(m => m.type === "link").length;
 
       const cur = SeMIS.secCurrent();
       const nxt = SeMIS.secNext();
@@ -37,20 +36,6 @@
         <div class="page-head">
           <div class="page-title">🏠 대시보드</div>
           <div class="page-desc">에어제타 보안종합정보시스템 — ${esc(fmtDate(new Date().toISOString()))}</div>
-        </div>
-        <div class="stat-row">
-          <div class="stat"><div class="stat-label">국가 항공보안등급</div>
-            <div class="stat-value" id="stat-level"></div>
-            <div class="stat-sub">${esc(cur.date ? cur.date + "~" : "")} ${esc(cur.note || "")}</div></div>
-          <div class="stat"><div class="stat-label">공지사항</div>
-            <div class="stat-value">${notices.length}<span style="font-size:.8rem;font-weight:600"> 건</span></div>
-            <div class="stat-sub">고정 ${notices.filter(n => n.pinned).length}건</div></div>
-          <div class="stat"><div class="stat-label">예정 일정</div>
-            <div class="stat-value">${upcoming.length}<span style="font-size:.8rem;font-weight:600"> 건</span></div>
-            <div class="stat-sub">오늘 이후</div></div>
-          <div class="stat"><div class="stat-label">등록 링크 메뉴</div>
-            <div class="stat-value">${linkCount}<span style="font-size:.8rem;font-weight:600"> 개</span></div>
-            <div class="stat-sub">외부 자료 연결</div></div>
         </div>
         <div class="dash-grid">
           <div class="dash-col">
@@ -102,7 +87,6 @@
       // 보안등급 (5단계: 평시-관심-주의-경계-심각)
       const lvColor = (l) => ({ "평시": "badge-green", "관심": "badge-blue", "주의": "badge-amber",
         "경계": "badge-orange", "심각": "badge-red" }[l] || "badge-gray");
-      $("#stat-level").innerHTML = `<span class="badge ${lvColor(cur.level)}" style="font-size:1rem;padding:4px 14px">${esc(cur.level)}</span>`;
       const hist = SeMIS.levelSorted().slice().reverse().slice(0, 6);
       const lvRange = (e2) => {
         if (!e2.date) return "";
@@ -167,12 +151,18 @@
       const done = insp.filter(x => x.status === "완료").length;
       const thisMonth = new Date().getMonth() + 1;
       const monthList = (d.inspections || []).filter(x => x.month === thisMonth && x.category !== "주요일정");
+      // 점검 결과 유형별 통계 (시정조치/개선권고/현장시정/관찰사항)
+      const fdCnt = {};
+      (d.inspections || []).forEach(x => (x.findings || []).forEach(f => { fdCnt[f.type] = (fdCnt[f.type] || 0) + 1; }));
+      const FD_ORDER = (window.SemisInspection && SemisInspection.FINDING_TYPES) || ["시정조치", "개선권고", "현장시정", "관찰사항"];
       $("#insp-box").innerHTML = `
         <div style="display:flex;align-items:baseline;gap:8px">
           <span style="font-size:1.25rem;font-weight:800">${done}<span style="font-size:.85rem;color:var(--text-3)"> / ${insp.length}건</span></span>
           <span style="font-size:.78rem;color:var(--text-2)">완료 (계획 대비 ${insp.length ? Math.round(done / insp.length * 100) : 0}%)</span>
         </div>
         <div class="insp-bar"><div class="insp-bar-fill" style="width:${insp.length ? Math.round(done / insp.length * 100) : 0}%"></div></div>
+        <div class="insp-fdgrid">${FD_ORDER.map((t, i) =>
+          `<div class="insp-fdcell"><b class="fd-c${i + 1}">${fdCnt[t] || 0}</b><span>${esc(t)}</span></div>`).join("")}</div>
         <div style="font-size:.74rem;font-weight:700;color:var(--text-3);margin:10px 0 4px">이번 달 (${thisMonth}월)</div>
         ${monthList.length ? monthList.map(x => `
           <div style="display:flex;align-items:center;gap:6px;font-size:.8rem;padding:3px 0">
@@ -193,8 +183,8 @@
             <span class="cal-dot ev-${esc(s.color || "blue")}"></span>
             <b style="color:var(--primary);white-space:nowrap">${esc(String(s.start).slice(5))}${s.end && s.end !== s.start ? "~" + esc(String(s.end).slice(5)) : ""}</b>
             ${!s.allDay && s.time ? `<span style="font-size:.76rem;color:var(--text-3);white-space:nowrap">${esc(s.time)}</span>` : ""}
-            <span style="${s.done ? "text-decoration:line-through;color:var(--text-3)" : ""};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.done ? "✓ " : ""}${s.vehicle ? "🚗" : ""}${s.room ? "🏢" : ""}${(s.reminders && s.reminders.length) ? "⏰" : ""}${esc(s.title)}</span>
-            ${s.assignee ? `<span class="badge badge-gray" style="margin-left:auto">${esc(s.assignee)}</span>` : ""}</div>`).join("")
+            <span style="${s.done ? "text-decoration:line-through;color:var(--text-3);" : ""}flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.done ? "✓ " : ""}${s.vehicle ? "🚗" : ""}${s.room ? "🏢" : ""}${(s.reminders && s.reminders.length) ? "⏰" : ""}${esc(s.title)}</span>
+            ${s.assignee ? `<span class="badge badge-gray" style="margin-left:auto;flex-shrink:0;white-space:nowrap">${esc(s.assignee)}</span>` : ""}</div>`).join("")
         : '<div class="empty">예정된 일정이 없습니다.</div>';
       $("#btn-go-schedule").onclick = () => SeMIS.navigate("schedule");
 

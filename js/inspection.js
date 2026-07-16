@@ -19,6 +19,17 @@
   const STATUSES = ["계획", "완료", "연기", "취소"];
   const ST_BADGE = { "계획": "badge-blue", "완료": "badge-green", "연기": "badge-amber", "취소": "badge-gray" };
 
+  // 점검 결과 유형 (v2.6.1): findings = [{ type, text }] — 유형별 복수 등록 가능
+  const FINDING_TYPES = ["시정조치", "개선권고", "현장시정", "관찰사항"];
+  const FD_BADGE = { "시정조치": "badge-red", "개선권고": "badge-amber", "현장시정": "badge-blue", "관찰사항": "badge-gray" };
+  const FD_SHORT = { "시정조치": "시정", "개선권고": "권고", "현장시정": "현장", "관찰사항": "관찰" };
+  function fdSummary(x) {
+    const cnt = {};
+    (x.findings || []).forEach(f => { cnt[f.type] = (cnt[f.type] || 0) + 1; });
+    return FINDING_TYPES.filter(t => cnt[t])
+      .map(t => `<span class="badge ${FD_BADGE[t]}" title="${esc(t)} ${cnt[t]}건">${esc(FD_SHORT[t])}${cnt[t]}</span>`).join(" ");
+  }
+
   const TEAM = () => (window.SemisCalendar ? SemisCalendar.TEAM : []);
   const tagOf = (n) => (window.SemisCalendar ? SemisCalendar.tagOf(n) : (n || "").slice(0, 2));
 
@@ -127,7 +138,7 @@
         <td style="font-size:.82rem">${x.start ? esc(x.start) + (x.end && x.end !== x.start ? "<br>~ " + esc(x.end) : "") : '<span style="color:var(--text-3)">미정</span>'}${x.linkCal && x.start ? " 📅" : ""}</td>
         <td style="font-size:.84rem">${(x.inspectors || []).map(n => esc(tagOf(n))).join(" ") || '<span style="color:var(--text-3)">미정</span>'}</td>
         <td><span class="badge ${ST_BADGE[x.status] || "badge-gray"}">${esc(x.status)}</span></td>
-        <td>${x.resultUrl ? `<a href="${esc(x.resultUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">보기 ↗</a>` : "-"}</td>
+        <td>${fdSummary(x) || (x.resultUrl ? `<a href="${esc(x.resultUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">보기 ↗</a>` : "-")}</td>
       </tr>`).join("")}</tbody></table></div>`;
   }
 
@@ -136,6 +147,7 @@
     const x = id ? (D().inspections || []).find(i => i.id === id) : null;
     const p = preset || {};
     let inspectors = x ? (x.inspectors || []).slice() : [];
+    let findings = x ? (x.findings || []).map(f => Object.assign({}, f)) : [];
     openModal(`
       <h3>${x ? "점검 수정" : "점검 등록"} <span class="badge badge-gray">${year}년</span></h3>
       <div class="form-grid">
@@ -156,11 +168,12 @@
           `<button type="button" class="cal-fchip${inspectors.includes(t.name) ? " active" : ""}" data-insp-t="${esc(t.name)}">${t.emoji} ${esc(t.name)}</button>`).join("")}</div>
         <input id="i-extra" value="${esc(inspectors.filter(n => !TEAM().some(t => t.name === n)).join(", "))}"
           maxlength="60" placeholder="외부/기타 점검관 (쉼표로 구분, 예: TAZ)"></div>
-      <div class="form-grid">
-        <div class="form-row"><label>상태</label>
-          <select id="i-status">${STATUSES.map(s => `<option ${(x ? x.status : "계획") === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
-        <div class="form-row"><label>결과 링크 (선택)</label><input id="i-url" value="${esc(x ? x.resultUrl || "" : "")}" placeholder="https://..."></div>
-      </div>
+      <div class="form-row"><label>상태</label>
+        <select id="i-status">${STATUSES.map(s => `<option ${(x ? x.status : "계획") === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+      <div class="form-row"><label>점검 결과 (유형별 복수 등록 가능)</label>
+        <div id="i-findings"></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="ifd-add" style="margin-top:4px">+ 결과 추가</button>
+        ${x && x.resultUrl ? `<div class="form-hint">기존 결과 링크: <a href="${esc(x.resultUrl)}" target="_blank" rel="noopener">열기 ↗</a></div>` : ""}</div>
       <div class="form-row"><label>비고</label><input id="i-note" value="${esc(x ? x.note || "" : "")}" maxlength="200"></div>
       <div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
         <input type="checkbox" id="i-linkcal" style="width:auto" ${x && x.linkCal ? "checked" : ""}>
@@ -170,6 +183,33 @@
         <button class="btn btn-ghost" id="i-cancel">취소</button>
         <button class="btn btn-primary" id="i-save">저장</button>
       </div>`);
+
+    /* 점검 결과 편집 (유형 + 한 줄 내용, 복수) */
+    function fdCollect() {
+      $$("#i-findings .ifd-row").forEach((row, i) => {
+        findings[i].type = row.querySelector("select").value;
+        findings[i].text = row.querySelector("input").value;
+      });
+    }
+    function fdPaint() {
+      $("#i-findings").innerHTML = findings.map((f, i) => `
+        <div class="ifd-row" data-fd="${i}">
+          <select class="ifd-type">${FINDING_TYPES.map(t => `<option ${f.type === t ? "selected" : ""}>${t}</option>`).join("")}</select>
+          <input class="ifd-text" value="${esc(f.text || "")}" maxlength="200" placeholder="내용 한 줄 (예: 검색장비 캘리브레이션 미실시)">
+          <button type="button" class="btn btn-ghost btn-sm" data-fd-del="${i}" title="삭제">🗑</button>
+        </div>`).join("") || '<div class="form-hint">등록된 결과가 없습니다.</div>';
+      $$("#i-findings [data-fd-del]").forEach(b => b.onclick = () => {
+        fdCollect(); findings.splice(Number(b.dataset.fdDel), 1); fdPaint();
+      });
+    }
+    fdPaint();
+    $("#ifd-add").onclick = () => {
+      fdCollect();
+      findings.push({ type: FINDING_TYPES[0], text: "" });
+      fdPaint();
+      const rows = $$("#i-findings .ifd-text");
+      if (rows.length) rows[rows.length - 1].focus();
+    };
 
     $$("#i-team [data-insp-t]").forEach(b => b.onclick = () => {
       const n = b.dataset.inspT;
@@ -192,6 +232,7 @@
       const extra = $("#i-extra").value.split(",").map(v => v.trim()).filter(Boolean)
         .filter(n => !TEAM().some(t => t.name === n));
       const team = TEAM().map(t => t.name).filter(n => inspectors.includes(n));
+      fdCollect();
       const rec = {
         year, category: $("#i-cat").value, target,
         month: s ? Number(s.slice(5, 7)) : Number($("#i-month").value),
@@ -199,7 +240,8 @@
         start: s || "", end: en || (s || ""),
         status: $("#i-status").value,
         note: $("#i-note").value.trim(),
-        resultUrl: $("#i-url").value.trim(),
+        findings: findings.filter(f => String(f.text || "").trim())
+          .map(f => ({ type: FINDING_TYPES.includes(f.type) ? f.type : FINDING_TYPES[0], text: f.text.trim() })),
         linkCal: $("#i-linkcal").checked
       };
       let saved;
@@ -222,7 +264,9 @@
         <tr><td style="color:var(--text-2)">일자</td><td>${x.start ? esc(x.start) + (x.end && x.end !== x.start ? " ~ " + esc(x.end) : "") : "미정"}</td></tr>
         <tr><td style="color:var(--text-2)">점검관</td><td>${(x.inspectors || []).join(", ") || "미정"}</td></tr>
         ${x.note ? `<tr><td style="color:var(--text-2)">비고</td><td>${esc(x.note)}</td></tr>` : ""}
-        ${x.resultUrl ? `<tr><td style="color:var(--text-2)">결과</td><td><a href="${esc(x.resultUrl)}" target="_blank" rel="noopener">열기 ↗</a></td></tr>` : ""}
+        ${(x.findings || []).length ? `<tr><td style="color:var(--text-2)">결과</td><td>${x.findings.map(f =>
+          `<div style="padding:2px 0"><span class="badge ${FD_BADGE[f.type] || "badge-gray"}">${esc(f.type)}</span> ${esc(f.text)}</div>`).join("")}</td></tr>` : ""}
+        ${x.resultUrl ? `<tr><td style="color:var(--text-2)">결과 링크</td><td><a href="${esc(x.resultUrl)}" target="_blank" rel="noopener">열기 ↗</a></td></tr>` : ""}
       </table>
       <div class="modal-actions"><button class="btn btn-ghost" id="i-close">닫기</button></div>`);
     $("#i-close").onclick = closeModal;
@@ -305,6 +349,7 @@
   /* ─────── 테스트/외부 노출 ─────── */
   window.SemisInspection = {
     CATEGORIES, STATUSES, CAT_COLOR,
+    FINDING_TYPES, FD_BADGE, fdSummary,
     getYear: () => year, setYear: (y) => { year = Number(y) || year; },
     setViewMode: (m) => { if (m === "matrix" || m === "list") viewMode = m; },
     syncCalendar, removeCalendar, moveInsp,

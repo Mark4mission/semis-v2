@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.6.0";
+  const VERSION = "2.6.1";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -265,6 +265,8 @@ const SeMIS = (() => {
     }
     // v2.4: 보안점검 일정 (최초 사용 시 2026 계획 시드)
     if (!Array.isArray(DATA.inspections)) DATA.inspections = seedInspections();
+    // v2.6.1: 점검 결과 유형(findings) 필드 보정
+    DATA.inspections.forEach(x => { if (x && !Array.isArray(x.findings)) x.findings = []; });
     // v2.4: 보안점검 모듈 메뉴 보장 (기존 사용자 메뉴에 자동 삽입)
     if (!DATA.menus.some(m => m && m.type === "module" && m.module === "inspection")) {
       const grp = DATA.menus.find(m => m && m.id === "grp-inspect" && m.type === "group");

@@ -317,7 +317,7 @@ function makeFetchStub(server) {
   {
     const e = makeEnv();
     loginAs(e, "manager");
-    t("R45 대시보드 통계 카드 4개", () => eq(qa(e, ".stat").length, 4));
+    t("R45 대시보드 상단 통계 카드 제거 (v2.6.1)", () => eq(qa(e, ".stat").length, 0));
     t("R46 바로가기(quick) 링크 노출", () => ok(qa(e, ".quick-link").length >= 2));
     t("R47 공지 작성 (리치 에디터 + 살균)", () => {
       q(e, "#btn-add-notice").click();
@@ -1142,8 +1142,43 @@ function makeFetchStub(server) {
     await e.w.SemisCares.renderInto(box, true);
     ok(box.innerHTML.includes("임계치 초과"), "초과 배지");
     ok(q(e, ".cares-cell.exceed"), "초과 셀 강조 (temp 45 > 40)");
-    eq(qa(e, ".cares-cell").length, 8, "8개 지표");
+    eq(qa(e, ".cares-cell").length, 1, "기본: 초과 지표만 표시 (축소 모드)");
     ok(q(e, ".cares-spark"), "스파크라인");
+    // "전체 표시" 토글 → 8개 지표 전체
+    q(e, "#cares-mode").click();
+    await new Promise(r => setTimeout(r, 30));
+    eq(qa(e, ".cares-cell").length, 8, "전체 표시 시 8개 지표");
+    ok(q(e, "#cares-mode").textContent.includes("초과만"), "토글 라벨 전환");
+    e.w.SemisCares.setCfg({ enabled: true });
+    e.Sync.stop();
+  });
+
+  await ta("CA08 전체 정상 시 축소 모드: 그리드 없이 한 줄 안내", async () => {
+    const mkReading = (temp) => ({ document: { fields: {
+      timestamp: { timestampValue: "2026-07-16T10:00:00Z" },
+      temp: { doubleValue: temp }, humidity: { integerValue: "50" },
+      co2: { integerValue: "600" }, pm25: { integerValue: "10" }, pm10: { integerValue: "20" },
+      pm1: { integerValue: "5" }, tvoc: { doubleValue: 0.1 }, hcho: { doubleValue: 0.05 }
+    } } });
+    const stub = (url, opts = {}) => {
+      const u = String(url);
+      if (u.includes(":runQuery")) {
+        const body = JSON.parse(opts.body);
+        const col = body.structuredQuery.from[0].collectionId;
+        if (col === "sensorLogs") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([mkReading(25), mkReading(24)]) });
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      }
+      if (u.includes("sensorThresholds")) return Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+    };
+    const e = makeEnv({ fetch: stub, preLS: { "semis2:caresKey": "test-api-key" } });
+    loginAs(e, "manager");
+    const box = q(e, "#cares-box");
+    await e.w.SemisCares.renderInto(box, true);
+    ok(box.innerHTML.includes("전체 정상"), "정상 배지");
+    eq(qa(e, ".cares-cell").length, 0, "그리드 미표시");
+    ok(q(e, ".cares-allok"), "한 줄 안내");
+    ok(q(e, "#cares-mode"), "전체 표시 버튼 존재");
     e.Sync.stop();
   });
 
@@ -1304,6 +1339,97 @@ function makeFetchStub(server) {
       const inner = links.find(a => (a.getAttribute("href") || "") === "#/contacts");
       ok(inner, "연락망 내부 바로가기");
       ok(!inner.getAttribute("target"), "내부 이동(새 창 아님)");
+    });
+
+    t("CT11 사건별 카드 등급색: ① 노랑 ~ ④ 짙은 빨강 클래스", () => {
+      const e = makeEnv();
+      loginAs(e, "user");
+      withData(e);
+      go(e, "contacts");
+      ok(q(e, ".ct-inc.ct-lv1"), "① 등급색");
+      ok(q(e, ".ct-inc.ct-lv4"), "④ 등급색");
+      eq(qa(e, ".ct-inc.ct-lv2, .ct-inc.ct-lv3").length, 0, "샘플에 없는 등급은 미생성");
+    });
+  }
+
+  /* ══════════ [FD] 보안점검 결과 유형 (v2.6.1) ══════════ */
+  {
+    t("FD01 normalize: 기존 점검에 findings 배열 보정", () => {
+      const e = makeEnv();
+      ok(e.S.data.inspections.every(x => Array.isArray(x.findings)), "전체 findings 배열");
+    });
+
+    t("FD02 점검 폼: 결과 추가/저장 → 데이터 반영 (결과 링크 입력 제거)", () => {
+      const e = makeEnv();
+      loginAs(e, "manager");
+      go(e, "inspection");
+      const target = e.S.data.inspections.find(x => x.target === "프로에스콤");
+      qa(e, ".insp-chip").find(el => el.dataset.insp === target.id).click();
+      ok(!q(e, "#i-url"), "결과 링크 입력 제거됨");
+      ok(q(e, "#i-findings"), "결과 편집 영역");
+      // 결과 2건 추가 (시정조치 1, 관찰사항 1)
+      q(e, "#ifd-add").click();
+      let rows = qa(e, "#i-findings .ifd-row");
+      rows[0].querySelector("select").value = "시정조치";
+      rows[0].querySelector("input").value = "검색장비 캘리브레이션 미실시";
+      q(e, "#ifd-add").click();
+      rows = qa(e, "#i-findings .ifd-row");
+      rows[1].querySelector("select").value = "관찰사항";
+      rows[1].querySelector("input").value = "출입구 CCTV 사각 관찰";
+      q(e, "#i-save").click();
+      const x = e.S.data.inspections.find(i => i.id === target.id);
+      eq(x.findings.length, 2, "2건 저장");
+      eq(x.findings[0].type, "시정조치");
+      eq(x.findings[1].type, "관찰사항");
+      // 빈 내용 행은 저장 시 제외
+      qa(e, ".insp-chip").find(el => el.dataset.insp === target.id).click();
+      q(e, "#ifd-add").click();
+      q(e, "#i-save").click();
+      eq(e.S.data.inspections.find(i => i.id === target.id).findings.length, 2, "빈 행 제외");
+    });
+
+    t("FD03 목록 뷰: 결과 유형 배지 요약 표시", () => {
+      const e = makeEnv();
+      loginAs(e, "manager");
+      const x = e.S.data.inspections.find(i => i.target === "LSG");
+      x.findings = [{ type: "시정조치", text: "a" }, { type: "시정조치", text: "b" }, { type: "개선권고", text: "c" }];
+      e.S.saveSilent();
+      e.w.SemisInspection.setViewMode("list");
+      go(e, "inspection");
+      const row = qa(e, "[data-insp-row]").find(r => r.textContent.includes("LSG"));
+      ok(row.innerHTML.includes("시정2"), "시정조치 2건 요약");
+      ok(row.innerHTML.includes("권고1"), "개선권고 1건 요약");
+      e.w.SemisInspection.setViewMode("matrix");
+    });
+
+    t("FD04 일반 사용자 상세: 결과 내용 표시", () => {
+      const e = makeEnv();
+      const x = e.S.data.inspections.find(i => i.target === "LSG");
+      x.findings = [{ type: "현장시정", text: "보호구역 게이트 즉시 시정" }];
+      e.S.saveSilent();
+      loginAs(e, "user");
+      go(e, "inspection");
+      qa(e, ".insp-chip").find(el => el.dataset.insp === x.id).click();
+      ok(q(e, "#modal-box").innerHTML.includes("현장시정"), "유형 배지");
+      ok(q(e, "#modal-box").innerHTML.includes("보호구역 게이트 즉시 시정"), "내용");
+    });
+
+    t("FD05 대시보드: 결과 유형별 통계 4칸 그리드", () => {
+      const e = makeEnv();
+      const xs = e.S.data.inspections;
+      xs[0].findings = [{ type: "시정조치", text: "a" }, { type: "개선권고", text: "b" }];
+      xs[1].findings = [{ type: "시정조치", text: "c" }, { type: "관찰사항", text: "d" }];
+      e.S.saveSilent();
+      loginAs(e, "user");
+      go(e, "dashboard");
+      const grid = q(e, ".insp-fdgrid");
+      ok(grid, "통계 그리드");
+      eq(qa(e, ".insp-fdcell").length, 4, "4칸 고정");
+      const cells = qa(e, ".insp-fdcell");
+      eq(cells[0].querySelector("b").textContent, "2", "시정조치 2");
+      eq(cells[1].querySelector("b").textContent, "1", "개선권고 1");
+      eq(cells[2].querySelector("b").textContent, "0", "현장시정 0");
+      eq(cells[3].querySelector("b").textContent, "1", "관찰사항 1");
     });
   }
 
