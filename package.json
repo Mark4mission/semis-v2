@@ -1,7 +1,7 @@
 {
   "name": "semis-v2",
   "private": true,
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "에어제타 보안종합정보시스템 SeMIS v2 (정적 웹앱)",
   "type": "commonjs",
   "scripts": {

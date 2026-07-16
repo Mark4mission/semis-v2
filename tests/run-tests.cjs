@@ -316,14 +316,19 @@ function makeFetchStub(server) {
     loginAs(e, "manager");
     t("R45 대시보드 통계 카드 4개", () => eq(qa(e, ".stat").length, 4));
     t("R46 바로가기(quick) 링크 노출", () => ok(qa(e, ".quick-link").length >= 2));
-    t("R47 공지 작성 (모달 폼)", () => {
+    t("R47 공지 작성 (리치 에디터 + 살균)", () => {
       q(e, "#btn-add-notice").click();
+      ok(q(e, "#nb-editor"), "리치 에디터 존재");
+      ok(q(e, "#modal-box").classList.contains("wide"), "넓은 모달");
       q(e, "#f-title").value = "테스트 공지";
-      q(e, "#f-body").value = "본문";
+      q(e, "#nb-editor").innerHTML = '본문 <b>강조</b><script>bad()</script>';
       q(e, "#f-pinned").checked = true;
       q(e, "#f-save").click();
       const n = e.S.data.notices.find(x => x.title === "테스트 공지");
       ok(n && n.pinned === true && n.author === "Tmanager");
+      ok(n.bodyHtml.includes("<b>강조</b>"), "서식 보존");
+      ok(!n.bodyHtml.includes("<script"), "스크립트 제거");
+      eq(n.body, "본문 강조", "텍스트 추출(살균 후)");
     });
     t("R48 공지 제목 미입력 거부", () => {
       const before = e.S.data.notices.length;
@@ -874,6 +879,98 @@ function makeFetchStub(server) {
     });
   }
 
+  /* ══════════ [N] 공지 리치 에디터 / [V2] 캘린더 UI 개선 ══════════ */
+  {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    t("N01 sanitizeHtml: 위험 요소 제거 + 표/서식 보존", () => {
+      const s = e.w.SemisNotice.sanitizeHtml(
+        '<b>a</b><script>x()</script><table class="nb-table"><tbody><tr><td onclick="hack()">c</td></tr></tbody></table><a href="javascript:alert(1)">l</a><img src="https://x/y.png">');
+      ok(s.includes("<b>a</b>"), "서식 보존");
+      ok(s.includes("<table") && s.includes("<td>"), "표 보존");
+      ok(!s.includes("<script"), "script 제거");
+      ok(!s.includes("onclick"), "이벤트핸들러 제거");
+      ok(!s.includes("javascript:"), "javascript: 제거");
+      ok(s.includes('src="https://x/y.png"'), "정상 이미지 보존");
+    });
+    t("N02 공지 HTML 본문 + 첨부파일 렌더", () => {
+      e.S.data.notices.push({
+        id: "nh1", title: "서식공지", body: "중요 표",
+        bodyHtml: '<b>중요</b><script>evil()</script><table class="nb-table"><tbody><tr><td>표</td></tr></tbody></table>',
+        files: [{ name: "지침서.pdf", url: "https://files.example/지침서.pdf", size: 1000 }],
+        pinned: false, author: "t", created: "2026-07-16T00:00:00Z"
+      });
+      e.S.saveSilent(); go(e, "dashboard");
+      const nl = q(e, "#notice-list");
+      ok(nl.querySelector(".notice-html b"), "굵게 렌더");
+      ok(nl.querySelector(".notice-html table"), "표 렌더");
+      ok(!nl.querySelector(".notice-html script"), "script 미렌더");
+      const link = nl.querySelector("a.nb-file");
+      ok(link && link.href.includes("files.example") && link.textContent.includes("지침서.pdf"), "첨부 링크");
+    });
+    t("N03 구버전 텍스트 공지 하위호환 렌더", () => {
+      ok(q(e, "#notice-list").innerHTML.includes("SeMIS v2 오픈 안내"), "텍스트 공지 표시");
+    });
+    t("N04 공지 폼: 첨부 목록 표시/삭제", () => {
+      const n = e.S.data.notices.find(x => x.id === "nh1");
+      e.S.renderView();
+      q(e, `#notice-list [data-edit="${n.id}"]`).click();
+      ok(q(e, "#nb-filelist").innerHTML.includes("지침서.pdf"), "기존 첨부 표시");
+      q(e, '#nb-filelist [data-frm="0"]').click();
+      ok(!q(e, "#nb-filelist").innerHTML.includes("지침서.pdf"), "첨부 삭제(저장 전)");
+      e.S.closeModal();
+    });
+  }
+  await ta("N05 uploadFile: Storage 업로드 경로/공개 URL", async () => {
+    const calls = [];
+    const e = makeEnv({
+      fetch: (url, opts = {}) => { calls.push({ url: String(url), opts }); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) }); }
+    });
+    const f = new e.w.File(["hello"], "보고서 파일.pdf", { type: "application/pdf" });
+    const up = await e.Sync.uploadFile(f, "attach");
+    eq(up.name, "보고서 파일.pdf", "원본 파일명 보존");
+    ok(up.url.includes("/storage/v1/object/public/semis-files/attach/"), "공개 URL");
+    ok(!/[가-힣 ]/.test(up.url), "저장 경로는 ASCII 변환");
+    const call = calls[0];
+    ok(call.url.includes("/storage/v1/object/semis-files/attach/"), "업로드 endpoint");
+    eq(call.opts.method, "POST");
+    eq(call.opts.headers["Content-Type"], "application/pdf");
+    e.Sync.stop();
+  });
+  {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    const C = e.Cal;
+    t("V14 이윤민 이모지 변경(🌸)", () => {
+      eq(C.TEAM.find(t2 => t2.name === "이윤민").emoji, "🌸");
+      ok(C.tagOf("이윤민").includes("🌸"));
+    });
+    t("V15 일 보기: 담당자 중복 표기 제거('최 최상일' 없음)", () => {
+      e.S.data.schedules.push({ id: "dd1", title: "일뷰일정", memo: "", start: "2026-07-16", end: "2026-07-16", allDay: true, time: "", timeEnd: "", color: "blue", done: false, assignee: "최상일", vehicle: false, room: false, reminders: [] });
+      e.S.saveSilent();
+      go(e, "schedule");
+      C.setView("day"); C.setAnchor("2026-07-16"); e.S.renderView();
+      const html = q(e, "#cal-body").innerHTML;
+      ok(html.includes("🛡️ 최상일"), "이모지+이름 배지");
+      ok(!/최\s*최상일/.test(q(e, "#cal-body").textContent), "약자 중복 없음");
+      ok(!q(e, ".ag-chip .chip-tag"), "일 보기 칩 내 태그 숨김");
+    });
+    t("V16 주 보기: 10개 항목 더보기 없이 표시", () => {
+      for (let i = 0; i < 10; i++) e.S.data.schedules.push({ id: "wk" + i, title: "주간항목" + i, memo: "", start: "2026-07-14", end: "2026-07-14", allDay: true, time: "", timeEnd: "", color: "teal", done: false, assignee: "", vehicle: false, room: false, reminders: [] });
+      e.S.saveSilent();
+      C.setView("week"); C.setAnchor("2026-07-14"); e.S.renderView();
+      const cell = qa(e, ".cal-cell").find(c => c.dataset.day === "2026-07-14");
+      eq(cell.querySelectorAll("[data-ev]").length, 10, "10개 모두 표시");
+      ok(!cell.querySelector(".cal-more"), "더보기 없음");
+    });
+    t("V17 월 보기: 5개까지 표시 후 더보기", () => {
+      C.setView("month"); e.S.renderView();
+      const cell = qa(e, ".cal-cell").find(c => c.dataset.day === "2026-07-14");
+      eq(cell.querySelectorAll("[data-ev]").length, 5, "월 5개 표시");
+      ok(cell.querySelector(".cal-more"), "+N개 더보기");
+    });
+  }
+
   /* ══════════ [S] Supabase 동기화 신규 ══════════ */
   await ta("S01 오프라인(fetch 거부) → 폴백 + 데이터 보존", async () => {
     const server = { rows: [], fail: true };
@@ -1055,7 +1152,7 @@ function makeFetchStub(server) {
 
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
-  console.log(`  SeMIS v2.2 테스트: ${passed + failed}건 실행`);
+  console.log(`  SeMIS v2.3 테스트: ${passed + failed}건 실행`);
   console.log(`  ✓ 통과 ${passed}건  ✗ 실패 ${failed}건`);
   console.log("════════════════════════════════════");
   if (failures.length) {

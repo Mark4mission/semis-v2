@@ -109,10 +109,14 @@
       notices.forEach(n => {
         const item = document.createElement("div");
         item.className = "notice-item";
+        const filesHtml = (n.files && n.files.length)
+          ? `<div class="nb-files-view">${n.files.map(f =>
+              `<a class="nb-file" href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>`).join("")}</div>` : "";
         item.innerHTML = `
-          <div class="notice-title">${n.pinned ? '<span class="badge badge-red">고정</span>' : ""}<span>${esc(n.title)}</span></div>
+          <div class="notice-title">${n.pinned ? '<span class="badge badge-red">고정</span>' : ""}${n.files && n.files.length ? "📎" : ""}<span>${esc(n.title)}</span></div>
           <div class="notice-meta">${esc(n.author)} · ${esc(fmtDate(n.created))}</div>
-          <div class="notice-body">${esc(n.body)}
+          <div class="notice-body">${n.bodyHtml ? `<div class="notice-html">${sanitizeHtml(n.bodyHtml)}</div>` : esc(n.body)}
+            ${filesHtml}
             ${canWrite ? `<div style="margin-top:10px;display:flex;gap:6px">
               <button class="btn btn-ghost btn-sm" data-edit="${esc(n.id)}">수정</button>
               <button class="btn btn-danger btn-sm" data-del="${esc(n.id)}">삭제</button></div>` : ""}
@@ -148,26 +152,160 @@
     }
   });
 
+  /* ───── 공지 HTML 살균 (script/이벤트핸들러/javascript: 제거) ───── */
+  function sanitizeHtml(html) {
+    const box = document.createElement("div");
+    box.innerHTML = String(html || "");
+    box.querySelectorAll("script,style,iframe,object,embed,form,link,meta,base").forEach(x => x.remove());
+    box.querySelectorAll("*").forEach(el => {
+      Array.from(el.attributes).forEach(a => {
+        const nm = a.name.toLowerCase();
+        if (nm.indexOf("on") === 0) el.removeAttribute(a.name);
+        else if ((nm === "href" || nm === "src" || nm === "xlink:href") && /^\s*javascript:/i.test(a.value)) el.removeAttribute(a.name);
+      });
+    });
+    return box.innerHTML;
+  }
+  window.SemisNotice = { sanitizeHtml };
+
+  /* ───── 이미지 축소(1400px, JPEG) — 실패 시 원본 유지 ───── */
+  function shrinkImage(file, maxW) {
+    return new Promise((resolve) => {
+      if (!/^image\//.test(file.type) || /gif|svg/.test(file.type) || file.size < 300 * 1024) return resolve(file);
+      let url;
+      try { url = URL.createObjectURL(file); } catch (e) { return resolve(file); }
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, (maxW || 1400) / img.width);
+          const cv = document.createElement("canvas");
+          cv.width = Math.round(img.width * scale);
+          cv.height = Math.round(img.height * scale);
+          cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+          URL.revokeObjectURL(url);
+          cv.toBlob(b => resolve(b ? new File([b], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }) : file), "image/jpeg", 0.82);
+        } catch (e) { resolve(file); }
+      };
+      img.onerror = () => { try { URL.revokeObjectURL(url); } catch (e) {} resolve(file); };
+      img.src = url;
+    });
+  }
+
   function noticeForm(id) {
     const n = id ? D().notices.find(x => x.id === id) : null;
+    let files = n && Array.isArray(n.files) ? n.files.slice() : [];
     openModal(`
       <h3>${n ? "공지 수정" : "새 공지 작성"}</h3>
       <div class="form-row"><label>제목</label><input id="f-title" value="${esc(n ? n.title : "")}" maxlength="120"></div>
-      <div class="form-row"><label>내용</label><textarea id="f-body" rows="6">${esc(n ? n.body : "")}</textarea></div>
+      <div class="form-row"><label>내용</label>
+        <div class="nb-toolbar">
+          <button type="button" data-cmd="bold" title="굵게"><b>B</b></button>
+          <button type="button" data-cmd="italic" title="기울임"><i>I</i></button>
+          <button type="button" data-cmd="underline" title="밑줄"><u>U</u></button>
+          <button type="button" data-cmd="strikeThrough" title="취소선"><s>S</s></button>
+          <span class="nb-sep"></span>
+          <button type="button" data-cmd="insertUnorderedList" title="글머리 목록">•—</button>
+          <button type="button" data-cmd="insertOrderedList" title="번호 목록">1.—</button>
+          <span class="nb-sep"></span>
+          <button type="button" id="nb-table" title="표 삽입 (3×3)">⊞ 표</button>
+          <button type="button" id="nb-img" title="이미지 삽입">🖼 이미지</button>
+          <button type="button" id="nb-link" title="선택 영역에 링크">🔗 링크</button>
+        </div>
+        <div id="nb-editor" class="nb-editor" contenteditable="true"></div>
+        <input type="file" id="nb-imgfile" accept="image/*" style="display:none">
+        <div class="form-hint">서식·표·이미지를 지원합니다. 이미지는 공용 저장소에 업로드되어 모든 사용자에게 표시됩니다.</div></div>
+      <div class="form-row"><label>파일 첨부</label>
+        <div id="nb-filelist" class="nb-files-view"></div>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer">📎 파일 추가 (10MB 이하)
+          <input type="file" id="nb-attach" style="display:none" multiple></label></div>
       <div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
         <input type="checkbox" id="f-pinned" style="width:auto" ${n && n.pinned ? "checked" : ""}> 상단 고정</label></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="f-cancel">취소</button>
         <button class="btn btn-primary" id="f-save">저장</button>
-      </div>`);
+      </div>`, { wide: true });
+
+    const ed = $("#nb-editor");
+    ed.innerHTML = n ? (n.bodyHtml || esc(n.body || "").replace(/\n/g, "<br>")) : "";
+
+    const exec = (cmd, val) => { ed.focus(); try { document.execCommand(cmd, false, val); } catch (e) {} };
+    const insertHTML = (h) => {
+      ed.focus();
+      try { if (!document.execCommand("insertHTML", false, h)) ed.innerHTML += h; }
+      catch (e) { ed.innerHTML += h; }
+    };
+    $$(".nb-toolbar [data-cmd]").forEach(b => {
+      b.onmousedown = (ev) => ev.preventDefault(); // 에디터 선택 영역 유지
+      b.onclick = () => exec(b.dataset.cmd);
+    });
+    $("#nb-table").onclick = () => {
+      const row = "<tr>" + "<td>&nbsp;</td>".repeat(3) + "</tr>";
+      insertHTML(`<table class="nb-table"><tbody>${row.repeat(3)}</tbody></table><p><br></p>`);
+    };
+    $("#nb-link").onclick = () => {
+      let url = "";
+      try { url = window.prompt("링크 주소(URL)를 입력하세요", "https://") || ""; } catch (e) {}
+      if (/^https?:\/\/.+/.test(url)) exec("createLink", url);
+    };
+    $("#nb-img").onclick = () => $("#nb-imgfile").click();
+    $("#nb-imgfile").onchange = async (ev) => {
+      const file = ev.target.files[0];
+      ev.target.value = "";
+      if (!file) return;
+      toast("이미지 처리 중…");
+      try {
+        const slim = await shrinkImage(file, 1400);
+        if (!window.SemisSync) throw new Error("no-sync");
+        const up = await SemisSync.uploadFile(slim, "notices");
+        insertHTML(`<img src="${esc(up.url)}" alt="${esc(file.name)}">`);
+        toast("이미지가 삽입되었습니다.");
+      } catch (err) {
+        // 오프라인 폴백: 문서 내장 (500KB 이하만)
+        try {
+          const slim = await shrinkImage(file, 800);
+          if (slim.size > 500 * 1024) throw new Error("too big");
+          const reader = new FileReader();
+          reader.onload = () => { insertHTML(`<img src="${reader.result}" alt="">`); toast("오프라인: 이미지를 문서에 내장했습니다."); };
+          reader.onerror = () => toast("이미지 삽입 실패", true);
+          reader.readAsDataURL(slim);
+        } catch (e2) { toast("이미지 삽입 실패 — 네트워크를 확인하세요.", true); }
+      }
+    };
+
+    const renderFileList = () => {
+      $("#nb-filelist").innerHTML = files.map((f, i) =>
+        `<span class="nb-file">📎 ${esc(f.name)} <button type="button" class="mt-btn danger" data-frm="${i}" title="첨부 삭제">✕</button></span>`).join("") ||
+        '<span class="form-hint">첨부된 파일이 없습니다.</span>';
+      $$("#nb-filelist [data-frm]").forEach(b => b.onclick = () => { files.splice(Number(b.dataset.frm), 1); renderFileList(); });
+    };
+    renderFileList();
+    $("#nb-attach").onchange = async (ev) => {
+      const list = Array.from(ev.target.files || []);
+      ev.target.value = "";
+      for (const f of list) {
+        if (f.size > 10 * 1024 * 1024) { toast(f.name + ": 10MB를 초과합니다.", true); continue; }
+        if (!window.SemisSync) { toast("오프라인에서는 파일을 첨부할 수 없습니다.", true); break; }
+        try {
+          toast("업로드 중: " + f.name);
+          const up = await SemisSync.uploadFile(f, "attach");
+          files.push(up); renderFileList();
+          toast("첨부되었습니다: " + f.name);
+        } catch (err) { toast("업로드 실패: " + f.name, true); }
+      }
+    };
+
     $("#f-cancel").onclick = closeModal;
     $("#f-save").onclick = () => {
       const title = $("#f-title").value.trim();
       if (!title) { toast("제목을 입력하세요.", true); return; }
-      const body = $("#f-body").value.trim();
+      const bodyHtml = sanitizeHtml(ed.innerHTML);
+      const tmp = document.createElement("div");
+      tmp.innerHTML = bodyHtml;
+      const body = (tmp.textContent || "").trim(); // 검색/구버전 호환용 텍스트 (살균 후 추출)
       const pinned = $("#f-pinned").checked;
-      if (n) Object.assign(n, { title, body, pinned });
-      else D().notices.push({ id: uid("n"), title, body, pinned, author: SeMIS.user.name, created: new Date().toISOString() });
+      if (n) Object.assign(n, { title, body, bodyHtml, pinned, files });
+      else D().notices.push({ id: uid("n"), title, body, bodyHtml, pinned, files,
+        author: SeMIS.user.name, created: new Date().toISOString() });
       SeMIS.save(); closeModal(); SeMIS.renderView(); toast("저장되었습니다.");
     };
   }

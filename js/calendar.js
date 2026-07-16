@@ -41,7 +41,7 @@
     { name: "박철성", title: "항공보안파트장", emoji: "🧭", short: "박" },
     { name: "최상일", title: "프로",           emoji: "🛡️", short: "최" },
     { name: "이은우", title: "프로",           emoji: "✈️", short: "은" },
-    { name: "이윤민", title: "프로",           emoji: "🔒", short: "윤" }
+    { name: "이윤민", title: "프로",           emoji: "🌸", short: "윤" }
   ];
   const memberOf = (name) => TEAM.find(t => t.name === name);
   const tagOf = (name) => {
@@ -265,7 +265,7 @@
   }
 
   /* ─────── 칩(이벤트 조각) 렌더 ─────── */
-  function chipHTML(e, dayIso, canWrite, compact) {
+  function chipHTML(e, dayIso, canWrite, compact, noTag) {
     const isGcal = !e.id && e.gcalId;
     const cont = (e.start < dayIso ? "‹" : "");
     const cont2 = ((e.end || e.start) > dayIso ? "›" : "");
@@ -284,7 +284,7 @@
       ${canWrite ? `<span class="chip-check" data-donetoggle="${esc(e.id)}" title="완료 표시">${e.done ? "✓" : "○"}</span>` : (e.done ? '<span class="chip-check">✓</span>' : "")}
       ${timeTxt}
       <span class="chip-title">${cont}${icons}${remIco}${esc(e.title)}${cont2}</span>
-      ${e.assignee ? `<span class="chip-tag" title="${esc(e.assignee)}">${esc(tagOf(e.assignee))}</span>` : ""}
+      ${!noTag && e.assignee ? `<span class="chip-tag" title="${esc(e.assignee)}">${esc(tagOf(e.assignee))}</span>` : ""}
       ${canWrite && isLastDay && !compact ? `<span class="chip-resize" draggable="true" data-resize="${esc(e.id)}" title="드래그하여 기간 조정">⇥</span>` : ""}
     </div>`;
   }
@@ -321,15 +321,18 @@
     const evs = eventsOnDay(anchor);
     const alldays = evs.filter(e => e.allDay);
     const timed = evs.filter(e => !e.allDay);
-    const row = (e) => `
+    const row = (e) => {
+      const m = memberOf(e.assignee);
+      return `
       <div class="cal-agenda-row">
         <div class="ag-time">${e.allDay ? "종일" : esc(e.time || "") + (e.timeEnd ? "~" + esc(e.timeEnd) : "")}</div>
-        <div class="ag-chip">${chipHTML(e, anchor, canWrite && !!e.id, false)}
+        <div class="ag-chip">${chipHTML(e, anchor, canWrite && !!e.id, false, true)}
           ${e.vehicle ? '<span class="badge badge-amber">🚗 차량</span>' : ""}
           ${e.room ? '<span class="badge badge-blue">🏢 회의실</span>' : ""}
-          ${e.assignee ? `<span class="badge badge-gray">${esc(tagOf(e.assignee))} ${esc(e.assignee)}</span>` : ""}
+          ${e.assignee ? `<span class="badge badge-gray">${m ? m.emoji + " " : ""}${esc(e.assignee)}</span>` : ""}
           ${e.memo ? `<div class="ag-memo">${esc(e.memo)}</div>` : ""}</div>
       </div>`;
+    };
     return `<div class="cal-dayview" data-day="${esc(anchor)}">
       ${alldays.length ? `<div class="cal-sec-label">종일 / 기간</div>` + alldays.map(row).join("") : ""}
       ${timed.length ? `<div class="cal-sec-label">시간 일정</div>` + timed.map(row).join("") : ""}
@@ -571,12 +574,12 @@
       // 본문
       const body = $("#cal-body");
       if (view === "day") body.innerHTML = dayHTML(canWrite);
-      else if (view === "week") body.innerHTML = gridHTML(daysRange(startOfWeek(anchor), 7), null, canWrite, 8);
-      else if (view === "2week") body.innerHTML = gridHTML(daysRange(startOfWeek(anchor), 14), null, canWrite, 5);
+      else if (view === "week") body.innerHTML = gridHTML(daysRange(startOfWeek(anchor), 7), null, canWrite, 12);
+      else if (view === "2week") body.innerHTML = gridHTML(daysRange(startOfWeek(anchor), 14), null, canWrite, 10);
       else if (view === "year") body.innerHTML = yearHTML();
       else {
         const first = anchor.slice(0, 8) + "01";
-        body.innerHTML = gridHTML(daysRange(startOfWeek(first), 42), anchor.slice(0, 7), canWrite, 4);
+        body.innerHTML = gridHTML(daysRange(startOfWeek(first), 42), anchor.slice(0, 7), canWrite, 5);
       }
 
       /* ── 툴바 ── */

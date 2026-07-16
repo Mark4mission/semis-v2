@@ -236,6 +236,22 @@
     }, DEBOUNCE_MS);
   }
 
+  /* ─── 파일 업로드 (Supabase Storage, 공지 첨부/이미지용) ─── */
+  async function uploadFile(file, prefix) {
+    if (typeof fetch === "undefined") throw new Error("offline");
+    const safe = String(file.name || "file").replace(/[^A-Za-z0-9._-]/g, "_").slice(-80) || "file";
+    const path = (prefix || "files") + "/" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + "_" + safe;
+    const res = await fetch(SUPA_URL + "/storage/v1/object/semis-files/" + path, {
+      method: "POST",
+      headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY,
+                 "Content-Type": file.type || "application/octet-stream" },
+      body: file
+    });
+    if (!res.ok) throw new Error("upload " + res.status);
+    return { name: file.name, size: file.size || 0,
+             url: SUPA_URL + "/storage/v1/object/public/semis-files/" + path };
+  }
+
   /* ─── 수동 동기화 ─── */
   async function syncNow() {
     if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
@@ -271,7 +287,7 @@
   }
 
   window.SemisSync = {
-    init, stop, syncNow,
+    init, stop, syncNow, uploadFile,
     push, pull, applyRemote,
     dirtyKeys, pendingKeys, snapAll,
     get status() { return status; },

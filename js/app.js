@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.2.0";
+  const VERSION = "2.3.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -296,13 +296,17 @@ const SeMIS = (() => {
   }
 
   /* ─────────── 모달 ─────────── */
-  function openModal(html) {
-    $("#modal-box").innerHTML = html;
+  function openModal(html, opts) {
+    const box = $("#modal-box");
+    box.classList.toggle("wide", !!(opts && opts.wide));
+    box.innerHTML = html;
     $("#modal-overlay").classList.remove("hidden");
   }
   function closeModal() {
     $("#modal-overlay").classList.add("hidden");
-    $("#modal-box").innerHTML = "";
+    const box = $("#modal-box");
+    box.classList.remove("wide");
+    box.innerHTML = "";
   }
   function confirmModal(msg, onOk) {
     openModal(
