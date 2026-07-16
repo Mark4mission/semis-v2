@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.3.0";
+  const VERSION = "2.4.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -78,8 +78,11 @@ const SeMIS = (() => {
       a.date === b.date ? String(a.at).localeCompare(String(b.at)) : a.date.localeCompare(b.date));
   }
   function secCurrent() {
-    const past = levelSorted().filter(e => e.date <= todayStr());
-    return past.length ? past[past.length - 1] : { level: "평시", date: "", note: "" };
+    // 시작일 도래 + (종료일 없음 or 종료일 미경과) 항목 중 최신 적용.
+    // 기간형 등급(예: 행사 경계)이 만료되면 이전의 무기한 등급으로 자동 복귀.
+    const t = todayStr();
+    const active = levelSorted().filter(e => e.date <= t && (!e.end || e.end >= t));
+    return active.length ? active[active.length - 1] : { level: "평시", date: "", end: "", note: "" };
   }
   function secNext() {
     return levelSorted().find(e => e.date > todayStr()) || null;
@@ -112,7 +115,8 @@ const SeMIS = (() => {
       lk("br-officer", "지점 보안담당자", "👥", "https://docs.google.com/spreadsheets/d/15Qvf5NgdeyfIBBLzFc3BtTGE6kQse-_HTb9u4PvzHt0/edit?usp=sharing", "grp-branch", { vis: "mgr" }),
 
       g("grp-inspect", "보안 점검"),
-      lk("insp-plan", "보안점검 일정", "🗓️", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80-%EC%9D%BC%EC%A0%95", "grp-inspect"),
+      m("insp-mgmt", "보안점검 일정관리", "🕵️", "inspection", "all", "grp-inspect"),
+      lk("insp-plan", "보안점검 일정 (구버전)", "🗓️", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80-%EC%9D%BC%EC%A0%95", "grp-inspect"),
       lk("insp-cabin", "기내 보안점검", "✈️", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EC%A0%90%EA%B2%80%EA%B8%B0%EB%A1%9D-%EB%AA%A8%EB%8B%88%ED%84%B0%EB%A7%81/%EA%B8%B0%EB%82%B4-%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80", "grp-inspect"),
       lk("insp-daily", "일일 보안점검", "🙆", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EC%A0%90%EA%B2%80%EA%B8%B0%EB%A1%9D-%EB%AA%A8%EB%8B%88%ED%84%B0%EB%A7%81/%EC%9D%BC%EC%9D%BC-%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80", "grp-inspect"),
 
@@ -157,8 +161,44 @@ const SeMIS = (() => {
       pwOverrides: {},   // { userId: hash }
       customUsers: [],   // [{id, name, role, hash}]
       schedules: [],     // v2.2: [{id,title,memo,start,end,allDay,time,timeEnd,color,done,assignee,vehicle,room,reminders,gcalId?}]
-      gcal: { enabled: false, calendarId: "airzetaavsec@gmail.com", apiKey: "" }
+      gcal: { enabled: false, calendarId: "airzetaavsec@gmail.com", apiKey: "" },
+      inspections: seedInspections() // v2.4: 보안점검 일정
     };
+  }
+
+  /* ─────── 보안점검 2026 계획 시드 (기존 구글시트 이관) ───────
+     id는 고정값 — 여러 브라우저가 동시에 시드해도 동일 데이터가 되어 병합 충돌 없음 */
+  function seedInspections() {
+    const mk = (id, category, target, month, inspectors, start, end) => ({
+      id, year: 2026, category, target, month,
+      inspectors: inspectors || [], start: start || "", end: end || "",
+      status: "계획", note: "", resultUrl: "", linkCal: false
+    });
+    return [
+      mk("i2601", "국내정기", "프로에스콤", 5, ["최상일", "이은우"]),
+      mk("i2602", "국내정기", "LSG", 5, ["최상일", "이은우"]),
+      mk("i2603", "국내정기", "정비고", 9, ["이은우"]),
+      mk("i2604", "국내정기", "ICNKF", 10, []),
+      mk("i2605", "불시평가", "항공기 보안", 4, ["최상일"]),
+      mk("i2606", "불시평가", "케이터링", 5, ["최상일", "이은우"]),
+      mk("i2607", "불시평가", "프로에스콤", 5, ["최상일", "이은우"]),
+      mk("i2608", "불시평가", "화물청사", 9, []),
+      mk("i2609", "해외공항", "BKKSU", 3, ["TAZ", "최상일"]),
+      mk("i2610", "해외공항", "FRASF", 7, ["최상일", "이윤민"]),
+      mk("i2611", "해외공항", "ALASU", 7, ["이윤민", "최상일"]),
+      mk("i2612", "해외공항", "SFOSF", 8, ["최상일", "이은우"]),
+      mk("i2613", "해외공항", "MILSF", 9, ["TAZ", "이은우"]),
+      mk("i2614", "해외공항", "SHASF", 9, ["최상일", "이은우"]),
+      mk("i2615", "해외공항", "HANSF", 9, []),
+      mk("i2616", "해외공항", "ATLSF", 10, ["최상일", "이은우"]),
+      mk("i2617", "해외공항", "YNTSF", 10, ["TAZ", "이은우"]),
+      mk("i2618", "해외공항", "HKGSF", 10, []),
+      mk("i2619", "해외공항", "CHISF", 11, ["이윤민", "TAZ"]),
+      mk("i2620", "해외공항", "DFWSF", 11, ["이윤민", "TAZ"]),
+      mk("i2621", "주요일정", "밀라노 동계올림픽", 2, [], "2026-02-06", "2026-02-22"),
+      mk("i2622", "주요일정", "FIFA 월드컵", 6, [], "2026-06-11", "2026-07-19"),
+      mk("i2623", "주요일정", "안전심사팀 내부심사", 8, [])
+    ];
   }
 
   let DATA = null;
@@ -168,6 +208,15 @@ const SeMIS = (() => {
       if (raw) { DATA = JSON.parse(raw); }
     } catch (e) { DATA = null; }
     if (!DATA) DATA = freshData();
+    normalizeData();
+    save();
+  }
+
+  /* 데이터 정규화/마이그레이션 (idempotent).
+     load() 및 동기화 pull/원격 반영 이후에도 호출되어, 서버의 구버전 데이터가
+     로컬 마이그레이션을 되돌리지 않도록 보장. 변경 여부를 반환. */
+  function normalizeData() {
+    const before = JSON.stringify(DATA);
     if (!Array.isArray(DATA.menus)) DATA.menus = defaultMenus();
     // 필드 보정 (구버전 데이터 마이그레이션 대비)
     DATA.notices = DATA.notices || [];
@@ -210,7 +259,18 @@ const SeMIS = (() => {
     if (!DATA.gcal || typeof DATA.gcal !== "object") {
       DATA.gcal = { enabled: false, calendarId: "airzetaavsec@gmail.com", apiKey: "" };
     }
-    save();
+    // v2.4: 보안점검 일정 (최초 사용 시 2026 계획 시드)
+    if (!Array.isArray(DATA.inspections)) DATA.inspections = seedInspections();
+    // v2.4: 보안점검 모듈 메뉴 보장 (기존 사용자 메뉴에 자동 삽입)
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "inspection")) {
+      const grp = DATA.menus.find(m => m && m.id === "grp-inspect" && m.type === "group");
+      const children = grp ? DATA.menus.filter(m => m && m.parent === "grp-inspect") : [];
+      const seq = children.length ? Math.min.apply(null, children.map(c => c.seq || 0)) - 0.5
+        : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
+      DATA.menus.push({ id: "insp-mgmt", seq, type: "module", label: "보안점검 일정관리",
+        icon: "🕵️", module: "inspection", vis: "all", parent: grp ? "grp-inspect" : null });
+    }
+    return JSON.stringify(DATA) !== before;
   }
   const saveHooks = [];
   function onSave(fn) { saveHooks.push(fn); }
@@ -425,7 +485,8 @@ const SeMIS = (() => {
     b.dataset.level = cur.level;
     b.textContent = "보안등급 · " + cur.level;
     b.title = "국가 항공보안등급: " + cur.level +
-      (cur.note ? " — " + cur.note : "") + (cur.date ? " (" + cur.date + "~)" : "") +
+      (cur.note ? " — " + cur.note : "") +
+      (cur.date ? " (" + cur.date + (cur.end ? " ~ " + cur.end : " ~") + ")" : "") +
       (nxt ? " / 예약: " + nxt.date + "부터 [" + nxt.level + "]" : "");
   }
 
@@ -488,7 +549,7 @@ const SeMIS = (() => {
   return {
     boot, registerModule, navigate,
     get data() { return DATA; },
-    save, load, onSave, saveSilent,
+    save, load, onSave, saveSilent, normalizeData,
     get user() { return currentUser; },
     allUsers, isAdmin, roleRank, canSee,
     pwHash, sha256,

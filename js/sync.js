@@ -17,7 +17,7 @@
   const REST = SUPA_URL + "/rest/v1/" + TABLE;
   const HEADERS = { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json" };
 
-  const SYNC_KEYS = ["menus", "notices", "schedules", "levelHistory", "pwOverrides", "customUsers", "gcal"];
+  const SYNC_KEYS = ["menus", "notices", "schedules", "levelHistory", "pwOverrides", "customUsers", "gcal", "inspections"];
   const LS_PENDING = "semis2:pendingSync";
   const LS_FORCE = "semis2:forcePush";
   const CLIENT_ID = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -134,9 +134,13 @@
       }
       snapshots[row.key] = remote;
     });
+    // 서버 데이터 반영 후 정규화 — 구버전 서버 데이터가 로컬 마이그레이션(신규 메뉴/필드)을
+    // 되돌리지 않도록 보정하고, 보정분은 dirty로 잡혀 서버에 push됨
+    try { if (SeMIS.normalizeData && SeMIS.normalizeData()) changed = true; } catch (e) {}
     // 서버에 없는 컬렉션은 로컬 데이터로 시드
     const missing = SYNC_KEYS.filter(k => !present[k]);
-    const toPush = force ? SYNC_KEYS.slice() : missing.concat(pend.filter(k => present[k]));
+    const toPush = force ? SYNC_KEYS.slice()
+      : Array.from(new Set(missing.concat(pend.filter(k => present[k]), dirtyKeys())));
     if (changed) {
       SeMIS.saveSilent();
       rerender();
@@ -163,6 +167,8 @@
     if (remote === canon(D()[key])) { snapshots[key] = remote; return false; }
     D()[key] = value;
     snapshots[key] = remote;
+    // 원격 반영 후 정규화 — 보정이 생기면 디바운스 push로 서버에 반영 (idempotent라 루프 없음)
+    try { if (SeMIS.normalizeData && SeMIS.normalizeData()) queuePush(); } catch (e) {}
     SeMIS.saveSilent();
     rerender();
     return true;

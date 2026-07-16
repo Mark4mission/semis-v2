@@ -14,6 +14,8 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), "utf8");
 const appJS = read("js/app.js");
 const modJS = read("js/modules.js");
 const calJS = read("js/calendar.js");
+const inspJS = read("js/inspection.js");
+const caresJS = read("js/cares.js");
 const syncJS = read("js/sync.js");
 const HTML = read("index.html").replace(/<script[\s\S]*?<\/script>/g, "");
 
@@ -44,7 +46,7 @@ function makeEnv(opts = {}) {
   if (opts.preLS) Object.entries(opts.preLS).forEach(([k, v]) => w.localStorage.setItem(k, v));
   if (opts.fetch) w.fetch = opts.fetch;
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + caresJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) S.boot();
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -879,6 +881,237 @@ function makeFetchStub(server) {
     });
   }
 
+  /* ══════════ [L] 보안등급 기간 (v2.4) ══════════ */
+  {
+    const e = makeEnv();
+    const today = todayOf(e);
+    t("L01 기간형 등급 만료 → 이전 무기한 등급 자동 복귀", () => {
+      e.S.data.levelHistory.push(
+        { id: "b1", date: today, end: "", level: "관심", at: "9998" },              // 무기한 기준 등급
+        { id: "b2", date: "2020-06-01", end: "2020-06-07", level: "경계", note: "지난 행사", at: "8001" } // 만료
+      );
+      eq(e.S.secCurrent().level, "관심", "만료된 경계 무시");
+    });
+    t("L02 기간형 등급 활성(종료일 미경과) → 적용", () => {
+      e.S.data.levelHistory.push({ id: "b3", date: today, end: today, level: "주의", note: "당일 행사", at: "9999" });
+      eq(e.S.secCurrent().level, "주의");
+      eq(e.S.secCurrent().end, today);
+    });
+    t("L03 등급 변경 폼: 종료일 입력/역순 거부", () => {
+      loginAs(e, "manager");
+      q(e, "#btn-edit-level").click();
+      ok(q(e, "#f-end"), "종료일 입력 존재");
+      const before = e.S.data.levelHistory.length;
+      q(e, "#f-level").value = "경계";
+      q(e, "#f-date").value = "2099-05-10";
+      q(e, "#f-end").value = "2099-05-01"; // 역순
+      q(e, "#f-save").click();
+      eq(e.S.data.levelHistory.length, before, "역순 거부");
+      q(e, "#f-end").value = "2099-05-20";
+      q(e, "#f-save").click();
+      const last = e.S.data.levelHistory[e.S.data.levelHistory.length - 1];
+      eq(last.date, "2099-05-10"); eq(last.end, "2099-05-20"); eq(last.level, "경계");
+      ok(e.S.secNext() && e.S.secNext().level === "경계", "예약 인식");
+    });
+    t("L04 이력 UI: 기간 표시 + 세로 정렬 + 담당자명 미표시", () => {
+      e.S.renderView();
+      const rows = qa(e, "#level-box .lv-row");
+      ok(rows.length >= 3, "lv-row 그리드 행");
+      ok(rows.every(r => r.querySelector(".lv-badge")), "고정폭 배지 열");
+      ok(!q(e, "#level-box").textContent.includes("시스템관리자"), "변경자 표기 제거");
+      ok(qa(e, "#level-box .lv-range").some(r => r.textContent.includes("~")), "기간 표기");
+      ok(q(e, "#level-box .lv-row.expired"), "만료 이력 흐림 처리");
+    });
+  }
+
+  /* ══════════ [I] 보안점검 일정관리 (v2.4) ══════════ */
+  {
+    const e = makeEnv();
+    t("I01 2026 계획 시드 (시트 이관: 4/4/12/3)", () => {
+      const ins = e.S.data.inspections;
+      eq(ins.filter(x => x.category === "국내정기").length, 4);
+      eq(ins.filter(x => x.category === "불시평가").length, 4);
+      eq(ins.filter(x => x.category === "해외공항").length, 12);
+      eq(ins.filter(x => x.category === "주요일정").length, 3);
+      ok(ins.every(x => x.year === 2026 && x.status === "계획"));
+      ok(ins.some(x => x.target === "FIFA 월드컵" && x.start === "2026-06-11" && x.end === "2026-07-19"));
+    });
+    t("I02 메뉴 자동 등록 (보안 점검 그룹, idempotent)", () => {
+      const m = e.S.data.menus.filter(x => x.type === "module" && x.module === "inspection");
+      eq(m.length, 1);
+      eq(m[0].parent, "grp-inspect");
+      e.S.normalizeData(); e.S.normalizeData();
+      eq(e.S.data.menus.filter(x => x.module === "inspection").length, 1, "중복 없음");
+    });
+    loginAs(e, "manager");
+    e.Insp = e.w.SemisInspection;
+    e.Insp.setYear(2026);
+    t("I03 연간 매트릭스 렌더 (12개월 + 계, 칩 23개)", () => {
+      go(e, "inspection");
+      ok(q(e, ".insp-matrix"), "매트릭스 테이블");
+      eq(qa(e, ".insp-matrix thead th").length, 14, "구분+12개월+계");
+      eq(qa(e, ".insp-chip").length, 23, "점검 칩 수");
+      eq(qa(e, ".insp-matrix tbody tr").length, 4, "구분 4행");
+    });
+    t("I04 점검 등록/수정 (팀 점검관 토글 + 외부 점검관)", () => {
+      const before = e.S.data.inspections.length;
+      q(e, "#insp-add").click();
+      q(e, "#i-cat").value = "국내정기";
+      q(e, "#i-month").value = "8";
+      q(e, "#i-target").value = "테스트지점";
+      qa(e, '#i-team [data-insp-t]').find(b => b.dataset.inspT === "최상일").click();
+      q(e, "#i-extra").value = "TAZ";
+      q(e, "#i-save").click();
+      eq(e.S.data.inspections.length, before + 1);
+      const x = e.S.data.inspections.find(i => i.target === "테스트지점");
+      eq(x.month, 8); eq(x.inspectors.join(","), "최상일,TAZ");
+      // 수정: 상태 완료
+      e.S.renderView();
+      qa(e, `[data-insp="${x.id}"]`)[0].click();
+      q(e, "#i-status").value = "완료";
+      q(e, "#i-save").click();
+      eq(e.S.data.inspections.find(i => i.id === x.id).status, "완료");
+    });
+    t("I05 캘린더 연동: 일자 확정 → 일정 생성/완료/삭제 반영", () => {
+      q(e, "#insp-add").click();
+      q(e, "#i-cat").value = "해외공항";
+      q(e, "#i-target").value = "NRTKE";
+      q(e, "#i-start").value = "2026-09-14";
+      q(e, "#i-end").value = "2026-09-16";
+      q(e, "#i-linkcal").checked = true;
+      q(e, "#i-save").click();
+      const x = e.S.data.inspections.find(i => i.target === "NRTKE");
+      eq(x.month, 9, "시작일에서 월 자동 산출");
+      const sch = e.S.data.schedules.find(s => s.id === "insp_" + x.id);
+      ok(sch, "연동 일정 생성");
+      eq(sch.start, "2026-09-14"); eq(sch.end, "2026-09-16");
+      eq(sch.title, "[점검] NRTKE");
+      // 완료 → 일정 done
+      e.S.renderView();
+      qa(e, `[data-insp="${x.id}"]`)[0].click();
+      q(e, "#i-status").value = "완료";
+      q(e, "#i-save").click();
+      ok(e.S.data.schedules.find(s => s.id === "insp_" + x.id).done, "완료 반영");
+      // 삭제 → 일정 제거
+      e.S.renderView();
+      qa(e, `[data-insp="${x.id}"]`)[0].click();
+      q(e, "#i-del").click();
+      q(e, "#modal-box [data-act=ok]").click();
+      ok(!e.S.data.schedules.some(s => s.id === "insp_" + x.id), "연동 일정 제거");
+    });
+    t("I06 목록 뷰 렌더", () => {
+      e.Insp.setViewMode("list");
+      e.S.renderView();
+      ok(qa(e, "[data-insp-row]").length >= 23, "목록 행");
+      ok(q(e, "#insp-body").textContent.includes("BKKSU"));
+      e.Insp.setViewMode("matrix");
+    });
+    t("I07 대시보드 실적 카드", () => {
+      go(e, "dashboard");
+      const box = q(e, "#insp-box");
+      ok(box, "실적 카드");
+      ok(/\d+ \/ \d+건/.test(box.textContent.replace(/\s+/g, " ")) || box.innerHTML.includes("건"), "계획 대비 완료");
+      ok(q(e, ".insp-bar-fill"), "진행 바");
+    });
+    t("I08 일반 사용자: 등록 버튼 없음 + 상세 열람", () => {
+      const e2 = makeEnv();
+      loginAs(e2, "user");
+      go(e2, "inspection");
+      ok(!q(e2, "#insp-add"), "등록 버튼 없음");
+      qa(e2, ".insp-chip")[0].click();
+      ok(q(e2, "#modal-box").innerHTML.includes("구분"), "읽기 전용 상세");
+      ok(!q(e2, "#i-save"), "저장 버튼 없음");
+    });
+  }
+
+  /* ══════════ [CA] CARES 환경센서 위젯 (v2.4) ══════════ */
+  {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    const CA = e.w.SemisCares;
+    t("CA01 미설정 시 안내 표시 (대시보드 카드)", () => {
+      const box = q(e, "#cares-box");
+      ok(box, "CARES 카드 존재");
+      ok(box.innerHTML.includes("연동이 설정되지"), "설정 안내");
+    });
+    t("CA02 Firestore REST 값 파서", () => {
+      eq(CA.parseFs({ doubleValue: 3.5 }), 3.5);
+      eq(CA.parseFs({ integerValue: "42" }), 42);
+      eq(CA.parseFs({ stringValue: "x" }), "x");
+      eq(CA.parseFs({ nullValue: null }), null);
+      const m = CA.parseFs({ mapValue: { fields: { max: { integerValue: "40" }, min: { nullValue: null } } } });
+      eq(m.max, 40); eq(m.min, null);
+      const a = CA.parseFs({ arrayValue: { values: [{ integerValue: "1" }, { integerValue: "2" }] } });
+      eq(a.join(","), "1,2");
+    });
+    t("CA03 임계치 판정 (min/max/null)", () => {
+      eq(CA.isExceed(45, { min: 0, max: 40 }), true, "상한 초과");
+      eq(CA.isExceed(-5, { min: 0, max: 40 }), true, "하한 미달");
+      eq(CA.isExceed(25, { min: 0, max: 40 }), false);
+      eq(CA.isExceed(999, { min: null, max: null }), false, "임계 없음");
+      eq(CA.isExceed(null, { min: 0, max: 40 }), false, "값 없음");
+    });
+    t("CA04 계정 설정은 기기 로컬 전용 (동기화 제외)", () => {
+      CA.setCfg({ enabled: true, email: "a@b.c", pw: "x" });
+      ok(e.w.localStorage.getItem("semis2:cares"), "localStorage 저장");
+      ok(!e.Sync.SYNC_KEYS.includes("cares"), "SYNC_KEYS 미포함");
+      ok(!JSON.parse(e.w.localStorage.getItem("semis2:data")).cares, "공용 데이터에 없음");
+      CA.setCfg({});
+    });
+    t("CA05 스파크라인 SVG 생성 (임계선 포함)", () => {
+      const svg = CA.sparkSVG([10, 20, 30, 25], { min: null, max: 28 });
+      ok(svg.includes("<polyline"), "폴리라인");
+      ok(svg.includes("stroke-dasharray"), "임계 점선");
+      eq(CA.sparkSVG([5], null), "", "데이터 부족 시 빈 값");
+    });
+  }
+  await ta("CA06 위젯 렌더: 임계치 초과 강조 (fetch 스텁)", async () => {
+    const mkReading = (temp) => ({ document: { fields: {
+      timestamp: { timestampValue: "2026-07-16T10:00:00Z" },
+      temp: { doubleValue: temp }, humidity: { integerValue: "50" },
+      co2: { integerValue: "600" }, pm25: { integerValue: "10" }, pm10: { integerValue: "20" },
+      pm1: { integerValue: "5" }, tvoc: { doubleValue: 0.1 }, hcho: { doubleValue: 0.05 }
+    } } });
+    const stub = (url, opts = {}) => {
+      const u = String(url);
+      if (u.includes("identitytoolkit")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ idToken: "tk", expiresIn: "3600" }) });
+      if (u.includes(":runQuery")) {
+        const body = JSON.parse(opts.body);
+        const col = body.structuredQuery.from[0].collectionId;
+        if (col === "sensorLogs") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([mkReading(45), mkReading(44)]) });
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      }
+      if (u.includes("sensorThresholds")) return Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+    };
+    const e = makeEnv({ fetch: stub });
+    loginAs(e, "manager");
+    e.w.SemisCares.setCfg({ enabled: true, email: "v@a.com", pw: "p" });
+    const box = q(e, "#cares-box");
+    await e.w.SemisCares.renderInto(box, true);
+    ok(box.innerHTML.includes("임계치 초과"), "초과 배지");
+    ok(q(e, ".cares-cell.exceed"), "초과 셀 강조 (temp 45 > 40)");
+    eq(qa(e, ".cares-cell").length, 8, "8개 지표");
+    ok(q(e, ".cares-spark"), "스파크라인");
+    e.Sync.stop();
+  });
+
+  await ta("S14 구버전 서버 데이터 pull 후에도 신규 모듈 메뉴/시드 유지", async () => {
+    const server = {
+      fail: false,
+      rows: [{ key: "menus",
+        value: [{ id: "m1", seq: 0, type: "module", label: "대시보드", module: "dashboard" }],
+        updated_at: "2026-07-16T00:00:00Z", updated_by: "old-client" }]
+    };
+    const e = makeEnv({ fetch: makeFetchStub(server) });
+    await e.Sync.init();
+    ok(e.S.data.menus.some(m => m.module === "inspection"), "normalize로 점검 메뉴 복원");
+    const srvMenus = server.rows.find(r => r.key === "menus").value;
+    ok(srvMenus.some(m => m.module === "inspection"), "복원분 서버 push");
+    ok(server.rows.some(r => r.key === "inspections"), "점검 시드 서버 업로드");
+    e.Sync.stop();
+  });
+
   /* ══════════ [N] 공지 리치 에디터 / [V2] 캘린더 UI 개선 ══════════ */
   {
     const e = makeEnv();
@@ -999,7 +1232,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "customUsers,gcal,levelHistory,menus,notices,pwOverrides,schedules");
+    eq(keys, "customUsers,gcal,inspections,levelHistory,menus,notices,pwOverrides,schedules");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -1038,7 +1271,7 @@ function makeFetchStub(server) {
     const server = { rows: [], fail: false };
     const e = makeEnv({ fetch: makeFetchStub(server) });
     await e.Sync.init();
-    const remote = [{ id: "rt1", title: "실시간일정", memo: "", start: "2026-09-10", end: "2026-09-10", allDay: true, time: "", timeEnd: "", color: "green", done: false, assignee: "" }];
+    const remote = [{ id: "rt1", title: "실시간일정", memo: "", start: "2026-09-10", end: "2026-09-10", allDay: true, time: "", timeEnd: "", color: "green", done: false, assignee: "", vehicle: false, room: false, reminders: [] }];
     const changed = e.Sync.applyRemote("schedules", remote);
     eq(changed, true);
     eq(e.S.data.schedules[0].id, "rt1");
@@ -1152,7 +1385,7 @@ function makeFetchStub(server) {
 
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
-  console.log(`  SeMIS v2.3 테스트: ${passed + failed}건 실행`);
+  console.log(`  SeMIS v2.4 테스트: ${passed + failed}건 실행`);
   console.log(`  ✓ 통과 ${passed}건  ✗ 실패 ${failed}건`);
   console.log("════════════════════════════════════");
   if (failures.length) {

@@ -52,6 +52,13 @@
               </div>
               <div id="notice-list"></div>
             </div>
+            ${window.SemisCares ? `<div class="card">
+              <div class="card-title">🌡 CARES 환경센서 <span class="spacer"></span>
+                ${canWrite ? '<button class="btn btn-ghost btn-sm" id="btn-cares-cfg" title="연동 설정">⚙</button>' : ""}
+                <a class="btn btn-ghost btn-sm" href="https://airzeta-security-system.web.app" target="_blank" rel="noopener">CARES ↗</a>
+              </div>
+              <div id="cares-box"></div>
+            </div>` : ""}
           </div>
           <div class="dash-col">
             <div class="card">
@@ -59,6 +66,11 @@
                 ${canWrite ? '<button class="btn btn-ghost btn-sm" id="btn-edit-level">변경</button>' : ""}
               </div>
               <div id="level-box"></div>
+            </div>
+            <div class="card">
+              <div class="card-title">🕵️ 보안점검 실적 <span class="spacer"></span>
+                <button class="btn btn-ghost btn-sm" id="btn-go-insp">전체보기</button></div>
+              <div id="insp-box"></div>
             </div>
             <div class="card">
               <div class="card-title">⚡ 바로가기</div>
@@ -80,21 +92,26 @@
       const lvColor = (l) => ({ "평시": "badge-green", "관심": "badge-blue", "주의": "badge-amber",
         "경계": "badge-orange", "심각": "badge-red" }[l] || "badge-gray");
       $("#stat-level").innerHTML = `<span class="badge ${lvColor(cur.level)}" style="font-size:1rem;padding:4px 14px">${esc(cur.level)}</span>`;
-      const hist = SeMIS.levelSorted().slice().reverse().slice(0, 5);
+      const hist = SeMIS.levelSorted().slice().reverse().slice(0, 6);
+      const lvRange = (e2) => {
+        if (!e2.date) return "";
+        if (!e2.end) return e2.date + " ~";
+        const sameYear = e2.end.slice(0, 4) === e2.date.slice(0, 4);
+        return e2.date + " ~ " + (sameYear ? e2.end.slice(5) : e2.end);
+      };
       $("#level-box").innerHTML = `
         <p style="font-size:.9rem"><b>현재 등급:</b> <span class="badge ${lvColor(cur.level)}">${esc(cur.level)}</span>
-          <span style="font-size:.78rem;color:var(--text-3)">${esc(cur.date ? cur.date + "~" : "")}</span></p>
+          <span style="font-size:.78rem;color:var(--text-3)">${esc(lvRange(cur))}</span></p>
         <p style="font-size:.82rem;color:var(--text-2);margin-top:5px">${esc(cur.note || "비고 없음")}</p>
         ${nxt ? `<p style="font-size:.82rem;margin-top:8px;padding:7px 10px;background:var(--primary-soft);border-radius:6px">
-          ⏰ <b>변경 예약:</b> ${esc(nxt.date)}부터 <span class="badge ${lvColor(nxt.level)}">${esc(nxt.level)}</span></p>` : ""}
+          ⏰ <b>변경 예약:</b> ${esc(nxt.date)}부터 <span class="badge ${lvColor(nxt.level)}">${esc(nxt.level)}</span>${nxt.end ? " (" + esc(nxt.end) + "까지)" : ""}</p>` : ""}
         <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px">
           <div style="font-size:.74rem;font-weight:700;color:var(--text-3);margin-bottom:4px">변경 이력</div>
-          ${hist.map(e => `<div style="display:flex;align-items:center;gap:6px;font-size:.78rem;padding:3px 0;color:var(--text-2)">
-            <span style="white-space:nowrap">${esc(e.date)}</span>
-            <span class="badge ${lvColor(e.level)}">${esc(e.level)}</span>
-            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.note || "")}</span>
-            <span style="color:var(--text-3)">${esc(e.by || "")}</span>
-            ${canWrite && hist.length > 1 ? `<button class="mt-btn danger" data-lvdel="${esc(e.id)}" title="삭제">✕</button>` : ""}
+          ${hist.map(e => `<div class="lv-row${e.end && e.end < todayISO() ? " expired" : ""}">
+            <span class="lv-range">${esc(lvRange(e))}</span>
+            <span class="badge ${lvColor(e.level)} lv-badge">${esc(e.level)}</span>
+            <span class="lv-note">${esc(e.note || "")}</span>
+            ${canWrite && hist.length > 1 ? `<button class="mt-btn danger" data-lvdel="${esc(e.id)}" title="삭제">✕</button>` : "<span></span>"}
           </div>`).join("")}
         </div>`;
       $$("#level-box [data-lvdel]").forEach(b => b.onclick = () =>
@@ -133,6 +150,31 @@
           D().notices = D().notices.filter(x => x.id !== b.dataset.del);
           SeMIS.save(); SeMIS.renderView(); toast("삭제되었습니다.");
         }));
+
+      // 보안점검 실적
+      const insp = (d.inspections || []).filter(x => x.category !== "주요일정" && x.status !== "취소");
+      const done = insp.filter(x => x.status === "완료").length;
+      const thisMonth = new Date().getMonth() + 1;
+      const monthList = (d.inspections || []).filter(x => x.month === thisMonth && x.category !== "주요일정");
+      $("#insp-box").innerHTML = `
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span style="font-size:1.25rem;font-weight:800">${done}<span style="font-size:.85rem;color:var(--text-3)"> / ${insp.length}건</span></span>
+          <span style="font-size:.78rem;color:var(--text-2)">완료 (계획 대비 ${insp.length ? Math.round(done / insp.length * 100) : 0}%)</span>
+        </div>
+        <div class="insp-bar"><div class="insp-bar-fill" style="width:${insp.length ? Math.round(done / insp.length * 100) : 0}%"></div></div>
+        <div style="font-size:.74rem;font-weight:700;color:var(--text-3);margin:10px 0 4px">이번 달 (${thisMonth}월)</div>
+        ${monthList.length ? monthList.map(x => `
+          <div style="display:flex;align-items:center;gap:6px;font-size:.8rem;padding:3px 0">
+            <span class="badge ${x.status === "완료" ? "badge-green" : x.status === "연기" ? "badge-amber" : x.status === "취소" ? "badge-gray" : "badge-blue"}">${esc(x.status)}</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">[${esc(x.category)}] ${esc(x.target)}</span>
+          </div>`).join("") : '<div style="font-size:.8rem;color:var(--text-3)">이번 달 예정 점검이 없습니다.</div>'}`;
+      $("#btn-go-insp").onclick = () => SeMIS.navigate("inspection");
+
+      // CARES 환경센서 위젯
+      if (window.SemisCares && $("#cares-box")) {
+        SemisCares.renderInto($("#cares-box"), canWrite);
+        if (canWrite && $("#btn-cares-cfg")) $("#btn-cares-cfg").onclick = () => SemisCares.settingsForm();
+      }
 
       // 일정
       $("#upcoming-box").innerHTML = upcoming.length
@@ -317,9 +359,13 @@
       <div class="form-row"><label>등급 (5단계)</label>
         <select id="f-level">${SeMIS.SEC_LEVELS.map(l =>
           `<option ${cur.level === l ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-      <div class="form-row"><label>적용일</label><input type="date" id="f-date" value="${esc(todayISO())}">
-        <div class="form-hint">미래 날짜를 지정하면 해당 일자부터 자동 적용되는 <b>변경 예약</b>이 됩니다.</div></div>
-      <div class="form-row"><label>비고 (근거/기간 등)</label><input id="f-note" maxlength="100" placeholder="예: 국토부 지침 제2026-OO호"></div>
+      <div class="form-grid">
+        <div class="form-row"><label>시작일 (적용일)</label><input type="date" id="f-date" value="${esc(todayISO())}"></div>
+        <div class="form-row"><label>종료일 (선택)</label><input type="date" id="f-end"></div>
+      </div>
+      <div class="form-hint" style="margin:-6px 0 12px">미래 시작일을 지정하면 <b>변경 예약</b>이 됩니다.
+        종료일을 지정하면 그 다음 날부터 이전의 무기한 등급으로 자동 복귀하며, 비우면 다음 변경 시까지 적용됩니다.</div>
+      <div class="form-row"><label>비고 (근거 등)</label><input id="f-note" maxlength="100" placeholder="예: 국토부 지침 제2026-OO호"></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="f-cancel">취소</button>
         <button class="btn btn-primary" id="f-save">저장</button>
@@ -327,9 +373,11 @@
     $("#f-cancel").onclick = closeModal;
     $("#f-save").onclick = () => {
       const date = $("#f-date").value;
-      if (!date) { toast("적용일을 입력하세요.", true); return; }
+      const end = $("#f-end").value;
+      if (!date) { toast("시작일을 입력하세요.", true); return; }
+      if (end && end < date) { toast("종료일이 시작일보다 빠릅니다.", true); return; }
       D().levelHistory.push({
-        id: uid("lv"), date, level: $("#f-level").value,
+        id: uid("lv"), date, end: end || "", level: $("#f-level").value,
         note: $("#f-note").value.trim(), by: SeMIS.user.name, at: new Date().toISOString()
       });
       SeMIS.save(); closeModal(); SeMIS.renderSecBadge(); SeMIS.renderView();

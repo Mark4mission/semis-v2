@@ -400,6 +400,68 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .mini-day.today { background: var(--primary); color: #fff; font-weight: 700; }
 .mini-day.has-ev::after { content: ""; position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
 
+/* ═══════ 보안등급 이력 (세로 정렬) ═══════ */
+.lv-row {
+  display: grid; grid-template-columns: 128px 46px 1fr auto;
+  gap: 6px; align-items: center; padding: 3px 0;
+  font-size: .78rem; color: var(--text-2);
+}
+.lv-row.expired { opacity: .55; }
+.lv-range { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lv-badge { text-align: center; }
+.lv-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ═══════ 보안점검 (연간 매트릭스) ═══════ */
+.insp-matrix { width: 100%; border-collapse: collapse; font-size: .78rem; table-layout: fixed; }
+.insp-matrix th {
+  background: var(--surface-2); color: var(--text-2); font-size: .72rem; font-weight: 700;
+  border: 1px solid var(--border); padding: 6px 2px; text-align: center;
+}
+.insp-matrix th.insp-cat-h { width: 84px; }
+.insp-matrix th.insp-sum-h { width: 56px; }
+.insp-matrix td { border: 1px solid var(--border); vertical-align: top; }
+.insp-cat { padding: 8px 6px; font-weight: 700; font-size: .8rem; white-space: nowrap; background: var(--surface-2); }
+.insp-cell { padding: 3px; min-height: 54px; height: auto; cursor: pointer; }
+.insp-cell:hover { background: var(--primary-soft); }
+.insp-cell.now { background: #fefce8; }
+.insp-sum { text-align: center; font-weight: 800; font-size: .8rem; background: var(--surface-2); padding: 8px 2px; }
+.insp-chip {
+  display: flex; align-items: center; gap: 3px; flex-wrap: wrap;
+  font-size: .68rem; font-weight: 600; padding: 2px 5px; border-radius: 4px;
+  margin-bottom: 2px; cursor: pointer; line-height: 1.35; word-break: break-all;
+}
+.insp-chip.st-완료 { opacity: .62; }
+.insp-chip.st-취소 { opacity: .45; text-decoration: line-through; }
+.insp-chip.st-연기 { outline: 1.5px dashed #d97706; outline-offset: -1.5px; }
+.insp-tag {
+  background: rgba(255,255,255,.3); border-radius: 3px; padding: 0 3px;
+  font-size: .62rem; font-weight: 700;
+}
+tr.insp-cancel td { opacity: .5; text-decoration: line-through; }
+.insp-bar { height: 7px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; margin-top: 7px; overflow: hidden; }
+.insp-bar-fill { height: 100%; background: var(--success); border-radius: 5px; transition: width .3s; }
+
+/* ═══════ CARES 환경센서 위젯 ═══════ */
+.cares-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.cares-head .spacer { flex: 1; }
+.cares-alarms { margin-bottom: 10px; }
+.cares-alarm {
+  font-size: .8rem; padding: 6px 10px; margin-bottom: 4px;
+  background: var(--danger-soft); border: 1px solid #fecaca; border-radius: 6px;
+}
+.cares-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.cares-cell {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 8px 10px 6px; background: var(--surface-2); color: var(--primary);
+}
+.cares-cell.exceed { background: var(--danger-soft); border-color: #fca5a5; color: var(--danger); }
+.cares-label { font-size: .7rem; font-weight: 700; color: var(--text-2); }
+.cares-cell.exceed .cares-label { color: var(--danger); }
+.cares-value { font-size: 1.02rem; font-weight: 800; color: var(--text); margin: 1px 0 2px; }
+.cares-cell.exceed .cares-value { color: var(--danger); }
+.cares-unit { font-size: .66rem; font-weight: 600; color: var(--text-3); margin-left: 2px; }
+.cares-spark { width: 100%; height: 30px; display: block; }
+
 /* ═══════ 공지 리치 에디터 ═══════ */
 .nb-toolbar {
   display: flex; gap: 2px; flex-wrap: wrap; align-items: center;
