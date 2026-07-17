@@ -396,7 +396,7 @@
         <tr><td style="color:var(--text-2)">업체</td><td>${esc(x.vendor || "-")}</td></tr>
         <tr><td style="color:var(--text-2)">제조/설치</td><td>제조 ${esc(x.mfgDate || "-")} · 설치 ${esc(x.installed || "-")}</td></tr>
         <tr><td style="color:var(--text-2)">내용연수</td><td>${lifeYearsOf(x) || "-"}년 · 교체예정 ${esc(replaceDue(x) || "-")} ${lifeBadge(x)}</td></tr>
-        ${x.price != null ? `<tr><td style="color:var(--text-2)">구입가</td><td>${fmtWon(x.price)}원</td></tr>` : ""}
+        ${x.price != null && SeMIS.roleRank() >= 3 ? `<tr><td style="color:var(--text-2)">구입가</td><td>${fmtWon(x.price)}원</td></tr>` : ""}
         ${x.cert ? `<tr><td style="color:var(--text-2)">인증</td><td>${esc(x.cert)}</td></tr>` : ""}
         ${x.note ? `<tr><td style="color:var(--text-2)">비고</td><td>${esc(x.note)}</td></tr>` : ""}
       </table>
@@ -757,9 +757,13 @@
   SeMIS.registerModule("equipment", {
     title: "보안장비 유지관리",
     render(root) {
-      const canWrite = SeMIS.roleRank() >= 2;
+      const canWrite = SeMIS.canEdit();
+      const canConfid = SeMIS.roleRank() >= 3; // 대외비(계약·비용·구입가): hq 이상
       const s = stats();
-      const tabs = [["list", "장비 대장"], ["contracts", "유지보수 계약"], ["costs", "비용 기록"]];
+      const tabs = canConfid
+        ? [["list", "장비 대장"], ["contracts", "유지보수 계약"], ["costs", "비용 기록"]]
+        : [["list", "장비 대장"]];
+      if (!canConfid && tab !== "list") tab = "list";
       root.innerHTML = `
         <div class="page-head">
           <div class="page-title">🔧 보안장비 유지관리</div>

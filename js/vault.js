@@ -360,7 +360,7 @@
   SeMIS.registerModule("vault", {
     title: "암호 관리",
     render(root) {
-      if (SeMIS.roleRank() < 2) { root.innerHTML = '<div class="empty">접근 권한이 없습니다.</div>'; return; }
+      if (SeMIS.roleRank() < 3) { root.innerHTML = '<div class="empty">접근 권한이 없습니다.</div>'; return; } // v2.11: 대외비 — hq 이상
 
       if (!isUnlocked()) {
         root.innerHTML = `

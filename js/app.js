@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.10.2";
+  const VERSION = "2.11.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -68,10 +68,15 @@ const SeMIS = (() => {
     { id: "hq",       name: "항공보안HQ",   role: "hq",
       hash: "baf18bfc212cf8a7ca80cd468495ef952b27e32f1c615f1737dc81a901b5a20a" }
   ];
-  const ROLE_LABEL = { admin: "시스템관리자", manager: "보안관리자", hq: "항공보안HQ", user: "일반사용자" };
-  // hq: 열람 전용 상위 사용자 (user < hq < manager) — canWrite(>=2)에는 미달, vis "hq"(>=1.5) 접근
-  const ROLE_RANK  = { admin: 3, manager: 2, hq: 1.5, user: 1 };
-  const VIS_LABEL  = { all: "전체", hq: "항공보안HQ 이상", mgr: "관리자 이상", admin: "시스템관리자" };
+  const ROLE_LABEL = { admin: "시스템관리자", hq: "항공보안HQ", manager: "보안관리자", user: "일반사용자" };
+  /* 권한 서열 (v2.11): admin(4) > hq(3) > manager(2) > user(1)
+     - admin:   모든 기능 + 시스템 설정
+     - hq:      항공보안파트원 — 시스템 설정 외 모든 기능(편집 포함)
+     - manager: 지점·유관부서 보안감독자/담당자 — 보안사항 열람 가능, 편집 불가,
+                대외비(유지보수 비용·계약·암호 등)는 열람 불가
+     - user:    일반 직원 — 일반사항·홍보사항 수준만 열람 */
+  const ROLE_RANK  = { admin: 4, hq: 3, manager: 2, user: 1 };
+  const VIS_LABEL  = { all: "전체", mgr: "보안관리자 이상", hq: "항공보안HQ 이상", admin: "시스템관리자" };
 
   /* ─────────── 국가 항공보안등급 (5단계) ─────────── */
   const SEC_LEVELS = ["평시", "관심", "주의", "경계", "심각"];
@@ -99,7 +104,7 @@ const SeMIS = (() => {
     const lk = (id, label, icon, url, parent, opts) => Object.assign({ id, seq: seq++, type: "link", label, icon, url, vis: "all", parent: parent || null }, opts || {});
     return [
       m("dashboard", "대시보드", "🏠", "dashboard"),
-      m("schedule", "일정관리", "📅", "schedule"),
+      m("schedule", "일정관리", "📅", "schedule", "mgr"),
 
       g("grp-level", "항공보안등급"),
       lk("lvl-intro", "국가 보안등급 소개", "📖", "https://sites.google.com/view/kjsemis/%ED%95%AD%EA%B3%B5%EB%B3%B4%EC%95%88%EB%93%B1%EA%B8%89/%EA%B5%AD%EA%B0%80-%ED%95%AD%EA%B3%B5%EB%B3%B4%EC%95%88%EB%93%B1%EA%B8%89-%EC%86%8C%EA%B0%9C", "grp-level"),
@@ -112,33 +117,33 @@ const SeMIS = (() => {
       lk("rule-ssi", "비밀 취급 / SSI", "㊙️", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EB%B9%84%EB%B0%80-%EC%B7%A8%EA%B8%89ssi", "grp-rule", { vis: "mgr" }),
 
       g("grp-branch", "지점 / 협력업체"),
-      m("branches", "지점 관리", "🌍", "branches", "all", "grp-branch"),
-      m("contracts-mgmt", "계약서 관리", "💼", "contracts-mgmt", "mgr", "grp-branch"),
+      m("branches", "지점 관리", "🌍", "branches", "mgr", "grp-branch"),
+      m("contracts-mgmt", "계약서 관리", "💼", "contracts-mgmt", "hq", "grp-branch"),
       lk("br-sys", "지점보안시스템", "💻", "https://sites.google.com/view/kjsemis/%EC%A7%80%EC%A0%90%ED%98%91%EB%A0%A5%EC%97%85%EC%B2%B4/%EC%A7%80%EC%A0%90%EB%B3%B4%EC%95%88%EC%8B%9C%EC%8A%A4%ED%85%9C", "grp-branch", { quick: true }),
       lk("br-contract", "계약서 관리 (구버전)", "💼", "https://sites.google.com/view/kjsemis/%EC%A7%80%EC%A0%90%ED%98%91%EB%A0%A5%EC%97%85%EC%B2%B4/%EA%B3%84%EC%95%BD%EC%84%9C-%EA%B4%80%EB%A6%AC", "grp-branch", { vis: "mgr" }),
       lk("br-supervisor", "보안감독자 현황", "👥", "https://docs.google.com/spreadsheets/d/1RlxvnrjDWMy4lSTDdbF6JTKCgL45EuTW0O1mjGd8RtQ/edit?usp=sharing", "grp-branch", { vis: "mgr" }),
       lk("br-officer", "지점 보안담당자", "👥", "https://docs.google.com/spreadsheets/d/15Qvf5NgdeyfIBBLzFc3BtTGE6kQse-_HTb9u4PvzHt0/edit?usp=sharing", "grp-branch", { vis: "mgr" }),
 
       g("grp-inspect", "보안 점검"),
-      m("insp-mgmt", "보안점검 일정관리", "🕵️", "inspection", "all", "grp-inspect"),
+      m("insp-mgmt", "보안점검 일정관리", "🕵️", "inspection", "mgr", "grp-inspect"),
       lk("insp-plan", "보안점검 일정 (구버전)", "🗓️", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80-%EC%9D%BC%EC%A0%95", "grp-inspect"),
       lk("insp-cabin", "기내 보안점검", "✈️", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EC%A0%90%EA%B2%80%EA%B8%B0%EB%A1%9D-%EB%AA%A8%EB%8B%88%ED%84%B0%EB%A7%81/%EA%B8%B0%EB%82%B4-%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80", "grp-inspect"),
       lk("insp-daily", "일일 보안점검", "🙆", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EC%A0%90%EA%B2%80%EA%B8%B0%EB%A1%9D-%EB%AA%A8%EB%8B%88%ED%84%B0%EB%A7%81/%EC%9D%BC%EC%9D%BC-%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80", "grp-inspect"),
 
       g("grp-pass", "출입증 / 보안장비"),
-      m("passes", "출입증 관리", "🪪", "passes", "all", "grp-pass"),
-      m("equipment", "보안장비 유지관리", "🔧", "equipment", "all", "grp-pass"),
+      m("passes", "출입증 관리", "🪪", "passes", "mgr", "grp-pass"),
+      m("equipment", "보안장비 유지관리", "🔧", "equipment", "mgr", "grp-pass"),
       lk("pass-mgmt", "출입증 관리 (구버전)", "🪪", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EC%B6%9C%EC%9E%85%EC%A6%9D-%EA%B4%80%EB%A6%AC", "grp-pass"),
       lk("equip-mgmt", "보안장비 관리 (구버전)", "🔧", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%EA%B4%80%EB%A6%AC", "grp-pass"),
       lk("equip-council", "보안장비 협의체", "🤝", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%ED%98%91%EC%9D%98%EC%B2%B4", "grp-pass"),
 
       g("grp-edu", "보안 증진"),
-      m("training", "보안교육 관리", "🎓", "training", "all", "grp-edu"),
+      m("training", "보안교육 관리", "🎓", "training", "mgr", "grp-edu"),
       lk("edu-training", "보안 교육 (구버전)", "🎓", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A6%9D%EC%A7%84/%EB%B3%B4%EC%95%88-%EA%B5%90%EC%9C%A1", "grp-edu"),
       lk("edu-campaign", "보안 캠페인", "📣", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A6%9D%EC%A7%84/%EB%B3%B4%EC%95%88-%EC%BA%A0%ED%8E%98%EC%9D%B8", "grp-edu"),
 
       g("grp-abnormal", "비정상 상황"),
-      Object.assign(m("contacts", "보고체계 연락망", "☎️", "contacts", "all", "grp-abnormal"), { quick: true }),
+      Object.assign(m("contacts", "보고체계 연락망", "☎️", "contacts", "mgr", "grp-abnormal"), { quick: true }),
       lk("ab-contact", "보고체계 연락망 (구버전)", "☎️", "https://docs.google.com/spreadsheets/d/1DpNibLZVClfEDjNsKZR-LkXWX5SvE1jlM8JsubD_aIM/edit?usp=sharing", "grp-abnormal", { quick: true }),
       lk("ab-munjasin", "문자의 신 (보안동보)", "📨", "https://www.munjasin.co.kr/", "grp-abnormal", { quick: true }),
       lk("ab-guide", "문자의 신 이용 안내", "📖", "https://sites.google.com/view/kjsemis/%EB%B9%84%EC%A0%95%EC%83%81-%EC%83%81%ED%99%A9/%EB%AC%B8%EC%9E%90%EC%9D%98-%EC%8B%A0-%EB%B3%B4%EA%B3%A0-%EB%B0%A9%EB%B2%95-%EC%95%88%EB%82%B4", "grp-abnormal"),
@@ -150,7 +155,7 @@ const SeMIS = (() => {
       lk("ref-legacy", "구버전 (kjsemis)", "🕰️", "https://sites.google.com/view/kjsemis/", "grp-ref"),
       lk("ref-boannews", "보안뉴스", "📰", "https://www.boannews.com/", "grp-ref"),
 
-      m("vault", "암호 관리", "🔐", "vault", "mgr"),
+      m("vault", "암호 관리", "🔐", "vault", "hq"),
       m("settings", "시스템 설정", "⚙️", "settings", "admin")
     ];
   }
@@ -336,16 +341,16 @@ const SeMIS = (() => {
         vis: vis || "all", parent: grp ? grpId : null });
     };
     // grp-pass 최상단에 출입증 → 보안장비 순서 (equipment 먼저 삽입해야 passes가 위에 옴)
-    ensureModuleMenu("equipment", "grp-pass", "보안장비 유지관리", "🔧", "equipment", "all");
-    ensureModuleMenu("passes", "grp-pass", "출입증 관리", "🪪", "passes", "all");
-    ensureModuleMenu("training", "grp-edu", "보안교육 관리", "🎓", "training", "all");
+    ensureModuleMenu("equipment", "grp-pass", "보안장비 유지관리", "🔧", "equipment", "mgr");
+    ensureModuleMenu("passes", "grp-pass", "출입증 관리", "🪪", "passes", "mgr");
+    ensureModuleMenu("training", "grp-edu", "보안교육 관리", "🎓", "training", "mgr");
     // 계약서 관리는 '지점 관리' 바로 다음 위치 (관리자 이상 전용)
     if (!DATA.menus.some(m => m && m.type === "module" && m.module === "contracts-mgmt")) {
       const brMenu = DATA.menus.find(m => m && m.type === "module" && m.module === "branches" && m.parent === "grp-branch");
       if (brMenu) {
         DATA.menus.push({ id: "contracts-mgmt", seq: (brMenu.seq || 0) + 0.25, type: "module",
-          label: "계약서 관리", icon: "💼", module: "contracts-mgmt", vis: "mgr", parent: "grp-branch" });
-      } else ensureModuleMenu("contracts-mgmt", "grp-branch", "계약서 관리", "💼", "contracts-mgmt", "mgr");
+          label: "계약서 관리", icon: "💼", module: "contracts-mgmt", vis: "hq", parent: "grp-branch" });
+      } else ensureModuleMenu("contracts-mgmt", "grp-branch", "계약서 관리", "💼", "contracts-mgmt", "hq");
     }
     // 기존 시트 링크는 유지하되 "(구버전)"으로 구분
     [["pass-mgmt", "출입증 관리"], ["equip-mgmt", "보안장비 관리"],
@@ -362,8 +367,17 @@ const SeMIS = (() => {
       const seq = st ? (st.seq || 0) - 0.5
         : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
       DATA.menus.push({ id: "vault", seq, type: "module", label: "암호 관리",
-        icon: "🔐", module: "vault", vis: "mgr", parent: null });
+        icon: "🔐", module: "vault", vis: "hq", parent: null });
     }
+    // v2.11: 권한 재정렬 마이그레이션 — 보안 모듈은 user 차단(mgr 이상), 대외비는 hq 이상
+    ["schedule", "insp-mgmt", "contacts", "branches", "equipment", "passes", "training"].forEach(id => {
+      const mn = DATA.menus.find(m => m && m.id === id && m.type === "module");
+      if (mn && (!mn.vis || mn.vis === "all")) mn.vis = "mgr";
+    });
+    ["contracts-mgmt", "vault"].forEach(id => {
+      const mn = DATA.menus.find(m => m && m.id === id && m.type === "module");
+      if (mn && mn.vis !== "hq") mn.vis = "hq";
+    });
     return JSON.stringify(DATA) !== before;
   }
   const saveHooks = [];
@@ -417,12 +431,13 @@ const SeMIS = (() => {
   }
   const isAdmin = () => currentUser && currentUser.role === "admin";
   const roleRank = () => currentUser ? (ROLE_RANK[currentUser.role] || 1) : 0;
+  const canEdit = () => roleRank() >= 3; // 편집 권한: hq 이상 (v2.11)
   function canSee(menu) {
     const vis = menu.vis || "all";
     if (vis === "all") return true;
-    if (vis === "hq") return roleRank() >= 1.5;
     if (vis === "mgr") return roleRank() >= 2;
-    return roleRank() >= 3;
+    if (vis === "hq") return roleRank() >= 3;
+    return roleRank() >= 4;
   }
 
   /* ─────────── 유틸 ─────────── */
@@ -646,7 +661,7 @@ const SeMIS = (() => {
     get data() { return DATA; },
     save, load, onSave, saveSilent, normalizeData,
     get user() { return currentUser; },
-    allUsers, isAdmin, roleRank, canSee,
+    allUsers, isAdmin, roleRank, canEdit, canSee,
     pwHash, sha256,
     renderNav, renderHeader, renderSecBadge, renderView,
     openModal, closeModal, confirmModal, toast,

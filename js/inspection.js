@@ -277,7 +277,7 @@
   SeMIS.registerModule("inspection", {
     title: "보안점검 일정관리",
     render(root) {
-      const canWrite = SeMIS.roleRank() >= 2;
+      const canWrite = SeMIS.canEdit();
       const items = list();
       const plan = items.filter(x => x.category !== "주요일정" && x.status !== "취소");
       const done = plan.filter(x => x.status === "완료").length;
@@ -351,7 +351,7 @@
   /* 외부(대시보드 등)에서 점검 열기 — 권한에 따라 수정 폼/읽기 상세 */
   function open(id) {
     if (!(D().inspections || []).some(i => i.id === id)) return;
-    if (SeMIS.roleRank() >= 2) inspForm(id);
+    if (SeMIS.canEdit()) inspForm(id);
     else inspDetail(id);
   }
 

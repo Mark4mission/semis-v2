@@ -268,7 +268,7 @@
   SeMIS.registerModule("contacts", {
     title: "보고체계 연락망",
     render(root) {
-      const canWrite = SeMIS.roleRank() >= 2;
+      const canWrite = SeMIS.canEdit();
       root.innerHTML = `
         <div class="page-head">
           <div class="page-title">☎️ 보고체계 연락망</div>

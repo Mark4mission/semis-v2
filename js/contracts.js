@@ -163,7 +163,7 @@
   SeMIS.registerModule("contracts-mgmt", {
     title: "계약서 관리",
     render(root) {
-      const canWrite = SeMIS.roleRank() >= 2;
+      const canWrite = SeMIS.canEdit();
       const s = stats();
       root.innerHTML = `
         <div class="page-head">

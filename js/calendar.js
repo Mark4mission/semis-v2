@@ -773,7 +773,7 @@
   SeMIS.registerModule("schedule", {
     title: "일정관리",
     render(root) {
-      const canWrite = SeMIS.roleRank() >= 2;
+      const canWrite = SeMIS.canEdit();
       const assignees = assigneeList();
       root.innerHTML = `
         <div class="page-head">

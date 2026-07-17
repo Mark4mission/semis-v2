@@ -317,7 +317,7 @@ function makeFetchStub(server) {
   }
   {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     t("R44 네비 권한: manager에게 mgr 메뉴 표시", () => {
       const labels = qa(e, "#nav-menu .nav-item").map(x => x.textContent);
       ok(labels.some(l => l.includes("계약서 관리")));
@@ -327,7 +327,7 @@ function makeFetchStub(server) {
   /* ══════════ [R] 회귀 — 대시보드/공지/등급 변경 ══════════ */
   {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     t("R45 대시보드 상단 통계 카드 제거 (v2.6.1)", () => eq(qa(e, ".stat").length, 0));
     t("R46 바로가기(quick) 링크 노출", () => ok(qa(e, ".quick-link").length >= 2));
     t("R47 공지 작성 (리치 에디터 + 살균)", () => {
@@ -339,7 +339,7 @@ function makeFetchStub(server) {
       q(e, "#f-pinned").checked = true;
       q(e, "#f-save").click();
       const n = e.S.data.notices.find(x => x.title === "테스트 공지");
-      ok(n && n.pinned === true && n.author === "Tmanager");
+      ok(n && n.pinned === true && n.author === "Thq");
       ok(n.bodyHtml.includes("<b>강조</b>"), "서식 보존");
       ok(!n.bodyHtml.includes("<script"), "스크립트 제거");
       eq(n.body, "본문 강조", "텍스트 추출(살균 후)");
@@ -390,7 +390,7 @@ function makeFetchStub(server) {
   /* ══════════ [R] 회귀 — 시스템 설정 ══════════ */
   {
     const e = makeEnv();
-    loginAs(e, "user");
+    loginAs(e, "manager");
     t("R53 설정: 일반 사용자 접근 차단(대시보드 폴백)", () => {
       go(e, "settings");
       const html = q(e, "#view").innerHTML;
@@ -530,7 +530,7 @@ function makeFetchStub(server) {
   }
   {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const C = e.Cal;
     const D = e.S.data;
     D.schedules.push(
@@ -755,7 +755,7 @@ function makeFetchStub(server) {
   }
   {
     const e = makeEnv();
-    loginAs(e, "user");
+    loginAs(e, "manager");
     e.S.data.schedules.push({ id: "ro1", title: "읽기전용", memo: "비밀메모", start: "2026-07-15", end: "2026-07-15", allDay: true, time: "", timeEnd: "", color: "blue", done: false, assignee: "" });
     e.S.saveSilent();
     go(e, "schedule");
@@ -841,7 +841,7 @@ function makeFetchStub(server) {
   }
   {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const C = e.Cal;
     t("V08 구글 오버레이: 표시/중복 제거/비활성 제외", () => {
       C._setGcalEvents([{ gcalId: "gx1", title: "구글일정", memo: "", start: "2026-07-15", end: "2026-07-15", allDay: true, time: "", timeEnd: "", color: "" }]);
@@ -921,7 +921,7 @@ function makeFetchStub(server) {
       eq(e.S.secCurrent().end, today);
     });
     t("L03 등급 변경 폼: 종료일 입력/역순 거부", () => {
-      loginAs(e, "manager");
+      loginAs(e, "hq");
       q(e, "#btn-edit-level").click();
       ok(q(e, "#f-end"), "종료일 입력 존재");
       const before = e.S.data.levelHistory.length;
@@ -966,7 +966,7 @@ function makeFetchStub(server) {
       e.S.normalizeData(); e.S.normalizeData();
       eq(e.S.data.menus.filter(x => x.module === "inspection").length, 1, "중복 없음");
     });
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     e.Insp = e.w.SemisInspection;
     e.Insp.setYear(2026);
     t("I03 연간 매트릭스 렌더 (12개월 + 계, 칩 23개)", () => {
@@ -1071,7 +1071,7 @@ function makeFetchStub(server) {
     });
     t("I08 일반 사용자: 등록 버튼 없음 + 상세 열람", () => {
       const e2 = makeEnv();
-      loginAs(e2, "user");
+      loginAs(e2, "manager");
       go(e2, "inspection");
       ok(!q(e2, "#insp-add"), "등록 버튼 없음");
       qa(e2, ".insp-chip")[0].click();
@@ -1083,7 +1083,7 @@ function makeFetchStub(server) {
   /* ══════════ [CA] CARES 환경센서 위젯 (v2.4) ══════════ */
   {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const CA = e.w.SemisCares;
     t("CA01 기본 표시 + 오프라인 안내 (계정 불필요)", () => {
       const box = q(e, "#cares-box");
@@ -1147,7 +1147,7 @@ function makeFetchStub(server) {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
     };
     const e = makeEnv({ fetch: stub, preLS: { "semis2:caresKey": "test-api-key" } });
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     e.w.SemisCares.setCfg({ enabled: true, email: "v@a.com", pw: "p" });
     const box = q(e, "#cares-box");
     await e.w.SemisCares.renderInto(box, true);
@@ -1183,7 +1183,7 @@ function makeFetchStub(server) {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
     };
     const e = makeEnv({ fetch: stub, preLS: { "semis2:caresKey": "test-api-key" } });
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const box = q(e, "#cares-box");
     await e.w.SemisCares.renderInto(box, true);
     ok(box.innerHTML.includes("전체 정상"), "정상 배지");
@@ -1239,7 +1239,7 @@ function makeFetchStub(server) {
 
     t("CT03 빈 데이터: 히어로 배너 + 동기화 대기 안내", () => {
       const e = makeEnv();
-      loginAs(e, "user");
+      loginAs(e, "manager");
       go(e, "contacts");
       ok(q(e, ".ct-hero"), "히어로 배너");
       ok(q(e, ".ct-hero").textContent.includes("30분"), "30분 이내 보고 강조");
@@ -1248,7 +1248,7 @@ function makeFetchStub(server) {
 
     t("CT04 실데이터 렌더: 섹션/전화/문자/메일/당직실/사건카드", () => {
       const e = makeEnv();
-      loginAs(e, "user");
+      loginAs(e, "manager");
       withData(e);
       go(e, "contacts");
       const html = q(e, "#ct-body").innerHTML;
@@ -1267,7 +1267,7 @@ function makeFetchStub(server) {
 
     t("CT05 통합 검색: 이름/번호 필터 + 하이라이트", () => {
       const e = makeEnv();
-      loginAs(e, "user");
+      loginAs(e, "manager");
       withData(e);
       go(e, "contacts");
       const input = q(e, "#ct-search");
@@ -1296,12 +1296,12 @@ function makeFetchStub(server) {
 
     t("CT07 편집 권한: user 없음 / manager 있음", () => {
       const e = makeEnv();
-      loginAs(e, "user");
+      loginAs(e, "manager");
       withData(e);
       go(e, "contacts");
       ok(!q(e, "[data-ct-edit]"), "일반 사용자 편집 버튼 없음");
       const e2 = makeEnv();
-      loginAs(e2, "manager");
+      loginAs(e2, "hq");
       withData(e2);
       go(e2, "contacts");
       ok(q(e2, "[data-ct-edit]"), "관리자 편집 버튼 있음");
@@ -1309,7 +1309,7 @@ function makeFetchStub(server) {
 
     t("CT08 편집 CRUD: 행 수정/추가 저장 → 데이터 반영", () => {
       const e = makeEnv();
-      loginAs(e, "manager");
+      loginAs(e, "hq");
       withData(e);
       go(e, "contacts");
       q(e, '[data-ct-edit="team"]').click();
@@ -1331,7 +1331,7 @@ function makeFetchStub(server) {
 
     t("CT09 편집: 행 삭제 저장", () => {
       const e = makeEnv();
-      loginAs(e, "manager");
+      loginAs(e, "hq");
       withData(e);
       go(e, "contacts");
       q(e, '[data-ct-edit="mail"]').click();
@@ -1344,7 +1344,7 @@ function makeFetchStub(server) {
 
     t("CT10 대시보드 바로가기에 모듈 quick 링크(내부 이동)", () => {
       const e = makeEnv();
-      loginAs(e, "user");
+      loginAs(e, "manager");
       go(e, "dashboard");
       const links = qa(e, ".quick-link");
       const inner = links.find(a => (a.getAttribute("href") || "") === "#/contacts");
@@ -1354,7 +1354,7 @@ function makeFetchStub(server) {
 
     t("CT11 사건별 카드 등급색: ① 노랑 ~ ④ 짙은 빨강 클래스", () => {
       const e = makeEnv();
-      loginAs(e, "user");
+      loginAs(e, "manager");
       withData(e);
       go(e, "contacts");
       ok(q(e, ".ct-inc.ct-lv1"), "① 등급색");
@@ -1372,7 +1372,7 @@ function makeFetchStub(server) {
 
     t("FD02 점검 폼: 결과 추가/저장 → 데이터 반영 (결과 링크 입력 제거)", () => {
       const e = makeEnv();
-      loginAs(e, "manager");
+      loginAs(e, "hq");
       go(e, "inspection");
       const target = e.S.data.inspections.find(x => x.target === "프로에스콤");
       qa(e, ".insp-chip").find(el => el.dataset.insp === target.id).click();
@@ -1401,7 +1401,7 @@ function makeFetchStub(server) {
 
     t("FD03 목록 뷰: 결과 유형 배지 요약 표시", () => {
       const e = makeEnv();
-      loginAs(e, "manager");
+      loginAs(e, "hq");
       const x = e.S.data.inspections.find(i => i.target === "LSG");
       x.findings = [{ type: "시정조치", text: "a" }, { type: "시정조치", text: "b" }, { type: "개선권고", text: "c" }];
       e.S.saveSilent();
@@ -1421,7 +1421,7 @@ function makeFetchStub(server) {
         status: "완료", note: "", linkCal: false,
         findings: [{ type: "개선권고", text: "a" }, { type: "시정조치", text: "b" }, { type: "시정조치", text: "c" }] });
       e.S.saveSilent();
-      loginAs(e, "manager"); // v2.10.1: 점검실적 카드는 manager 이상만 표시
+      loginAs(e, "hq"); // v2.10.1: 점검실적 카드는 manager 이상만 표시
       go(e, "dashboard");
       const row = qa(e, "#insp-box div").find(el => el.textContent.includes("FDTEST지점"));
       ok(row, "이번 달 행");
@@ -1438,22 +1438,25 @@ function makeFetchStub(server) {
       };
       // manager → 수정 폼
       const e = makeEnv();
-      loginAs(e, "manager");
+      loginAs(e, "hq");
       mkData(e);
       go(e, "dashboard");
       q(e, '#insp-box [data-insp-open="ifd7"]').click();
       ok(q(e, "#i-save"), "수정 폼(저장 버튼)");
       ok(q(e, "#modal-box").textContent.includes("점검 수정"), "점검 수정 모달");
       ok(q(e, "#i-findings"), "결과 편집 영역 포함");
-      // user → 대시보드 카드 자체가 숨김 (v2.10.1) + 점검 모듈에서 읽기 상세
+      // user → 대시보드 점검실적 카드 자체가 숨김 (v2.11)
+      const eu = makeEnv();
+      loginAs(eu, "user");
+      go(eu, "dashboard");
+      ok(!q(eu, "#insp-box"), "user에게 점검실적 카드 미표시");
+      // manager(열람그룹) → 점검 모듈 읽기 상세 (편집 불가)
       const e2 = makeEnv();
-      loginAs(e2, "user");
+      loginAs(e2, "manager");
       mkData(e2);
-      go(e2, "dashboard");
-      ok(!q(e2, "#insp-box"), "user에게 점검실적 카드 미표시");
       go(e2, "inspection");
       qa(e2, ".insp-chip").find(el => el.dataset.insp === "ifd7").click();
-      ok(!q(e2, "#i-save"), "저장 버튼 없음");
+      ok(!q(e2, "#i-save"), "manager 저장 버튼 없음(열람 전용)");
       ok(q(e2, "#modal-box").textContent.includes("FD클릭지점"), "읽기 상세 모달");
     });
 
@@ -1462,7 +1465,7 @@ function makeFetchStub(server) {
       const x = e.S.data.inspections.find(i => i.target === "LSG");
       x.findings = [{ type: "현장시정", text: "보호구역 게이트 즉시 시정" }];
       e.S.saveSilent();
-      loginAs(e, "user");
+      loginAs(e, "manager");
       go(e, "inspection");
       qa(e, ".insp-chip").find(el => el.dataset.insp === x.id).click();
       ok(q(e, "#modal-box").innerHTML.includes("현장시정"), "유형 배지");
@@ -1475,7 +1478,7 @@ function makeFetchStub(server) {
       xs[0].findings = [{ type: "시정조치", text: "a" }, { type: "개선권고", text: "b" }];
       xs[1].findings = [{ type: "시정조치", text: "c" }, { type: "관찰사항", text: "d" }];
       e.S.saveSilent();
-      loginAs(e, "manager"); // v2.10.1: 점검실적 카드는 manager 이상만 표시
+      loginAs(e, "hq"); // v2.10.1: 점검실적 카드는 manager 이상만 표시
       go(e, "dashboard");
       const grid = q(e, ".insp-fdgrid");
       ok(grid, "통계 그리드");
@@ -1533,7 +1536,7 @@ function makeFetchStub(server) {
 
     t("BR03 렌더(목록 폴백): 구역 필터 칩 + 권한별 등록 버튼", () => {
       const e = makeEnv();
-      loginAs(e, "user");
+      loginAs(e, "manager");
       seed(e);
       go(e, "branches");
       ok(!e.w.L, "jsdom에 Leaflet 없음 (폴백 경로)");
@@ -1545,14 +1548,14 @@ function makeFetchStub(server) {
       ok(html.includes("테스트에어포트호텔"), "L/O 호텔 표시");
       ok(html.includes("⚠️"), "좌표 없는 지점 경고 표시");
       const e2 = makeEnv();
-      loginAs(e2, "manager");
+      loginAs(e2, "hq");
       go(e2, "branches");
       ok(q(e2, "#br-add"), "관리자 등록 버튼");
     });
 
     t("BR04 구역 필터 + 검색", () => {
       const e = makeEnv();
-      loginAs(e, "user");
+      loginAs(e, "manager");
       seed(e);
       go(e, "branches");
       qa(e, "[data-br-region]").find(b => b.dataset.brRegion === "유럽").click();
@@ -1570,7 +1573,7 @@ function makeFetchStub(server) {
 
     t("BR05 상세 모달: 행 클릭 → 필드 표시 (user는 수정 버튼 없음)", () => {
       const e = makeEnv();
-      loginAs(e, "user");
+      loginAs(e, "manager");
       seed(e);
       go(e, "branches");
       q(e, '[data-br-row="br1"]').click();
@@ -1586,7 +1589,7 @@ function makeFetchStub(server) {
 
     t("BR06 등록/수정 CRUD: 저장 → 데이터 반영 (IATA 자동 좌표 힌트)", () => {
       const e = makeEnv();
-      loginAs(e, "manager");
+      loginAs(e, "hq");
       go(e, "branches");
       q(e, "#br-add").click();
       q(e, "#b-code").value = "sfosf";
@@ -1628,7 +1631,7 @@ function makeFetchStub(server) {
 
     t("BR07 빈 지점코드 저장 거부", () => {
       const e = makeEnv();
-      loginAs(e, "manager");
+      loginAs(e, "hq");
       go(e, "branches");
       q(e, "#br-add").click();
       q(e, "#b-save").click();
@@ -1656,7 +1659,7 @@ function makeFetchStub(server) {
   /* ══════════ [N] 공지 리치 에디터 / [V2] 캘린더 UI 개선 ══════════ */
   {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     t("N01 sanitizeHtml: 위험 요소 제거 + 표/서식 보존", () => {
       const s = e.w.SemisNotice.sanitizeHtml(
         '<b>a</b><script>x()</script><table class="nb-table"><tbody><tr><td onclick="hack()">c</td></tr></tbody></table><a href="javascript:alert(1)">l</a><img src="https://x/y.png">');
@@ -1713,7 +1716,7 @@ function makeFetchStub(server) {
   });
   {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const C = e.Cal;
     t("V14 이윤민 이모지 변경(🌸)", () => {
       eq(C.TEAM.find(t2 => t2.name === "이윤민").emoji, "🌸");
@@ -1747,7 +1750,7 @@ function makeFetchStub(server) {
   /* ══════════ [P] 반복 일정 + 리치 메모 (v2.5) ══════════ */
   {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const C = e.Cal;
     const base = { memo: "", allDay: true, time: "", timeEnd: "", color: "blue", done: false,
       assignee: "", vehicle: false, room: false, reminders: [] };
@@ -2053,7 +2056,7 @@ function makeFetchStub(server) {
     ok(mOf("passes").seq < mOf("equipment").seq, "출입증이 장비보다 위");
     const br = d.menus.find(m => m.type === "module" && m.module === "branches");
     ok(mOf("contracts-mgmt").seq > br.seq, "계약서는 지점 관리 다음");
-    eq(mOf("contracts-mgmt").vis, "mgr", "계약서 vis=mgr");
+    eq(mOf("contracts-mgmt").vis, "hq", "계약서 vis=hq (대외비, v2.11)");
     eq(d.menus.find(m => m.id === "pass-mgmt").label, "출입증 관리 (구버전)", "구링크 라벨 구분");
     eq(e.S.normalizeData(), false, "idempotent");
   });
@@ -2067,19 +2070,19 @@ function makeFetchStub(server) {
   /* ── [PS] 출입증 관리 ── */
   t("PS01 렌더: manager 등록 버튼 / user 미표시", () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     go(e, "passes");
     ok(q(e, ".page-title").textContent.includes("출입증"), "제목");
     ok(q(e, "#pass-add"), "manager 등록 버튼");
     const e2 = makeEnv();
-    loginAs(e2, "user");
+    loginAs(e2, "manager");
     go(e2, "passes");
     ok(!q(e2, "#pass-add"), "user 등록 버튼 없음");
   });
 
   t("PS02 등록 폼 저장 → 데이터 반영", () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     go(e, "passes");
     q(e, "#pass-add").click();
     q(e, "#p-holder").value = "홍길동";
@@ -2115,7 +2118,7 @@ function makeFetchStub(server) {
     ];
     const s = e.w.SemisPasses.stats();
     eq(s.active, 2); eq(s.soon, 1); eq(s.expired, 1); eq(s.lost, 1);
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     e.w.SemisPasses.setFilter("만료임박");
     go(e, "passes");
     const rows = qa(e, "#pass-body [data-pass-row]");
@@ -2125,7 +2128,7 @@ function makeFetchStub(server) {
   t("PS05 user 상세 모달 (읽기 전용)", () => {
     const e = makeEnv();
     e.S.data.passes = [{ id: "p1", kind: "상주직원", holder: "김직원", company: "지점", no: "N1", area: "램프", issue: "2026-01-01", expire: shiftDay(100), status: "사용중", note: "" }];
-    loginAs(e, "user");
+    loginAs(e, "manager");
     go(e, "passes");
     q(e, "[data-pass-row]").click();
     ok(q(e, "#modal-box").textContent.includes("김직원"), "상세 모달");
@@ -2160,7 +2163,7 @@ function makeFetchStub(server) {
 
   t("EQ03 등록 폼 저장: 제조일·내용연수·자체 기록 (v2.10)", () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     go(e, "equipment");
     q(e, "#eq-add").click();
     q(e, "#e-name").value = "RAP-638DV";
@@ -2187,7 +2190,7 @@ function makeFetchStub(server) {
     ];
     const s = e.w.SemisEquipment.stats();
     eq(s.total, 3); eq(s.ok, 1); eq(s.due, 1); eq(s.broken, 1);
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     e.w.SemisEquipment.setFilter("내용연수임박");
     go(e, "equipment");
     eq(qa(e, "#eq-body [data-eq-row]").length, 1, "내용연수 임박 필터");
@@ -2213,7 +2216,7 @@ function makeFetchStub(server) {
   /* ── [TR] 보안교육 관리 ── */
   t("TR01 렌더 + 연도 네비게이션", () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     go(e, "training");
     ok(q(e, ".page-title").textContent.includes("보안교육"));
     const y = new Date().getFullYear();
@@ -2225,7 +2228,7 @@ function makeFetchStub(server) {
 
   t("TR02 등록 폼 저장: 실시일 → 월 자동 반영 + 이수율", () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     go(e, "training");
     q(e, "#tr-add").click();
     q(e, "#t-course").value = "항공보안 정기교육";
@@ -2245,7 +2248,7 @@ function makeFetchStub(server) {
   t("TR03 user 읽기 전용 상세", () => {
     const e = makeEnv();
     e.S.data.trainings = [{ id: "t1", year: new Date().getFullYear(), month: 3, course: "초기교육", type: "초기", method: "집합", target: "신규자", date: "", hours: 8, planned: 5, attended: 5, status: "완료", note: "" }];
-    loginAs(e, "user");
+    loginAs(e, "manager");
     go(e, "training");
     ok(!q(e, "#tr-add"), "user 등록 버튼 없음");
     q(e, "[data-tr-row]").click();
@@ -2265,7 +2268,7 @@ function makeFetchStub(server) {
 
   t("CN02 렌더(manager) + 등록 저장 + D-day 배지", () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     go(e, "contracts-mgmt");
     ok(q(e, ".page-title").textContent.includes("계약서"));
     q(e, "#cn-add").click();
@@ -2283,7 +2286,7 @@ function makeFetchStub(server) {
 
   t("CN03 user 접근 차단 (vis=mgr → 대시보드 폴백)", () => {
     const e = makeEnv();
-    loginAs(e, "user");
+    loginAs(e, "manager");
     go(e, "contracts-mgmt");
     ok(q(e, ".page-title").textContent.includes("대시보드"), "대시보드로 폴백");
   });
@@ -2291,7 +2294,7 @@ function makeFetchStub(server) {
   /* ── [DX] 대시보드 만료·점검 도래 통합 카드 ── */
   t("DX01 만료·점검 도래 카드: 출입증/계약/장비 통합 (manager)", () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     e.S.data.passes = [{ id: "p1", kind: "상주직원", holder: "박만료", company: "", no: "", area: "", issue: "", expire: shiftDay(5), status: "사용중", note: "" }];
     e.S.data.contracts = [{ id: "c1", name: "만료임박계약", party: "", category: "기타", start: "", end: shiftDay(20), amount: "", owner: "", autoRenew: false, fileUrl: "", status: "유효", note: "" }];
     e.S.data.equipment = [{ id: "q1", type: "ETD(폭발물흔적)", name: "내용연수장비", serial: "", location: "", vendor: "", mfgDate: "2021-01-01", installed: "", status: "정상", logs: [], note: "" }];
@@ -2315,43 +2318,57 @@ function makeFetchStub(server) {
     ok(q(e, ".quick-links"), "바로가기 표시");
   });
 
-  t("DV02 대시보드 카드 권한: manager에게 전체 표시 + 설정 구조", () => {
+  t("DV02 대시보드 카드 권한: manager 열람 가능 + 편집 불가 (v2.11)", () => {
     const e = makeEnv();
     loginAs(e, "manager");
     go(e, "dashboard");
-    ok(q(e, "#level-box"), "보안등급 표시");
-    ok(q(e, "#insp-box"), "보안점검 실적 표시");
-    ok(q(e, "#upcoming-box"), "다가오는 일정 표시");
+    ok(q(e, "#level-box"), "보안등급 표시(열람)");
+    ok(q(e, "#insp-box"), "보안점검 실적 표시(열람)");
+    ok(q(e, "#upcoming-box"), "다가오는 일정 표시(열람)");
+    ok(!q(e, "#btn-add-notice"), "공지 작성 버튼 없음(편집 불가)");
+    ok(!q(e, "#btn-edit-level"), "등급 변경 버튼 없음(편집 불가)");
     const DC = e.w.SemisDash && e.w.SemisDash.DASH_CARDS;
-    ok(DC && DC.level === "hq" && DC.insp === "hq" && DC.upcoming === "hq" && DC.equip === "hq", "민감 카드 vis=hq");
+    ok(DC && DC.level === "mgr" && DC.insp === "mgr" && DC.upcoming === "mgr" && DC.equip === "mgr", "보안 카드 vis=mgr(열람그룹)");
     ok(DC.notice === "all" && DC.quick === "all", "공용 카드 vis=all");
   });
 
-  t("DV03 항공보안HQ 권한: 민감 카드 열람 가능 + 편집 불가 (v2.10.2)", () => {
+  t("DV03 항공보안HQ 권한: admin 다음 전 기능 (편집 가능, v2.11)", () => {
     const e = makeEnv();
     loginAs(e, "hq");
-    eq(e.S.roleRank(), 1.5, "hq rank 1.5");
+    eq(e.S.roleRank(), 3, "hq rank 3 (admin 4 > hq 3 > manager 2 > user 1)");
     go(e, "dashboard");
-    ok(q(e, "#level-box"), "보안등급 표시");
-    ok(q(e, "#insp-box"), "보안점검 실적 표시");
-    ok(q(e, "#upcoming-box"), "다가오는 일정 표시");
-    ok(!q(e, "#btn-add-notice"), "공지 작성 버튼 없음 (열람 전용)");
-    ok(!q(e, "#btn-edit-level"), "보안등급 변경 버튼 없음");
-    ok(e.S.canSee({ vis: "hq" }), "vis=hq 메뉴 접근 가능");
-    ok(!e.S.canSee({ vis: "mgr" }), "vis=mgr 메뉴 접근 불가");
+    ok(q(e, "#level-box") && q(e, "#insp-box") && q(e, "#upcoming-box"), "보안 카드 전체 표시");
+    ok(q(e, "#btn-add-notice"), "공지 작성 가능(편집그룹)");
+    ok(q(e, "#btn-edit-level"), "보안등급 변경 가능");
+    ok(e.S.canSee({ vis: "hq" }) && e.S.canSee({ vis: "mgr" }) && e.S.canSee({ vis: "all" }), "hq/mgr/all 메뉴 접근");
+    ok(!e.S.canSee({ vis: "admin" }), "admin 전용 메뉴 접근 불가");
+    ok(!e.S.isAdmin(), "시스템 설정 권한 없음");
     ok(e.S.BASE_USERS.some(u => u.id === "hq" && u.role === "hq"), "기본 hq 계정 존재");
+  });
+
+  t("DV04 대외비 접근: 장비 계약/비용 탭 hq 전용 (v2.11)", () => {
+    const em = makeEnv();
+    loginAs(em, "manager");
+    go(em, "equipment");
+    ok(!qa(em, "[data-etab]").some(b => b.dataset.etab === "costs"), "manager에게 비용 탭 없음");
+    ok(!qa(em, "[data-etab]").some(b => b.dataset.etab === "contracts"), "manager에게 계약 탭 없음");
+    const eh = makeEnv();
+    loginAs(eh, "hq");
+    go(eh, "equipment");
+    ok(qa(eh, "[data-etab]").some(b => b.dataset.etab === "costs"), "hq에게 비용 탭 표시");
+    ok(qa(eh, "[data-etab]").some(b => b.dataset.etab === "contracts"), "hq에게 계약 탭 표시");
   });
 
   t("DX02 만료 카드: user에게 계약 비노출", () => {
     const e = makeEnv();
-    loginAs(e, "user");
+    loginAs(e, "manager");
     e.S.data.contracts = [{ id: "c1", name: "비밀계약", party: "", category: "기타", start: "", end: shiftDay(20), amount: "", owner: "", autoRenew: false, fileUrl: "", status: "유효", note: "" }];
     go(e, "dashboard");
     ok(!q(e, "#expiry-box").textContent.includes("비밀계약"), "user 계약 미표시");
   });
 
   /* ══════════ [VT] v2.9 암호 관리 (vault) — 클라이언트 암호화 저장소 ══════════ */
-  t("VT01 normalize: vault 구조/메뉴 자동 삽입 (vis=mgr, 설정 위)", () => {
+  t("VT01 normalize: vault 구조/메뉴 자동 삽입 (vis=hq, 설정 위)", () => {
     const e = makeEnv();
     const d = e.S.data;
     delete d.vault;
@@ -2360,7 +2377,7 @@ function makeFetchStub(server) {
     eq(changed, true);
     ok(d.vault && Array.isArray(d.vault.members) && d.vault.data === null, "구조 보정");
     const mn = d.menus.find(m => m.type === "module" && m.module === "vault");
-    ok(mn, "메뉴 삽입"); eq(mn.vis, "mgr"); eq(mn.parent, null, "최상위");
+    ok(mn, "메뉴 삽입"); eq(mn.vis, "hq"); eq(mn.parent, null, "최상위");
     const st = d.menus.find(m => m.id === "settings");
     ok(mn.seq < st.seq, "시스템 설정 위");
     ok(e.Sync.SYNC_KEYS.includes("vault"), "SYNC_KEYS 포함");
@@ -2369,14 +2386,14 @@ function makeFetchStub(server) {
 
   t("VT02 user 접근 차단 (vis=mgr → 대시보드 폴백)", () => {
     const e = makeEnv();
-    loginAs(e, "user");
+    loginAs(e, "manager");
     go(e, "vault");
     ok(q(e, ".page-title").textContent.includes("대시보드"), "대시보드 폴백");
   });
 
   await ta("VT03 최초 설정 + 암호화 저장: 평문이 어디에도 남지 않음", async () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const VT = e.w.SemisVault;
     await VT.setup("박철성", "master-pw-1");
     ok(VT.isUnlocked(), "설정 후 해제 상태");
@@ -2393,7 +2410,7 @@ function makeFetchStub(server) {
 
   await ta("VT04 잠금/해제: 오답 거부 + 정답 복호화", async () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const VT = e.w.SemisVault;
     await VT.setup("박철성", "master-pw-1");
     await VT.addEntryForTest({ category: "시스템", title: "테스트항목", account: "a", pw: "SuperSecret123!", url: "", note: "" });
@@ -2412,7 +2429,7 @@ function makeFetchStub(server) {
 
   await ta("VT05 멤버: 추가/비밀번호 변경/최소 1명 보호", async () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const VT = e.w.SemisVault;
     await VT.setup("박철성", "pw-park");
     await VT.addMember("최상일", "pw-choi");
@@ -2437,7 +2454,7 @@ function makeFetchStub(server) {
 
   await ta("VT06 5분 만료 → 자동 잠금 + 대시보드 이동", async () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const VT = e.w.SemisVault;
     await VT.setup("박철성", "pw-park");
     go(e, "vault");
@@ -2449,7 +2466,7 @@ function makeFetchStub(server) {
 
   await ta("VT07 다른 화면 이동 시 즉시 잠금 (키 제로화)", async () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const VT = e.w.SemisVault;
     await VT.setup("박철성", "pw-park");
     go(e, "vault");
@@ -2461,7 +2478,7 @@ function makeFetchStub(server) {
 
   await ta("VT08 화면 흐름: 설정 폼 → 해제 화면 → 잠그기", async () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     go(e, "vault");
     ok(q(e, "#vault-setup-form"), "최초 설정 폼");
     q(e, "#vs-name").value = "박철성";
@@ -2478,7 +2495,7 @@ function makeFetchStub(server) {
 
   await ta("VT09 5분 연장 버튼: 타이머 재설정 + 만료 동작 유지", async () => {
     const e = makeEnv();
-    loginAs(e, "manager");
+    loginAs(e, "hq");
     const VT = e.w.SemisVault;
     await VT.setup("박철성", "pw-park");
     go(e, "vault");

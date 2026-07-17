@@ -63,7 +63,7 @@
   let query = "";
   let map = null;             // Leaflet 인스턴스
 
-  const canWrite = () => SeMIS.roleRank() >= 2;
+  const canWrite = () => SeMIS.canEdit();
 
   /* ─────── 필터/검색 ─────── */
   function filtered() {
