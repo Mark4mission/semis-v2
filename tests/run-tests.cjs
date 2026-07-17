@@ -1877,7 +1877,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "branches,contacts,contracts,customUsers,equipment,gcal,inspections,levelHistory,menus,notices,passes,pwOverrides,schedules,trainings,vault");
+    eq(keys, "branches,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,pwOverrides,schedules,trainings,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -2039,12 +2039,13 @@ function makeFetchStub(server) {
     const d = e.S.data;
     // 구버전 상태 시뮬레이션: 신규 모듈 메뉴/배열 제거 + 구링크 라벨 원복
     d.menus = d.menus.filter(m => !(m.type === "module" && ["passes", "equipment", "training", "contracts-mgmt"].includes(m.module)));
-    delete d.passes; delete d.equipment; delete d.trainings; delete d.contracts;
+    delete d.passes; delete d.equipment; delete d.trainings; delete d.contracts; delete d.equipMaint;
     [["pass-mgmt", "출입증 관리"], ["equip-mgmt", "보안장비 관리"], ["edu-training", "보안 교육"], ["br-contract", "계약서 관리"]]
       .forEach(([id, orig]) => { const mn = d.menus.find(m => m.id === id); if (mn) mn.label = orig; });
     const changed = e.S.normalizeData();
     eq(changed, true, "변경 감지");
     ok(Array.isArray(d.passes) && Array.isArray(d.equipment) && Array.isArray(d.trainings) && Array.isArray(d.contracts), "배열 보정");
+    ok(d.equipMaint && Array.isArray(d.equipMaint.contracts) && Array.isArray(d.equipMaint.costs), "equipMaint 보정 (v2.10)");
     const mOf = (mod) => d.menus.find(m => m.type === "module" && m.module === mod);
     ok(mOf("passes") && mOf("equipment") && mOf("training") && mOf("contracts-mgmt"), "메뉴 4개 삽입");
     ok(mOf("passes").seq < mOf("equipment").seq, "출입증이 장비보다 위");
@@ -2057,7 +2058,7 @@ function makeFetchStub(server) {
 
   t("V802 SYNC_KEYS에 신규 4개 컬렉션 포함", () => {
     const e = makeEnv();
-    ["passes", "equipment", "trainings", "contracts"].forEach(k =>
+    ["passes", "equipment", "equipMaint", "trainings", "contracts"].forEach(k =>
       ok(e.Sync.SYNC_KEYS.includes(k), k + " 포함"));
   });
 
@@ -2140,46 +2141,71 @@ function makeFetchStub(server) {
     eq(E.addMonths("2026-01-01", 0), "");
   });
 
-  t("EQ02 nextCheck/isDue: 점검주기 도래 판정", () => {
+  t("EQ02 내용연수: 교체예정·임박 판정 (X-Ray 10년/ETD 5년)", () => {
     const e = makeEnv();
     const E = e.w.SemisEquipment;
-    ok(E.isDue({ status: "정상", lastCheck: "2024-01-01", cycleM: 12 }), "주기 경과");
-    ok(!E.isDue({ status: "정상", lastCheck: shiftDay(-30), cycleM: 12 }), "주기 이내");
-    ok(!E.isDue({ status: "폐기", lastCheck: "2024-01-01", cycleM: 12 }), "폐기 제외");
-    ok(!E.isDue({ status: "정상", lastCheck: "", cycleM: 12 }), "점검일 미지정");
+    eq(E.TYPE_LIFE["X-Ray"], 10); eq(E.TYPE_LIFE["ETD(폭발물흔적)"], 5);
+    eq(E.replaceDue({ type: "ETD(폭발물흔적)", mfgDate: "2023-01-01" }), "2028-01-01", "ETD 5년");
+    eq(E.replaceDue({ type: "X-Ray", installed: "2021-08-30" }), "2031-08-30", "제조일 없으면 설치일 기산");
+    eq(E.replaceDue({ type: "X-Ray", mfgDate: "2020-01-01", lifeYears: 3 }), "2023-01-01", "장비별 override");
+    eq(E.replaceDue({ type: "기타", mfgDate: "2020-01-01", replaceDue: "2030-06-01" }), "2030-06-01", "수동 지정 우선");
+    ok(E.isLifeDue({ type: "ETD(폭발물흔적)", status: "정상", mfgDate: "2020-01-01" }), "만료");
+    ok(E.isLifeDue({ type: "ETD(폭발물흔적)", status: "정상", mfgDate: shiftDay(-(5 * 365 - 100)) }), "1년 이내 임박");
+    ok(!E.isLifeDue({ type: "X-Ray", status: "정상", mfgDate: shiftDay(-10) }), "잔여 충분");
+    ok(!E.isLifeDue({ type: "ETD(폭발물흔적)", status: "폐기", mfgDate: "2020-01-01" }), "폐기 제외");
+    ok(!E.isLifeDue({ type: "기타", status: "정상", mfgDate: "2020-01-01" }), "내용연수 미지정 유형 제외");
   });
 
-  t("EQ03 등록 폼 저장 + 이력 로그 → 최근 점검일 자동 반영", () => {
+  t("EQ03 등록 폼 저장: 제조일·내용연수·자체 기록 (v2.10)", () => {
     const e = makeEnv();
     loginAs(e, "manager");
     go(e, "equipment");
     q(e, "#eq-add").click();
-    q(e, "#e-name").value = "HI-SCAN 6040i";
-    q(e, "#e-location").value = "T1 화물터미널";
-    q(e, "#elog-add").click();                      // 이력: 오늘 · 점검
-    q(e, "#e-logs .ifd-text").value = "정기 캘리브레이션";
+    q(e, "#e-name").value = "RAP-638DV";
+    q(e, "#e-serial").value = "6212421";
+    q(e, "#e-mfg").value = "2021-08-30";
+    q(e, "#elog-add").click();                      // 자체 기록: 오늘 · 기타
+    q(e, "#e-logs .ifd-text").value = "리스 계약 갱신 협의";
     q(e, "#e-save").click();
     eq(e.S.data.equipment.length, 1);
     const x = e.S.data.equipment[0];
-    eq(x.name, "HI-SCAN 6040i");
+    eq(x.name, "RAP-638DV");
     eq(x.logs.length, 1);
-    eq(x.lastCheck, todayOf(e), "점검 이력 일자 → lastCheck 자동");
-    eq(x.cycleM, 12, "기본 주기 12개월");
+    eq(x.lifeYears, null, "미입력 시 유형 기본 적용 대기");
+    eq(e.w.SemisEquipment.lifeYearsOf(x), 10, "X-Ray 기본 10년");
+    eq(e.w.SemisEquipment.replaceDue(x), "2031-08-30", "제조일+10년");
   });
 
-  t("EQ04 통계/필터: 점검도래 집계", () => {
+  t("EQ04 통계/필터: 내용연수 임박 집계", () => {
     const e = makeEnv();
     e.S.data.equipment = [
-      { id: "q1", type: "X-Ray", name: "장비A", serial: "", location: "", vendor: "", installed: "", lastCheck: "2024-01-01", cycleM: 12, status: "정상", logs: [], note: "" },
-      { id: "q2", type: "CCTV", name: "장비B", serial: "", location: "", vendor: "", installed: "", lastCheck: shiftDay(-10), cycleM: 12, status: "정상", logs: [], note: "" },
-      { id: "q3", type: "기타", name: "장비C", serial: "", location: "", vendor: "", installed: "", lastCheck: "", cycleM: 12, status: "고장", logs: [], note: "" }
+      { id: "q1", type: "ETD(폭발물흔적)", name: "장비A", serial: "", location: "", vendor: "", mfgDate: "2021-01-01", installed: "", status: "정상", logs: [], note: "" },
+      { id: "q2", type: "X-Ray", name: "장비B", serial: "", location: "", vendor: "", mfgDate: shiftDay(-10), installed: "", status: "정상", logs: [], note: "" },
+      { id: "q3", type: "기타", name: "장비C", serial: "", location: "", vendor: "", mfgDate: "", installed: "", status: "고장", logs: [], note: "" }
     ];
     const s = e.w.SemisEquipment.stats();
     eq(s.total, 3); eq(s.ok, 1); eq(s.due, 1); eq(s.broken, 1);
     loginAs(e, "manager");
-    e.w.SemisEquipment.setFilter("점검도래");
+    e.w.SemisEquipment.setFilter("내용연수임박");
     go(e, "equipment");
-    eq(qa(e, "#eq-body [data-eq-row]").length, 1, "점검도래 필터");
+    eq(qa(e, "#eq-body [data-eq-row]").length, 1, "내용연수 임박 필터");
+    e.w.SemisEquipment.setFilter("전체");
+  });
+
+  t("EQ05 비용 기록: 연간/월별 합계 (equipMaint)", () => {
+    const e = makeEnv();
+    e.S.data.equipMaint = { contracts: [], costs: [
+      { id: "c1", ym: "2026-01", kind: "정기 유지보수", vendor: "인씨스", amount: 2610000 },
+      { id: "c2", ym: "2026-01", kind: "수리/부품", vendor: "프로에스콤", amount: 4500000 },
+      { id: "c3", ym: "2026-03", kind: "정기 유지보수", vendor: "인씨스", amount: 2610000 },
+      { id: "c4", ym: "2025-12", kind: "기타", vendor: "", amount: 99 }
+    ] };
+    const yc = e.w.SemisEquipment.yearCosts(2026);
+    eq(yc.total, 9720000, "연간 합계 (2025 제외)");
+    eq(yc.byM[1].total, 7110000, "1월 합계");
+    eq(yc.byM[1]["수리/부품"], 4500000);
+    eq(yc.byM[3]["정기 유지보수"], 2610000);
+    eq(yc.rows.length, 3);
   });
 
   /* ── [TR] 보안교육 관리 ── */
@@ -2266,12 +2292,12 @@ function makeFetchStub(server) {
     loginAs(e, "manager");
     e.S.data.passes = [{ id: "p1", kind: "상주직원", holder: "박만료", company: "", no: "", area: "", issue: "", expire: shiftDay(5), status: "사용중", note: "" }];
     e.S.data.contracts = [{ id: "c1", name: "만료임박계약", party: "", category: "기타", start: "", end: shiftDay(20), amount: "", owner: "", autoRenew: false, fileUrl: "", status: "유효", note: "" }];
-    e.S.data.equipment = [{ id: "q1", type: "X-Ray", name: "점검도래장비", serial: "", location: "", vendor: "", installed: "", lastCheck: "2024-01-01", cycleM: 12, status: "정상", logs: [], note: "" }];
+    e.S.data.equipment = [{ id: "q1", type: "ETD(폭발물흔적)", name: "내용연수장비", serial: "", location: "", vendor: "", mfgDate: "2021-01-01", installed: "", status: "정상", logs: [], note: "" }];
     go(e, "dashboard");
     const box = q(e, "#expiry-box").textContent;
     ok(box.includes("박만료"), "출입증 표시");
     ok(box.includes("만료임박계약"), "계약 표시(manager)");
-    ok(box.includes("점검도래장비"), "장비 표시");
+    ok(box.includes("내용연수장비"), "장비 내용연수 표시");
   });
 
   t("DX02 만료 카드: user에게 계약 비노출", () => {

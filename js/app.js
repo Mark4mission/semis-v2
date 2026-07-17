@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.9.2";
+  const VERSION = "2.10.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -176,6 +176,7 @@ const SeMIS = (() => {
       equipment: [],                  // v2.8: 보안장비 유지관리
       trainings: [],                  // v2.8: 보안교육 관리
       contracts: [],                  // v2.8: 계약서 관리
+      equipMaint: { contracts: [], costs: [] }, // v2.10: 장비 유지보수 계약/월별 비용 (SeMIS 고유)
       vault: { v: 1, members: [], data: null, updated: "" } // v2.9: 암호 관리 (암호문만 저장)
     };
   }
@@ -316,6 +317,10 @@ const SeMIS = (() => {
     // v2.8: 출입증/보안장비/보안교육/계약서 모듈 — 배열 보정 + 메뉴 자동 삽입 + 구링크 구분
     if (!Array.isArray(DATA.passes)) DATA.passes = [];
     if (!Array.isArray(DATA.equipment)) DATA.equipment = [];
+    // v2.10: 장비 유지보수 계약/비용 컨테이너 보정
+    if (!DATA.equipMaint || typeof DATA.equipMaint !== "object" || Array.isArray(DATA.equipMaint)) DATA.equipMaint = { contracts: [], costs: [] };
+    if (!Array.isArray(DATA.equipMaint.contracts)) DATA.equipMaint.contracts = [];
+    if (!Array.isArray(DATA.equipMaint.costs)) DATA.equipMaint.costs = [];
     if (!Array.isArray(DATA.trainings)) DATA.trainings = [];
     if (!Array.isArray(DATA.contracts)) DATA.contracts = [];
     const ensureModuleMenu = (menuId, grpId, label, icon, moduleId, vis) => {

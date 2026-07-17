@@ -45,6 +45,13 @@
               </div>
               <div id="notice-list"></div>
             </div>
+            ${window.SemisEquipment && SemisEquipment.renderDash ? `<div class="card">
+              <div class="card-title">🔧 보안장비 · 고장신고 <span class="spacer"></span>
+                <button class="btn btn-ghost btn-sm" id="btn-go-equip">전체보기</button>
+                <a class="btn btn-ghost btn-sm" href="https://airzeta-security-system.web.app" target="_blank" rel="noopener">CARES ↗</a>
+              </div>
+              <div id="equip-box"></div>
+            </div>` : ""}
             ${window.SemisCares ? `<div class="card">
               <div class="card-title">🌡 CARES 환경센서 <span class="spacer"></span>
                 ${canWrite ? '<button class="btn btn-ghost btn-sm" id="btn-cares-cfg" title="연동 설정">⚙</button>' : ""}
@@ -195,10 +202,10 @@
           if (dd <= 60) items.push({ d: dd, route: "contracts-mgmt", ico: "💼", label: `계약 · ${x.name}` });
         });
         (d.equipment || []).forEach(x => {
-          if (x.status === "폐기" || !x.lastCheck || !x.cycleM || !window.SemisEquipment) return;
-          const n = SemisEquipment.nextCheck(x);
+          if (x.status === "폐기" || !window.SemisEquipment || !SemisEquipment.replaceDue) return;
+          const n = SemisEquipment.replaceDue(x);
           const dd = dl(n);
-          if (dd !== null && dd <= 14) items.push({ d: dd, route: "equipment", ico: "🔧", label: `장비점검 · ${x.name}` });
+          if (dd !== null && dd <= 90) items.push({ d: dd, route: "equipment", ico: "🔧", label: `장비 내용연수 · ${x.name}` });
         });
         items.sort((a, b) => a.d - b.d);
         items.length = Math.min(items.length, 8);
@@ -210,6 +217,12 @@
             </div>`).join("")
           : '<div style="font-size:.8rem;color:var(--text-3)">30일 내 만료 예정 항목이 없습니다.</div>';
         $$("#expiry-box [data-exp-go]").forEach(el => el.onclick = () => SeMIS.navigate(el.dataset.expGo));
+      }
+
+      // 보안장비 · 고장신고 위젯 (CARES 마스터)
+      if (window.SemisEquipment && SemisEquipment.renderDash && $("#equip-box")) {
+        SemisEquipment.renderDash($("#equip-box"));
+        if ($("#btn-go-equip")) $("#btn-go-equip").onclick = () => SeMIS.navigate("equipment");
       }
 
       // CARES 환경센서 위젯
