@@ -337,7 +337,7 @@
         <button class="ct-copy" data-vp-eye="${i}" title="표시/숨김">👁</button>
         <button class="ct-copy" data-vc-pw="${i}" title="비밀번호 복사">📋</button>` : "-"}</td>
       <td>${en.url ? `<a href="${esc(en.url)}" target="_blank" rel="noopener">열기 ↗</a>` : "-"}</td>
-      <td style="font-size:.76rem;color:var(--text-3)">${esc(en.updated || "")}</td>
+      <td style="font-size:.7rem;color:var(--text-3);white-space:nowrap">${esc(en.updated || "")}</td>
       <td><button class="btn btn-ghost btn-sm" data-ve-edit="${esc(en.id)}">✎</button></td>
     </tr>`;
   }
