@@ -11,6 +11,26 @@
   const uid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
   /* ════════════════ 대시보드 ════════════════ */
+  /* ─── 대시보드 카드별 표시 권한 (v2.10.1) ───
+     새 카드를 추가할 때는 반드시 여기에 등록하고 vis를 지정할 것.
+     vis: "all"(전체 사용자) | "mgr"(manager 이상) | "adm"(admin 전용) */
+  const DASH_CARDS = {
+    notice:   "all",  // 📢 공지사항
+    equip:    "mgr",  // 🔧 보안장비 · 고장신고 (CARES)
+    cares:    "all",  // 🌡 CARES 환경센서
+    level:    "mgr",  // 🚨 보안등급
+    insp:     "mgr",  // 🕵️ 보안점검 실적
+    expiry:   "all",  // ⏳ 만료 · 점검 도래 (계약은 내부에서 mgr 필터)
+    quick:    "all",  // ⚡ 바로가기
+    upcoming: "mgr"   // 📅 다가오는 일정
+  };
+  const cardVis = (id) => {
+    const v = DASH_CARDS[id] || "all";
+    const r = SeMIS.roleRank();
+    return v === "all" || (v === "mgr" && r >= 2) || (v === "adm" && r >= 3);
+  };
+  window.SemisDash = { DASH_CARDS, cardVis }; // 테스트/외부 참조용
+
   SeMIS.registerModule("dashboard", {
     title: "대시보드",
     render(root) {
@@ -39,20 +59,20 @@
         </div>
         <div class="dash-grid">
           <div class="dash-col">
-            <div class="card">
+            ${cardVis("notice") ? `<div class="card">
               <div class="card-title">📢 공지사항 <span class="spacer"></span>
                 ${canWrite ? '<button class="btn btn-primary btn-sm" id="btn-add-notice">+ 새 공지</button>' : ""}
               </div>
               <div id="notice-list"></div>
-            </div>
-            ${window.SemisEquipment && SemisEquipment.renderDash ? `<div class="card">
+            </div>` : ""}
+            ${cardVis("equip") && window.SemisEquipment && SemisEquipment.renderDash ? `<div class="card">
               <div class="card-title">🔧 보안장비 · 고장신고 <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-equip">전체보기</button>
                 <a class="btn btn-ghost btn-sm" href="https://airzeta-security-system.web.app" target="_blank" rel="noopener">CARES ↗</a>
               </div>
               <div id="equip-box"></div>
             </div>` : ""}
-            ${window.SemisCares ? `<div class="card">
+            ${cardVis("cares") && window.SemisCares ? `<div class="card">
               <div class="card-title">🌡 CARES 환경센서 <span class="spacer"></span>
                 ${canWrite ? '<button class="btn btn-ghost btn-sm" id="btn-cares-cfg" title="연동 설정">⚙</button>' : ""}
                 <a class="btn btn-ghost btn-sm" href="https://airzeta-security-system.web.app" target="_blank" rel="noopener">CARES ↗</a>
@@ -61,22 +81,22 @@
             </div>` : ""}
           </div>
           <div class="dash-col">
-            <div class="card">
+            ${cardVis("level") ? `<div class="card">
               <div class="card-title">🚨 보안등급 <span class="spacer"></span>
                 ${canWrite ? '<button class="btn btn-ghost btn-sm" id="btn-edit-level">변경</button>' : ""}
               </div>
               <div id="level-box"></div>
-            </div>
-            <div class="card">
+            </div>` : ""}
+            ${cardVis("insp") ? `<div class="card">
               <div class="card-title">🕵️ 보안점검 실적 <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-insp">전체보기</button></div>
               <div id="insp-box"></div>
-            </div>
-            <div class="card">
+            </div>` : ""}
+            ${cardVis("expiry") ? `<div class="card">
               <div class="card-title">⏳ 만료 · 점검 도래</div>
               <div id="expiry-box"></div>
-            </div>
-            <div class="card">
+            </div>` : ""}
+            ${cardVis("quick") ? `<div class="card">
               <div class="card-title">⚡ 바로가기</div>
               <div class="quick-links">
                 ${quicks.map(m => m.type === "module"
@@ -86,16 +106,17 @@
                   <span>${esc(m.icon || "🔗")}</span><span>${esc(m.label)}</span></a>`).join("") ||
                   '<div class="empty">등록된 바로가기가 없습니다.</div>'}
               </div>
-            </div>
-            <div class="card">
+            </div>` : ""}
+            ${cardVis("upcoming") ? `<div class="card">
               <div class="card-title">📅 다가오는 일정 <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-schedule">전체보기</button></div>
               <div id="upcoming-box"></div>
-            </div>
+            </div>` : ""}
           </div>
         </div>`;
 
       // 보안등급 (5단계: 평시-관심-주의-경계-심각)
+      if ($("#level-box")) {
       const lvColor = (l) => ({ "평시": "badge-green", "관심": "badge-blue", "주의": "badge-amber",
         "경계": "badge-orange", "심각": "badge-red" }[l] || "badge-gray");
       const hist = SeMIS.levelSorted().slice().reverse().slice(0, 6);
@@ -125,8 +146,10 @@
           D().levelHistory = D().levelHistory.filter(x => x.id !== b.dataset.lvdel);
           SeMIS.save(); SeMIS.renderSecBadge(); SeMIS.renderView(); toast("삭제되었습니다.");
         }));
+      }
 
       // 공지 리스트
+      if ($("#notice-list")) {
       const nl = $("#notice-list");
       if (!notices.length) nl.innerHTML = '<div class="empty">등록된 공지가 없습니다.</div>';
       notices.forEach(n => {
@@ -156,8 +179,10 @@
           D().notices = D().notices.filter(x => x.id !== b.dataset.del);
           SeMIS.save(); SeMIS.renderView(); toast("삭제되었습니다.");
         }));
+      }
 
       // 보안점검 실적
+      if ($("#insp-box")) {
       const insp = (d.inspections || []).filter(x => x.category !== "주요일정" && x.status !== "취소");
       const done = insp.filter(x => x.status === "완료").length;
       const thisMonth = new Date().getMonth() + 1;
@@ -186,6 +211,7 @@
       $$("#insp-box [data-insp-open]").forEach(el => el.onclick = () => {
         if (window.SemisInspection) SemisInspection.open(el.dataset.inspOpen);
       });
+      }
 
       // 만료 · 점검 도래 (출입증/계약/장비 통합, v2.8)
       {
@@ -209,7 +235,7 @@
         });
         items.sort((a, b) => a.d - b.d);
         items.length = Math.min(items.length, 8);
-        $("#expiry-box").innerHTML = items.length
+        if ($("#expiry-box")) $("#expiry-box").innerHTML = items.length
           ? items.map(it => `<div class="insp-dash-row" data-exp-go="${esc(it.route)}" title="클릭하여 이동"
               style="display:flex;align-items:center;gap:6px;font-size:.8rem;padding:3px 0;cursor:pointer">
               <span class="badge ${it.d < 0 ? "badge-red" : it.d <= 30 ? "badge-amber" : "badge-gray"}" style="flex-shrink:0">${it.d < 0 ? "D+" + (-it.d) : "D-" + it.d}</span>
@@ -232,6 +258,7 @@
       }
 
       // 일정
+      if ($("#upcoming-box")) {
       $("#upcoming-box").innerHTML = upcoming.length
         ? upcoming.map(s => `<div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid var(--border);font-size:.86rem">
             <span class="cal-dot ev-${esc(s.color || "blue")}"></span>
@@ -241,10 +268,11 @@
             ${s.assignee ? `<span class="badge badge-gray" style="margin-left:auto;flex-shrink:0;white-space:nowrap">${esc(s.assignee)}</span>` : ""}</div>`).join("")
         : '<div class="empty">예정된 일정이 없습니다.</div>';
       $("#btn-go-schedule").onclick = () => SeMIS.navigate("schedule");
+      }
 
       if (canWrite) {
-        $("#btn-add-notice").onclick = () => noticeForm(null);
-        $("#btn-edit-level").onclick = levelForm;
+        if ($("#btn-add-notice")) $("#btn-add-notice").onclick = () => noticeForm(null);
+        if ($("#btn-edit-level")) $("#btn-edit-level").onclick = levelForm;
       }
     }
   });

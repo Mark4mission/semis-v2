@@ -1421,7 +1421,7 @@ function makeFetchStub(server) {
         status: "완료", note: "", linkCal: false,
         findings: [{ type: "개선권고", text: "a" }, { type: "시정조치", text: "b" }, { type: "시정조치", text: "c" }] });
       e.S.saveSilent();
-      loginAs(e, "user");
+      loginAs(e, "manager"); // v2.10.1: 점검실적 카드는 manager 이상만 표시
       go(e, "dashboard");
       const row = qa(e, "#insp-box div").find(el => el.textContent.includes("FDTEST지점"));
       ok(row, "이번 달 행");
@@ -1445,12 +1445,14 @@ function makeFetchStub(server) {
       ok(q(e, "#i-save"), "수정 폼(저장 버튼)");
       ok(q(e, "#modal-box").textContent.includes("점검 수정"), "점검 수정 모달");
       ok(q(e, "#i-findings"), "결과 편집 영역 포함");
-      // user → 읽기 상세
+      // user → 대시보드 카드 자체가 숨김 (v2.10.1) + 점검 모듈에서 읽기 상세
       const e2 = makeEnv();
       loginAs(e2, "user");
       mkData(e2);
       go(e2, "dashboard");
-      q(e2, '#insp-box [data-insp-open="ifd7"]').click();
+      ok(!q(e2, "#insp-box"), "user에게 점검실적 카드 미표시");
+      go(e2, "inspection");
+      qa(e2, ".insp-chip").find(el => el.dataset.insp === "ifd7").click();
       ok(!q(e2, "#i-save"), "저장 버튼 없음");
       ok(q(e2, "#modal-box").textContent.includes("FD클릭지점"), "읽기 상세 모달");
     });
@@ -1473,7 +1475,7 @@ function makeFetchStub(server) {
       xs[0].findings = [{ type: "시정조치", text: "a" }, { type: "개선권고", text: "b" }];
       xs[1].findings = [{ type: "시정조치", text: "c" }, { type: "관찰사항", text: "d" }];
       e.S.saveSilent();
-      loginAs(e, "user");
+      loginAs(e, "manager"); // v2.10.1: 점검실적 카드는 manager 이상만 표시
       go(e, "dashboard");
       const grid = q(e, ".insp-fdgrid");
       ok(grid, "통계 그리드");
@@ -2298,6 +2300,31 @@ function makeFetchStub(server) {
     ok(box.includes("박만료"), "출입증 표시");
     ok(box.includes("만료임박계약"), "계약 표시(manager)");
     ok(box.includes("내용연수장비"), "장비 내용연수 표시");
+  });
+
+  t("DV01 대시보드 카드 권한: user에게 민감 카드 숨김 (v2.10.1)", () => {
+    const e = makeEnv();
+    loginAs(e, "user");
+    go(e, "dashboard");
+    ok(!q(e, "#level-box"), "보안등급 숨김");
+    ok(!q(e, "#insp-box"), "보안점검 실적 숨김");
+    ok(!q(e, "#upcoming-box"), "다가오는 일정 숨김");
+    ok(!q(e, "#equip-box"), "보안장비·고장신고 숨김");
+    ok(q(e, "#notice-list"), "공지 표시");
+    ok(q(e, "#expiry-box"), "만료·도래 표시");
+    ok(q(e, ".quick-links"), "바로가기 표시");
+  });
+
+  t("DV02 대시보드 카드 권한: manager에게 전체 표시 + 설정 구조", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    go(e, "dashboard");
+    ok(q(e, "#level-box"), "보안등급 표시");
+    ok(q(e, "#insp-box"), "보안점검 실적 표시");
+    ok(q(e, "#upcoming-box"), "다가오는 일정 표시");
+    const DC = e.w.SemisDash && e.w.SemisDash.DASH_CARDS;
+    ok(DC && DC.level === "mgr" && DC.insp === "mgr" && DC.upcoming === "mgr" && DC.equip === "mgr", "민감 카드 vis=mgr");
+    ok(DC.notice === "all" && DC.quick === "all", "공용 카드 vis=all");
   });
 
   t("DX02 만료 카드: user에게 계약 비노출", () => {
