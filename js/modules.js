@@ -690,7 +690,8 @@
     return D().menus.reduce((mx, m) => Math.max(mx, m.seq || 0), 0) + 1;
   }
 
-  /* ───── 사용자 / 암호 탭 ───── */
+  /* ───── 사용자 / 암호 탭 (v2.11.1: admin이 전 계정 완전 관리) ───── */
+  const ROLE_BADGE = { admin: "badge-red", hq: "badge-amber", manager: "badge-blue", user: "badge-gray" };
   function renderUserTab(box) {
     const users = SeMIS.allUsers();
     box.innerHTML = `
@@ -699,38 +700,88 @@
           <button class="btn btn-primary btn-sm" id="btn-add-user">+ 사용자 추가</button></div>
         <p class="form-hint" style="margin-bottom:12px">
           로그인은 <b>암호만 입력</b>하는 방식입니다. 암호로 사용자가 식별되므로 사용자별 암호는 서로 달라야 합니다.
-          암호는 SHA-256 해시로만 저장되어 코드/데이터에서 평문이 노출되지 않습니다.</p>
+          암호는 SHA-256 해시로만 저장되어 코드/데이터에서 평문이 노출되지 않습니다.
+          최고관리자(mark3464)는 잠금 방지를 위해 권한 변경·삭제가 불가합니다.</p>
         <div class="table-wrap"><table class="tbl">
-          <thead><tr><th>계정</th><th>이름</th><th>권한</th><th style="width:180px">관리</th></tr></thead>
+          <thead><tr><th>계정</th><th>이름</th><th>권한</th><th style="width:240px">관리</th></tr></thead>
           <tbody>
-          ${users.map(u => `<tr>
-            <td><b>${esc(u.id)}</b></td>
+          ${users.map((u, i) => `<tr>
+            <td><b>${esc(u.id)}</b>${u.base ? ' <span style="font-size:.68rem;color:var(--text-3)">기본</span>' : ""}</td>
             <td>${esc(u.name)}</td>
-            <td><span class="badge ${u.role === "admin" ? "badge-red" : u.role === "manager" ? "badge-blue" : "badge-gray"}">
-              ${esc(SeMIS.ROLE_LABEL[u.role] || u.role)}</span></td>
+            <td><span class="badge ${ROLE_BADGE[u.role] || "badge-gray"}">${esc(SeMIS.ROLE_LABEL[u.role] || u.role)}</span></td>
             <td>
-              <button class="btn btn-ghost btn-sm" data-pw="${esc(u.id)}">암호 변경</button>
-              ${SeMIS.BASE_USERS.some(b => b.id === u.id) ? "" :
-                `<button class="btn btn-danger btn-sm" data-del="${esc(u.id)}">삭제</button>`}
+              <button class="btn btn-ghost btn-sm" data-edit="${i}">수정</button>
+              <button class="btn btn-ghost btn-sm" data-pw="${i}">암호 변경</button>
+              ${u.origId === "mark3464" ? "" : `<button class="btn btn-danger btn-sm" data-del="${i}">삭제</button>`}
             </td></tr>`).join("")}
           </tbody></table></div>
       </div>`;
     $("#btn-add-user").onclick = () => userForm();
-    $$("[data-pw]", box).forEach(b => b.onclick = () => pwForm(b.dataset.pw));
-    $$("[data-del]", box).forEach(b => b.onclick = () =>
-      confirmModal(`사용자 "${b.dataset.del}"을(를) 삭제하시겠습니까?`, () => {
-        D().customUsers = D().customUsers.filter(u => u.id !== b.dataset.del);
+    $$("[data-edit]", box).forEach(b => b.onclick = () => editUserForm(users[Number(b.dataset.edit)]));
+    $$("[data-pw]", box).forEach(b => b.onclick = () => pwForm(users[Number(b.dataset.pw)]));
+    $$("[data-del]", box).forEach(b => b.onclick = () => {
+      const u = users[Number(b.dataset.del)];
+      if (SeMIS.user && u.origId === (SeMIS.user.origId || SeMIS.user.id)) {
+        toast("로그인 중인 본인 계정은 삭제할 수 없습니다.", true); return;
+      }
+      confirmModal(`사용자 "${u.id}" (${u.name})을(를) 삭제하시겠습니까?`, () => {
+        if (u.base) {
+          D().userOverrides[u.origId] = Object.assign({}, D().userOverrides[u.origId], { deleted: true });
+        } else {
+          D().customUsers = D().customUsers.filter(x => x.id !== u.origId);
+        }
         SeMIS.save(); renderUserTab($("#tab-body")); toast("삭제되었습니다.");
-      }));
+      });
+    });
+  }
+
+  // 계정 수정 (admin): 계정명/이름/권한 — 기본 계정은 userOverrides, 추가 계정은 직접 수정
+  function editUserForm(u) {
+    const lockRole = u.origId === "mark3464";
+    openModal(`
+      <h3>계정 수정 — ${esc(u.origId)}${u.base ? ' <span class="badge badge-gray">기본 계정</span>' : ""}</h3>
+      <div class="form-grid">
+        <div class="form-row"><label>계정 ID</label><input id="f-uid" maxlength="20" value="${esc(u.id)}"></div>
+        <div class="form-row"><label>이름</label><input id="f-uname" maxlength="20" value="${esc(u.name)}"></div>
+      </div>
+      <div class="form-row"><label>권한${lockRole ? " (최고관리자 — 변경 불가)" : ""}</label>
+        <select id="f-urole" ${lockRole ? "disabled" : ""}>
+          ${[["user", "일반사용자 (일반·홍보 열람)"], ["manager", "보안관리자 (보안사항 열람 전용)"],
+             ["hq", "항공보안HQ (파트원 · 편집 가능)"], ["admin", "시스템관리자"]].map(([v, lb]) =>
+            `<option value="${v}" ${u.role === v ? "selected" : ""}>${lb}</option>`).join("")}
+        </select></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="f-cancel">취소</button>
+        <button class="btn btn-primary" id="f-save">저장</button>
+      </div>`);
+    $("#f-cancel").onclick = closeModal;
+    $("#f-save").onclick = () => {
+      const id = $("#f-uid").value.trim(), name = $("#f-uname").value.trim();
+      const role = lockRole ? "admin" : $("#f-urole").value;
+      if (!/^[A-Za-z0-9_-]{2,20}$/.test(id)) { toast("계정 ID는 영문/숫자 2~20자입니다.", true); return; }
+      if (!name) { toast("이름을 입력하세요.", true); return; }
+      if (SeMIS.allUsers().some(x => x.id === id && x.origId !== u.origId)) { toast("이미 존재하는 계정 ID입니다.", true); return; }
+      if (u.base) {
+        const ov = Object.assign({}, D().userOverrides[u.origId]);
+        ov.id = id; ov.name = name;
+        if (!lockRole) ov.role = role;
+        D().userOverrides[u.origId] = ov;
+      } else {
+        const cu = D().customUsers.find(x => x.id === u.origId);
+        if (cu) { cu.id = id; cu.name = name; cu.role = role; }
+      }
+      SeMIS.save(); closeModal(); renderUserTab($("#tab-body")); toast("계정 정보가 변경되었습니다.");
+    };
   }
 
   function hashInUse(hash, exceptId) {
     return SeMIS.allUsers().some(u => u.hash === hash && u.id !== exceptId);
   }
 
-  function pwForm(userId) {
+  function pwForm(u) {
+    const userId = u.origId || u.id;
     openModal(`
-      <h3>암호 변경 — ${esc(userId)}</h3>
+      <h3>암호 변경 — ${esc(u.id)}</h3>
       <div class="form-row"><label>새 암호</label><input type="password" id="f-pw1" autocomplete="new-password"></div>
       <div class="form-row"><label>새 암호 확인</label><input type="password" id="f-pw2" autocomplete="new-password"></div>
       <div class="form-hint">4자 이상. 다른 사용자와 동일한 암호는 사용할 수 없습니다.</div>

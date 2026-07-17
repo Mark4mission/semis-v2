@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.11.0";
+  const VERSION = "2.11.1";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -173,7 +173,8 @@ const SeMIS = (() => {
       }],
       levelHistory: [{ id: "lv0", date: new Date().toISOString().slice(0, 10), level: "평시",
         note: "SeMIS v2 개설", by: "시스템", at: new Date().toISOString() }],
-      pwOverrides: {},   // { userId: hash }
+      pwOverrides: {},   // { baseUserId: hash }
+      userOverrides: {}, // v2.11.1: 기본 계정 속성 변경 { baseUserId: { id?, name?, role?, deleted? } }
       customUsers: [],   // [{id, name, role, hash}]
       schedules: [],     // v2.2: [{id,title,memo,start,end,allDay,time,timeEnd,color,done,assignee,vehicle,room,reminders,gcalId?}]
       gcal: { enabled: false, calendarId: "airzetaavsec@gmail.com", apiKey: "" },
@@ -244,6 +245,12 @@ const SeMIS = (() => {
     // 필드 보정 (구버전 데이터 마이그레이션 대비)
     DATA.notices = DATA.notices || [];
     DATA.pwOverrides = DATA.pwOverrides || {};
+    DATA.userOverrides = DATA.userOverrides || {};
+    // 최고관리자(mark3464) 보호: 권한 변경·삭제 불가 (잠금 방지)
+    if (DATA.userOverrides.mark3464) {
+      delete DATA.userOverrides.mark3464.role;
+      delete DATA.userOverrides.mark3464.deleted;
+    }
     DATA.customUsers = DATA.customUsers || [];
     DATA.schedules = DATA.schedules || [];
     // 구버전 secLevel → levelHistory 마이그레이션
@@ -399,11 +406,20 @@ const SeMIS = (() => {
   let currentUser = null;
 
   function allUsers() {
+    // 기본 계정: userOverrides(계정명/이름/권한/삭제) + pwOverrides(암호) 병합.
+    // pwOverrides/userOverrides 키는 원본 id(origId) 고정 — 계정명 변경과 무관하게 유지.
     const base = BASE_USERS.map(u => {
-      const ov = DATA.pwOverrides[u.id];
-      return ov ? Object.assign({}, u, { hash: ov }) : u;
-    });
-    return base.concat(DATA.customUsers);
+      const ov = (DATA.userOverrides || {})[u.id] || {};
+      if (ov.deleted && u.id !== "mark3464") return null;
+      return Object.assign({}, u, {
+        id: ov.id || u.id,
+        name: ov.name || u.name,
+        role: u.id === "mark3464" ? "admin" : (ov.role && ROLE_RANK[ov.role] ? ov.role : u.role),
+        hash: DATA.pwOverrides[u.id] || u.hash,
+        origId: u.id, base: true
+      });
+    }).filter(Boolean);
+    return base.concat(DATA.customUsers.map(u => Object.assign({}, u, { origId: u.id, base: false })));
   }
   function login(pw) {
     const h = pwHash(pw);

@@ -474,8 +474,9 @@ function makeFetchStub(server) {
       ok(e.S.data.customUsers.some(u => u.id === "newbie1"));
       ok(e.S.allUsers().some(u => u.id === "newbie1"));
     });
+    const pwBtn = (idTxt) => qa(e, "#tab-body tr").find(r => { const b = r.querySelector("b"); return b && b.textContent === idTxt; }).querySelector("[data-pw]");
     t("R63 암호 변경: 타 사용자와 동일 암호 거부", () => {
-      q(e, '[data-pw="branch"]').click();
+      pwBtn("branch").click();
       q(e, "#f-pw1").value = "unique-pw-551"; // newbie1과 동일
       q(e, "#f-pw2").value = "unique-pw-551";
       q(e, "#f-save").click();
@@ -483,7 +484,7 @@ function makeFetchStub(server) {
       e.S.closeModal();
     });
     t("R64 암호 변경: 정상 변경 → pwOverrides 반영", () => {
-      q(e, '[data-pw="branch"]').click();
+      pwBtn("branch").click();
       q(e, "#f-pw1").value = "branch-new-pw-88";
       q(e, "#f-pw2").value = "branch-new-pw-88";
       q(e, "#f-save").click();
@@ -1882,7 +1883,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "branches,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,pwOverrides,schedules,trainings,vault");
+    eq(keys, "branches,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,pwOverrides,schedules,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -2357,6 +2358,42 @@ function makeFetchStub(server) {
     go(eh, "equipment");
     ok(qa(eh, "[data-etab]").some(b => b.dataset.etab === "costs"), "hq에게 비용 탭 표시");
     ok(qa(eh, "[data-etab]").some(b => b.dataset.etab === "contracts"), "hq에게 계약 탭 표시");
+  });
+
+  t("UA01 계정 관리: 기본 계정 userOverrides 반영 (이름/권한/계정명)", () => {
+    const e = makeEnv();
+    e.S.data.userOverrides = { avsec: { id: "avsec2", name: "보안감독자그룹", role: "user" } };
+    e.S.saveSilent();
+    const u = e.S.allUsers().find(x => x.origId === "avsec");
+    eq(u.id, "avsec2", "계정명 변경");
+    eq(u.name, "보안감독자그룹", "이름 변경");
+    eq(u.role, "user", "권한 변경");
+    ok(u.base, "기본 계정 표식");
+  });
+
+  t("UA02 계정 관리: 기본 계정 삭제 + mark3464 보호 (normalize)", () => {
+    const e = makeEnv();
+    e.S.data.userOverrides = {
+      branch: { deleted: true },
+      mark3464: { role: "user", deleted: true, name: "개명시도" }
+    };
+    e.S.normalizeData();
+    ok(!e.S.allUsers().some(x => x.origId === "branch"), "기본 계정 삭제 반영");
+    const m = e.S.allUsers().find(x => x.origId === "mark3464");
+    ok(m, "mark3464 삭제 불가");
+    eq(m.role, "admin", "mark3464 권한 고정");
+    eq(m.name, "개명시도", "이름 변경은 허용");
+  });
+
+  t("UA03 계정 관리: 이름 변경 후에도 pwOverrides(원본 키) 로그인 유지", () => {
+    const e = makeEnv();
+    const h = e.S.pwHash("renamed-pw-77");
+    e.S.data.userOverrides = { hq: { id: "avsechq", name: "항공보안파트" } };
+    e.S.data.pwOverrides = { hq: h };
+    e.S.saveSilent();
+    submitLogin(e, "renamed-pw-77");
+    ok(e.S.user && e.S.user.origId === "hq" && e.S.user.id === "avsechq", "변경 계정명으로 로그인");
+    eq(e.S.roleRank(), 3, "권한 유지");
   });
 
   t("DX02 만료 카드: user에게 계약 비노출", () => {
