@@ -101,6 +101,12 @@
     if (lockTimer) clearTimeout(lockTimer);
     lockTimer = setTimeout(onExpire, AUTO_LOCK_MS);
   }
+  function extend() { // 잠금 시간 5분 연장 (지금부터 5분으로 재설정)
+    if (!isUnlocked()) return;
+    startLockTimer();
+    const el = typeof document !== "undefined" && document.getElementById("vault-timer");
+    if (el) el.textContent = "⏳ " + fmtRemain();
+  }
   // 다른 화면으로 이동하면 즉시 잠금 (키 제로화)
   if (typeof window !== "undefined") {
     window.addEventListener("hashchange", () => {
@@ -394,6 +400,7 @@
         <div class="page-head">
           <div class="page-title">🔐 암호 관리</div>
           <span class="spacer"></span>
+          <button class="btn btn-ghost btn-sm" id="vault-extend" title="잠금 시간을 지금부터 5분으로 연장">🕐 5분 연장</button>
           <span class="badge badge-amber" id="vault-timer" title="남은 시간 후 자동 잠금">⏳ ${fmtRemain()}</span>
           <button class="btn btn-ghost btn-sm" id="vault-members">👥 멤버</button>
           <button class="btn btn-ghost btn-sm" id="vault-lock">🔒 잠그기</button>
@@ -434,6 +441,7 @@
         $("#vault-body").innerHTML = unlockedBody(); wire();
       };
       $("#vault-add").onclick = () => entryForm(null);
+      $("#vault-extend").onclick = () => { extend(); toast("🕐 잠금 시간이 5분 연장되었습니다."); };
       $("#vault-members").onclick = membersModal;
       $("#vault-lock").onclick = () => { lock(); SeMIS.renderView(); };
       wire();
@@ -451,7 +459,7 @@
   /* ─────── 테스트/외부 노출 (키·평문은 노출하지 않음) ─────── */
   window.SemisVault = {
     CATS, AUTO_LOCK_MS, PBKDF2_ITER,
-    isUnlocked, lock, setup, unlock, addMember, removeMember, changeMemberPw,
+    isUnlocked, lock, extend, setup, unlock, addMember, removeMember, changeMemberPw,
     entryCount: () => (entries ? entries.length : null),
     addEntryForTest: async (rec) => { // 테스트용: 해제 상태에서 항목 추가+암호화 저장
       if (!isUnlocked()) throw new Error("locked");

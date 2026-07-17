@@ -2408,6 +2408,23 @@ function makeFetchStub(server) {
     e.w.SemisVault.lock();
   });
 
+  await ta("VT09 5분 연장 버튼: 타이머 재설정 + 만료 동작 유지", async () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    const VT = e.w.SemisVault;
+    await VT.setup("박철성", "pw-park");
+    go(e, "vault");
+    ok(q(e, "#vault-extend"), "연장 버튼 표시(카운터 왼쪽)");
+    const before = VT.remainingMs();
+    await new Promise(r => setTimeout(r, 30));
+    q(e, "#vault-extend").click();
+    ok(VT.remainingMs() >= before, "연장 후 남은 시간 재설정");
+    ok(VT.remainingMs() > VT.AUTO_LOCK_MS - 1000, "지금부터 5분으로 갱신");
+    VT._fireExpire();
+    ok(!VT.isUnlocked(), "연장 후에도 만료 잠금 정상");
+    eq(e.w.location.hash, "#/dashboard", "만료 시 대시보드 이동");
+  });
+
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
   console.log(`  SeMIS v2.9 테스트: ${passed + failed}건 실행`);
