@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.10.1";
+  const VERSION = "2.10.2";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -64,11 +64,14 @@ const SeMIS = (() => {
     { id: "avsec",    name: "항공보안팀",   role: "manager",
       hash: "3e005f5a63c594353d10b017f2e3a4d26a3456ad8a8141145bf6571000b591ea" },
     { id: "branch",   name: "지점사용자",   role: "user",
-      hash: "cfb1658673413530f9d2ca87a80d750b7eec3cfef5bd228e0331ed037a05023f" }
+      hash: "cfb1658673413530f9d2ca87a80d750b7eec3cfef5bd228e0331ed037a05023f" },
+    { id: "hq",       name: "항공보안HQ",   role: "hq",
+      hash: "baf18bfc212cf8a7ca80cd468495ef952b27e32f1c615f1737dc81a901b5a20a" }
   ];
-  const ROLE_LABEL = { admin: "시스템관리자", manager: "보안관리자", user: "일반사용자" };
-  const ROLE_RANK  = { admin: 3, manager: 2, user: 1 };
-  const VIS_LABEL  = { all: "전체", mgr: "관리자 이상", admin: "시스템관리자" };
+  const ROLE_LABEL = { admin: "시스템관리자", manager: "보안관리자", hq: "항공보안HQ", user: "일반사용자" };
+  // hq: 열람 전용 상위 사용자 (user < hq < manager) — canWrite(>=2)에는 미달, vis "hq"(>=1.5) 접근
+  const ROLE_RANK  = { admin: 3, manager: 2, hq: 1.5, user: 1 };
+  const VIS_LABEL  = { all: "전체", hq: "항공보안HQ 이상", mgr: "관리자 이상", admin: "시스템관리자" };
 
   /* ─────────── 국가 항공보안등급 (5단계) ─────────── */
   const SEC_LEVELS = ["평시", "관심", "주의", "경계", "심각"];
@@ -417,6 +420,7 @@ const SeMIS = (() => {
   function canSee(menu) {
     const vis = menu.vis || "all";
     if (vis === "all") return true;
+    if (vis === "hq") return roleRank() >= 1.5;
     if (vis === "mgr") return roleRank() >= 2;
     return roleRank() >= 3;
   }

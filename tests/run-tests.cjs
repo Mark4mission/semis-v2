@@ -125,9 +125,9 @@ function makeFetchStub(server) {
       eq(e.S.sha256(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
     t("R03 sha256 한글 결정성", () => eq(e.S.sha256("한글암호123"), e.S.sha256("한글암호123")));
     t("R04 pwHash = sha256(salt+':'+pw)", () => eq(e.S.pwHash("xyz"), e.S.sha256("SeMISv2:" + ":" + "xyz")));
-    t("R05 기본 사용자 3명 (admin/manager/user)", () => {
-      eq(e.S.BASE_USERS.length, 3);
-      eq(e.S.BASE_USERS.map(u => u.role).join(","), "admin,manager,user");
+    t("R05 기본 사용자 4명 (admin/manager/user/hq)", () => {
+      eq(e.S.BASE_USERS.length, 4);
+      eq(e.S.BASE_USERS.map(u => u.role).join(","), "admin,manager,user,hq");
     });
     t("R06 mark3464 = 시스템관리자", () => {
       const u = e.S.BASE_USERS.find(x => x.id === "mark3464");
@@ -2323,8 +2323,23 @@ function makeFetchStub(server) {
     ok(q(e, "#insp-box"), "보안점검 실적 표시");
     ok(q(e, "#upcoming-box"), "다가오는 일정 표시");
     const DC = e.w.SemisDash && e.w.SemisDash.DASH_CARDS;
-    ok(DC && DC.level === "mgr" && DC.insp === "mgr" && DC.upcoming === "mgr" && DC.equip === "mgr", "민감 카드 vis=mgr");
+    ok(DC && DC.level === "hq" && DC.insp === "hq" && DC.upcoming === "hq" && DC.equip === "hq", "민감 카드 vis=hq");
     ok(DC.notice === "all" && DC.quick === "all", "공용 카드 vis=all");
+  });
+
+  t("DV03 항공보안HQ 권한: 민감 카드 열람 가능 + 편집 불가 (v2.10.2)", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    eq(e.S.roleRank(), 1.5, "hq rank 1.5");
+    go(e, "dashboard");
+    ok(q(e, "#level-box"), "보안등급 표시");
+    ok(q(e, "#insp-box"), "보안점검 실적 표시");
+    ok(q(e, "#upcoming-box"), "다가오는 일정 표시");
+    ok(!q(e, "#btn-add-notice"), "공지 작성 버튼 없음 (열람 전용)");
+    ok(!q(e, "#btn-edit-level"), "보안등급 변경 버튼 없음");
+    ok(e.S.canSee({ vis: "hq" }), "vis=hq 메뉴 접근 가능");
+    ok(!e.S.canSee({ vis: "mgr" }), "vis=mgr 메뉴 접근 불가");
+    ok(e.S.BASE_USERS.some(u => u.id === "hq" && u.role === "hq"), "기본 hq 계정 존재");
   });
 
   t("DX02 만료 카드: user에게 계약 비노출", () => {

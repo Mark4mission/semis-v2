@@ -13,21 +13,21 @@
   /* ════════════════ 대시보드 ════════════════ */
   /* ─── 대시보드 카드별 표시 권한 (v2.10.1) ───
      새 카드를 추가할 때는 반드시 여기에 등록하고 vis를 지정할 것.
-     vis: "all"(전체 사용자) | "mgr"(manager 이상) | "adm"(admin 전용) */
+     vis: "all"(전체) | "hq"(항공보안HQ 이상) | "mgr"(manager 이상) | "adm"(admin 전용) */
   const DASH_CARDS = {
     notice:   "all",  // 📢 공지사항
-    equip:    "mgr",  // 🔧 보안장비 · 고장신고 (CARES)
+    equip:    "hq",   // 🔧 보안장비 · 고장신고 (CARES)
     cares:    "all",  // 🌡 CARES 환경센서
-    level:    "mgr",  // 🚨 보안등급
-    insp:     "mgr",  // 🕵️ 보안점검 실적
+    level:    "hq",   // 🚨 보안등급
+    insp:     "hq",   // 🕵️ 보안점검 실적
     expiry:   "all",  // ⏳ 만료 · 점검 도래 (계약은 내부에서 mgr 필터)
     quick:    "all",  // ⚡ 바로가기
-    upcoming: "mgr"   // 📅 다가오는 일정
+    upcoming: "hq"    // 📅 다가오는 일정
   };
   const cardVis = (id) => {
     const v = DASH_CARDS[id] || "all";
     const r = SeMIS.roleRank();
-    return v === "all" || (v === "mgr" && r >= 2) || (v === "adm" && r >= 3);
+    return v === "all" || (v === "hq" && r >= 1.5) || (v === "mgr" && r >= 2) || (v === "adm" && r >= 3);
   };
   window.SemisDash = { DASH_CARDS, cardVis }; // 테스트/외부 참조용
 
@@ -643,6 +643,7 @@
         <label>접근 권한</label>
         <select id="f-vis">
           <option value="all" ${!m || m.vis === "all" ? "selected" : ""}>전체 사용자</option>
+          <option value="hq" ${m && m.vis === "hq" ? "selected" : ""}>항공보안HQ 이상</option>
           <option value="mgr" ${m && m.vis === "mgr" ? "selected" : ""}>보안관리자 이상</option>
           <option value="admin" ${m && m.vis === "admin" ? "selected" : ""}>시스템관리자만</option>
         </select></div>
@@ -761,6 +762,7 @@
       <div class="form-row"><label>권한</label>
         <select id="f-urole">
           <option value="user">일반사용자</option>
+          <option value="hq">항공보안HQ (열람 전용)</option>
           <option value="manager">보안관리자</option>
           <option value="admin">시스템관리자</option>
         </select></div>

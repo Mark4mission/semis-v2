@@ -26,6 +26,7 @@
 
   const TYPES = ["X-Ray", "WTMD(문형)", "HHMD(휴대용)", "ETD(폭발물흔적)", "CCTV", "기타"];
   const TYPE_ICON = { "X-Ray": "📦", "WTMD(문형)": "🚪", "HHMD(휴대용)": "🪄", "ETD(폭발물흔적)": "🧪", "CCTV": "📹", "기타": "🔧" };
+  const TYPE_SHORT = { "X-Ray": "X-Ray", "WTMD(문형)": "WTMD", "HHMD(휴대용)": "HHMD", "ETD(폭발물흔적)": "ETD", "CCTV": "CCTV", "기타": "기타" };
   // 유형별 기본 내용연수 (년) — 장비별 lifeYears로 override 가능
   const TYPE_LIFE = { "X-Ray": 10, "ETD(폭발물흔적)": 5, "WTMD(문형)": 10, "HHMD(휴대용)": 4, "CCTV": 0, "기타": 0 };
   const STATUSES = ["정상", "점검필요", "고장", "수리중", "폐기"];
@@ -470,7 +471,7 @@
     const extras = stFilter === "전체" && !query ? caresOnlyEquips() : [];
     if (!items.length && !extras.length) return '<div class="empty">해당하는 장비가 없습니다.</div>';
     return `<div class="table-wrap"><table class="tbl"><thead><tr>
-        <th style="width:120px">유형</th><th>장비명 / 배치</th><th style="width:96px">기산일</th>
+        <th style="width:82px">유형</th><th>장비명 / 배치</th><th style="width:96px">기산일</th>
         <th style="width:150px">내용연수</th><th style="width:84px">이력</th><th style="width:76px">상태</th></tr></thead><tbody>
       ${items.map(x => {
         const c = caresLinkOf(x);
@@ -478,7 +479,7 @@
         const repN = c ? cares.repairs.filter(r => r.equipmentId === c.id).length : 0;
         const loc = (c && c.location) || x.location || "";
         return `<tr data-eq-row="${esc(x.id)}" style="cursor:pointer" class="${x.status === "폐기" ? "insp-cancel" : ""}">
-        <td>${esc(TYPE_ICON[x.type] || "▪")} ${esc(x.type)}</td>
+        <td style="white-space:nowrap" title="${esc(x.type)}">${esc(TYPE_ICON[x.type] || "▪")} ${esc(TYPE_SHORT[x.type] || x.type)}</td>
         <td><b>${esc(x.name)}</b>${c ? ' <span class="badge badge-blue" style="font-size:.64rem" title="CARES 연동 (S/N 매칭)">C</span>' : ""}
           ${loc ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(loc)}</div>` : ""}</td>
         <td style="font-size:.8rem">${esc(lifeBase(x) || "-")}</td>
@@ -487,7 +488,7 @@
         <td><span class="badge ${ST_BADGE[st] || "badge-gray"}">${esc(st)}</span></td>
       </tr>`; }).join("")}
       ${extras.map((c, i) => `<tr data-cares-only="${i}" style="cursor:pointer;opacity:.78">
-        <td>📡 ${esc(c.type || "-")}</td>
+        <td style="white-space:nowrap">📡 ${esc(c.type || "-")}</td>
         <td><b>${esc(c.name)}</b> <span class="badge badge-blue" style="font-size:.64rem">CARES만</span>
           ${c.location ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(c.location)}</div>` : ""}</td>
         <td style="font-size:.8rem">-</td><td><span class="badge badge-gray">대장 미등록</span></td><td>-</td>
@@ -605,6 +606,51 @@
     };
   }
 
+  // CARES 완료 수리 중 유상(isPaid) 부품 자동 집계 (완료일 기준 연도 귀속, customPrice 기재분)
+  function caresPaidRows(year) {
+    const rows = [];
+    cares.repairs.forEach(r => {
+      if (!r.resolvedAtMs) return;
+      const d = new Date(r.resolvedAtMs);
+      if (d.getFullYear() !== Number(year)) return;
+      const paid = (r.parts || []).filter(p => p && p.isPaid);
+      if (!paid.length) return;
+      let sum = 0, unknown = 0;
+      paid.forEach(p => {
+        if (p.customPrice != null) sum += (Number(p.customPrice) || 0) * (Number(p.qty) || 1);
+        else unknown++;
+      });
+      rows.push({ ym: d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"),
+        name: r.equipmentName, parts: paid.map(p => p.part).join(", "), sum, unknown });
+    });
+    return rows.sort((a, b) => b.ym.localeCompare(a.ym));
+  }
+
+  function caresCostBlock() {
+    let body;
+    if (typeof fetch === "undefined" || (!cares.ts && !cares.err)) body = '<div class="form-hint">CARES 연동 중…</div>';
+    else if (cares.err) body = `<div class="form-hint">CARES 연동 불가: ${esc(cares.err)}</div>`;
+    else {
+      const rows = caresPaidRows(costYear);
+      const total = rows.reduce((s2, r) => s2 + r.sum, 0);
+      body = rows.length
+        ? rows.map(r => `<div style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:.82rem">
+            <span style="color:var(--text-3);white-space:nowrap">${esc(r.ym)}</span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name)} — ${esc(r.parts)}</span>
+            <b style="white-space:nowrap">${fmtWon(r.sum)}원</b>${r.unknown ? `<span style="font-size:.72rem;color:var(--text-3)">+단가미기재 ${r.unknown}건</span>` : ""}
+          </div>`).join("") +
+          `<div style="text-align:right;font-size:.84rem;margin-top:4px;border-top:1px solid var(--border);padding-top:4px">연간 합계 <b>${fmtWon(total)}원</b></div>`
+        : '<div class="form-hint">해당 연도 유상 수리 내역이 없습니다.</div>';
+    }
+    return `
+      <div style="margin-top:14px;padding:10px 12px;border:1px dashed var(--border);border-radius:10px">
+        <div style="font-size:.78rem;font-weight:700;color:var(--text-3);margin-bottom:4px">🔗 CARES 유상 수리비 자동 집계 (${costYear}년 · 참고용)</div>
+        ${body}
+        <div class="form-hint" style="margin-top:6px">CARES 수리 완료 시 유상 처리된 부품 비용을 완료일 기준으로 자동 표시합니다.
+          위 월별 표는 실지출 수동 기록으로 별개 관리되며, 지출 확정 시 '+ 비용 기록'으로 등록하세요.</div>
+      </div>`;
+  }
+
   function costsHTML(canWrite) {
     const yc = yearCosts(costYear);
     const monthRows = [];
@@ -642,7 +688,8 @@
           <td style="text-align:right">${fmtWon(sum("기타"))}</td>
           <td style="text-align:right">${fmtWon(yc.total)}</td></tr></tbody></table></div>
       <div style="font-size:.78rem;font-weight:700;color:var(--text-3);margin:12px 0 4px">기록 상세 (${yc.rows.length}건${canWrite ? " · 클릭하여 수정" : ""})</div>
-      ${detail || '<div class="form-hint">해당 연도 비용 기록이 없습니다.</div>'}`;
+      ${detail || '<div class="form-hint">해당 연도 비용 기록이 없습니다.</div>'}
+      ${caresCostBlock()}`;
   }
 
   /* ─────── 대시보드 위젯: 고장신고·배치 현황 (CARES) ─────── */
@@ -676,16 +723,32 @@
         <span style="font-size:.72rem;color:var(--danger);white-space:nowrap">${fmtElapsed(Date.now() - r.reportedAtMs)}</span>
       </div>`;
     }).join("") : '<div style="font-size:.8rem;color:var(--text-3);padding:2px 0">✅ 진행 중인 고장 신고가 없습니다.</div>';
-    const locHTML = eqs.map(e2 => {
-      const dot = e2.status === "safe" ? "var(--success)" : e2.status === "warning" ? "var(--warning)" : "var(--danger)";
-      return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:.72rem;border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin:2px 2px 0 0">
-        <span style="width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0"></span>${esc(e2.name)}<span style="color:var(--text-3)">@${esc(e2.location || "-")}</span></span>`;
-    }).join("");
+    // 배치 현황: ETD 행방 중심 표시 — "ETD n @Xray n" / 고장 시 "ETD n 고장", X-ray는 고장 시에만 노출
+    const shortLoc = (loc) => String(loc || "-").replace(/x-?ray\s*/i, "Xray ").replace(/\s*호기/, "").trim();
+    const unitNo = (e2) => {
+      const m = String(e2.name || "").match(/(\d+)\s*호기/) || String(e2.location || "").match(/(\d+)\s*호기/);
+      return m ? m[1] : "?";
+    };
+    const chipBox = (inner, broken) =>
+      `<span style="display:inline-flex;align-items:center;gap:4px;font-size:.74rem;border:1px solid ${broken ? "var(--danger)" : "var(--border)"};border-radius:10px;padding:2px 8px;margin:2px 3px 0 0;${broken ? "color:var(--danger);font-weight:700;background:rgba(239,68,68,.06)" : ""}">${inner}</span>`;
+    const dotSpan = (color) => `<span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0"></span>`;
+    const etdChips = eqs.filter(e2 => e2.type === "ETD")
+      .sort((a, b) => Number(unitNo(a)) - Number(unitNo(b)))
+      .map(e2 => {
+        const broken = e2.status === "broken";
+        const dot = broken ? "var(--danger)" : e2.status === "warning" ? "var(--warning)" : "var(--success)";
+        const tail = broken ? " 고장" : ` <span style="color:var(--text-3);font-weight:400">@${esc(shortLoc(e2.location))}</span>`;
+        return chipBox(`${dotSpan(dot)}ETD ${unitNo(e2)}${tail}`, broken);
+      });
+    const xrayChips = eqs.filter(e2 => e2.type === "X-RAY" && e2.status === "broken")
+      .sort((a, b) => Number(unitNo(a)) - Number(unitNo(b)))
+      .map(e2 => chipBox(`${dotSpan("var(--danger)")}Xray ${unitNo(e2)} 고장`, true));
+    const locHTML = etdChips.concat(xrayChips).join("");
     el.innerHTML = `
       <div style="margin-bottom:6px">${chips || '<span style="font-size:.8rem;color:var(--text-3)">등록된 장비 없음</span>'}</div>
       <div style="font-size:.74rem;font-weight:700;color:var(--text-3);margin-bottom:2px">진행 중 고장 신고${act.length ? " (" + act.length + "건)" : ""}</div>
       ${actHTML}
-      <div style="font-size:.74rem;font-weight:700;color:var(--text-3);margin:8px 0 2px">장비 배치 현황</div>
+      <div style="font-size:.74rem;font-weight:700;color:var(--text-3);margin:8px 0 2px">ETD 배치 현황 <span style="font-weight:400">(X-ray는 고장 시에만 표시)</span></div>
       <div>${locHTML || '<span style="font-size:.8rem;color:var(--text-3)">-</span>'}</div>`;
     $$("[data-eq-dash]", el).forEach(n => n.onclick = () => SeMIS.navigate("equipment"));
   }
@@ -774,6 +837,8 @@
         if (canWrite) $("#ct-add").onclick = () => costForm(null);
         $("#cy-prev").onclick = () => { costYear--; SeMIS.renderView(); };
         $("#cy-next").onclick = () => { costYear++; SeMIS.renderView(); };
+        if (typeof fetch !== "undefined" && !cares.ts && !cares.err)
+          loadCares().then(() => { if (tab === "costs" && $("#eq-body")) SeMIS.renderView(); });
       }
       wire();
     }
