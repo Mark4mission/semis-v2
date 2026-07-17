@@ -21,6 +21,7 @@ const psJS = read("js/passes.js");
 const eqJS = read("js/equipment.js");
 const trJS = read("js/training.js");
 const cnJS = read("js/contracts.js");
+const vtJS = read("js/vault.js");
 const caresJS = read("js/cares.js");
 const syncJS = read("js/sync.js");
 const HTML = read("index.html").replace(/<script[\s\S]*?<\/script>/g, "");
@@ -51,8 +52,13 @@ function makeEnv(opts = {}) {
   if (opts.preData) w.localStorage.setItem("semis2:data", JSON.stringify(opts.preData));
   if (opts.preLS) Object.entries(opts.preLS).forEach(([k, v]) => w.localStorage.setItem(k, v));
   if (opts.fetch) w.fetch = opts.fetch;
+  // WebCrypto 폴리필 — jsdom은 crypto.subtle 미구현이라 Node webcrypto 주입 (vault 모듈용)
+  try {
+    const wc = require("crypto").webcrypto;
+    if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
+  } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + caresJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) S.boot();
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -1871,7 +1877,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "branches,contacts,contracts,customUsers,equipment,gcal,inspections,levelHistory,menus,notices,passes,pwOverrides,schedules,trainings");
+    eq(keys, "branches,contacts,contracts,customUsers,equipment,gcal,inspections,levelHistory,menus,notices,passes,pwOverrides,schedules,trainings,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -2276,9 +2282,135 @@ function makeFetchStub(server) {
     ok(!q(e, "#expiry-box").textContent.includes("비밀계약"), "user 계약 미표시");
   });
 
+  /* ══════════ [VT] v2.9 암호 관리 (vault) — 클라이언트 암호화 저장소 ══════════ */
+  t("VT01 normalize: vault 구조/메뉴 자동 삽입 (vis=mgr, 설정 위)", () => {
+    const e = makeEnv();
+    const d = e.S.data;
+    delete d.vault;
+    d.menus = d.menus.filter(m => !(m.type === "module" && m.module === "vault"));
+    const changed = e.S.normalizeData();
+    eq(changed, true);
+    ok(d.vault && Array.isArray(d.vault.members) && d.vault.data === null, "구조 보정");
+    const mn = d.menus.find(m => m.type === "module" && m.module === "vault");
+    ok(mn, "메뉴 삽입"); eq(mn.vis, "mgr"); eq(mn.parent, null, "최상위");
+    const st = d.menus.find(m => m.id === "settings");
+    ok(mn.seq < st.seq, "시스템 설정 위");
+    ok(e.Sync.SYNC_KEYS.includes("vault"), "SYNC_KEYS 포함");
+    eq(e.S.normalizeData(), false, "idempotent");
+  });
+
+  t("VT02 user 접근 차단 (vis=mgr → 대시보드 폴백)", () => {
+    const e = makeEnv();
+    loginAs(e, "user");
+    go(e, "vault");
+    ok(q(e, ".page-title").textContent.includes("대시보드"), "대시보드 폴백");
+  });
+
+  await ta("VT03 최초 설정 + 암호화 저장: 평문이 어디에도 남지 않음", async () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    const VT = e.w.SemisVault;
+    await VT.setup("박철성", "master-pw-1");
+    ok(VT.isUnlocked(), "설정 후 해제 상태");
+    eq(e.S.data.vault.members.length, 1);
+    await VT.addEntryForTest({ category: "시스템", title: "테스트항목", account: "admin", pw: "SuperSecret123!", url: "", note: "" });
+    eq(VT.entryCount(), 1);
+    ok(e.S.data.vault.data && e.S.data.vault.data.ct, "암호문 저장");
+    const raw = e.w.localStorage.getItem("semis2:data") || "";
+    ok(!raw.includes("SuperSecret123!"), "localStorage 평문 미노출");
+    ok(!raw.includes("master-pw-1"), "개인 비밀번호 미저장");
+    ok(!JSON.stringify(e.S.data.vault).includes("SuperSecret123!"), "동기화 대상에 평문 없음");
+    VT.lock();
+  });
+
+  await ta("VT04 잠금/해제: 오답 거부 + 정답 복호화", async () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    const VT = e.w.SemisVault;
+    await VT.setup("박철성", "master-pw-1");
+    await VT.addEntryForTest({ category: "시스템", title: "테스트항목", account: "a", pw: "SuperSecret123!", url: "", note: "" });
+    VT.lock();
+    ok(!VT.isUnlocked(), "잠금");
+    eq(VT.entryCount(), null, "잠금 시 항목 접근 불가");
+    const mid = e.S.data.vault.members[0].id;
+    let rejected = false;
+    try { await VT.unlock(mid, "wrong-pw"); } catch (err) { rejected = true; }
+    ok(rejected && !VT.isUnlocked(), "오답 거부");
+    await VT.unlock(mid, "master-pw-1");
+    ok(VT.isUnlocked(), "정답 해제");
+    eq(VT.findEntry("테스트항목").pw, "SuperSecret123!", "복호화 일치");
+    VT.lock();
+  });
+
+  await ta("VT05 멤버: 추가/비밀번호 변경/최소 1명 보호", async () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    const VT = e.w.SemisVault;
+    await VT.setup("박철성", "pw-park");
+    await VT.addMember("최상일", "pw-choi");
+    eq(e.S.data.vault.members.length, 2);
+    VT.lock();
+    const m2 = e.S.data.vault.members.find(m => m.name === "최상일");
+    await VT.unlock(m2.id, "pw-choi");
+    ok(VT.isUnlocked(), "새 멤버 비밀번호로 해제");
+    await VT.changeMemberPw(m2.id, "pw-choi-2");
+    VT.lock();
+    let old = false;
+    try { await VT.unlock(m2.id, "pw-choi"); } catch (err) { old = true; }
+    ok(old, "이전 비밀번호 무효");
+    await VT.unlock(m2.id, "pw-choi-2");
+    ok(VT.isUnlocked(), "변경 비밀번호 유효");
+    VT.removeMember(e.S.data.vault.members.find(m => m.name === "박철성").id);
+    eq(e.S.data.vault.members.length, 1);
+    VT.removeMember(m2.id);
+    eq(e.S.data.vault.members.length, 1, "최소 1명 보호");
+    VT.lock();
+  });
+
+  await ta("VT06 5분 만료 → 자동 잠금 + 대시보드 이동", async () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    const VT = e.w.SemisVault;
+    await VT.setup("박철성", "pw-park");
+    go(e, "vault");
+    ok(VT.remainingMs() > 0 && VT.remainingMs() <= VT.AUTO_LOCK_MS, "타이머 동작");
+    VT._fireExpire();
+    ok(!VT.isUnlocked(), "만료 잠금");
+    eq(e.w.location.hash, "#/dashboard", "대시보드 이동");
+  });
+
+  await ta("VT07 다른 화면 이동 시 즉시 잠금 (키 제로화)", async () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    const VT = e.w.SemisVault;
+    await VT.setup("박철성", "pw-park");
+    go(e, "vault");
+    ok(VT.isUnlocked());
+    go(e, "dashboard");
+    await new Promise(r => setTimeout(r, 20)); // jsdom hashchange 비동기
+    ok(!VT.isUnlocked(), "이동 시 잠금");
+  });
+
+  await ta("VT08 화면 흐름: 설정 폼 → 해제 화면 → 잠그기", async () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    go(e, "vault");
+    ok(q(e, "#vault-setup-form"), "최초 설정 폼");
+    q(e, "#vs-name").value = "박철성";
+    q(e, "#vs-pw").value = "pw-park-8";
+    q(e, "#vs-pw2").value = "pw-park-8";
+    q(e, "#vault-setup-form").dispatchEvent(new e.w.Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise(r => setTimeout(r, 1200)); // PBKDF2 + 렌더 대기
+    ok(q(e, "#vault-add"), "해제 화면(항목 추가 버튼)");
+    ok(q(e, "#vault-timer"), "자동 잠금 카운트다운 표시");
+    q(e, "#vault-lock").click();
+    ok(q(e, "#vault-unlock-form"), "잠금 화면 복귀");
+    e.w.SemisVault.lock();
+  });
+
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
-  console.log(`  SeMIS v2.8 테스트: ${passed + failed}건 실행`);
+  console.log(`  SeMIS v2.9 테스트: ${passed + failed}건 실행`);
   console.log(`  ✓ 통과 ${passed}건  ✗ 실패 ${failed}건`);
   console.log("════════════════════════════════════");
   if (failures.length) {

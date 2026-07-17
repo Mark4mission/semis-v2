@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.8.0";
+  const VERSION = "2.9.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -147,6 +147,7 @@ const SeMIS = (() => {
       lk("ref-legacy", "구버전 (kjsemis)", "🕰️", "https://sites.google.com/view/kjsemis/", "grp-ref"),
       lk("ref-boannews", "보안뉴스", "📰", "https://www.boannews.com/", "grp-ref"),
 
+      m("vault", "암호 관리", "🔐", "vault", "mgr"),
       m("settings", "시스템 설정", "⚙️", "settings", "admin")
     ];
   }
@@ -174,7 +175,8 @@ const SeMIS = (() => {
       passes: [],                     // v2.8: 출입증 관리 (개인정보 — 공용 DB 동기화)
       equipment: [],                  // v2.8: 보안장비 유지관리
       trainings: [],                  // v2.8: 보안교육 관리
-      contracts: []                   // v2.8: 계약서 관리
+      contracts: [],                  // v2.8: 계약서 관리
+      vault: { v: 1, members: [], data: null, updated: "" } // v2.9: 암호 관리 (암호문만 저장)
     };
   }
 
@@ -343,6 +345,17 @@ const SeMIS = (() => {
       const mn = DATA.menus.find(m => m && m.id === id);
       if (mn && mn.label === orig) mn.label = orig + " (구버전)";
     });
+    // v2.9: 암호 관리(vault) — 암호문 저장소 구조 보정 + 메뉴(최상위, 시스템 설정 위)
+    if (!DATA.vault || typeof DATA.vault !== "object" || Array.isArray(DATA.vault))
+      DATA.vault = { v: 1, members: [], data: null, updated: "" };
+    if (!Array.isArray(DATA.vault.members)) DATA.vault.members = [];
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "vault")) {
+      const st = DATA.menus.find(m => m && m.id === "settings");
+      const seq = st ? (st.seq || 0) - 0.5
+        : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
+      DATA.menus.push({ id: "vault", seq, type: "module", label: "암호 관리",
+        icon: "🔐", module: "vault", vis: "mgr", parent: null });
+    }
     return JSON.stringify(DATA) !== before;
   }
   const saveHooks = [];
