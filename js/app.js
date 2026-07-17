@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.7.0";
+  const VERSION = "2.8.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -110,8 +110,9 @@ const SeMIS = (() => {
 
       g("grp-branch", "지점 / 협력업체"),
       m("branches", "지점 관리", "🌍", "branches", "all", "grp-branch"),
+      m("contracts-mgmt", "계약서 관리", "💼", "contracts-mgmt", "mgr", "grp-branch"),
       lk("br-sys", "지점보안시스템", "💻", "https://sites.google.com/view/kjsemis/%EC%A7%80%EC%A0%90%ED%98%91%EB%A0%A5%EC%97%85%EC%B2%B4/%EC%A7%80%EC%A0%90%EB%B3%B4%EC%95%88%EC%8B%9C%EC%8A%A4%ED%85%9C", "grp-branch", { quick: true }),
-      lk("br-contract", "계약서 관리", "💼", "https://sites.google.com/view/kjsemis/%EC%A7%80%EC%A0%90%ED%98%91%EB%A0%A5%EC%97%85%EC%B2%B4/%EA%B3%84%EC%95%BD%EC%84%9C-%EA%B4%80%EB%A6%AC", "grp-branch", { vis: "mgr" }),
+      lk("br-contract", "계약서 관리 (구버전)", "💼", "https://sites.google.com/view/kjsemis/%EC%A7%80%EC%A0%90%ED%98%91%EB%A0%A5%EC%97%85%EC%B2%B4/%EA%B3%84%EC%95%BD%EC%84%9C-%EA%B4%80%EB%A6%AC", "grp-branch", { vis: "mgr" }),
       lk("br-supervisor", "보안감독자 현황", "👥", "https://docs.google.com/spreadsheets/d/1RlxvnrjDWMy4lSTDdbF6JTKCgL45EuTW0O1mjGd8RtQ/edit?usp=sharing", "grp-branch", { vis: "mgr" }),
       lk("br-officer", "지점 보안담당자", "👥", "https://docs.google.com/spreadsheets/d/15Qvf5NgdeyfIBBLzFc3BtTGE6kQse-_HTb9u4PvzHt0/edit?usp=sharing", "grp-branch", { vis: "mgr" }),
 
@@ -122,12 +123,15 @@ const SeMIS = (() => {
       lk("insp-daily", "일일 보안점검", "🙆", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EC%A0%90%EA%B2%80%EA%B8%B0%EB%A1%9D-%EB%AA%A8%EB%8B%88%ED%84%B0%EB%A7%81/%EC%9D%BC%EC%9D%BC-%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80", "grp-inspect"),
 
       g("grp-pass", "출입증 / 보안장비"),
-      lk("pass-mgmt", "출입증 관리", "🪪", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EC%B6%9C%EC%9E%85%EC%A6%9D-%EA%B4%80%EB%A6%AC", "grp-pass"),
-      lk("equip-mgmt", "보안장비 관리", "🔧", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%EA%B4%80%EB%A6%AC", "grp-pass"),
+      m("passes", "출입증 관리", "🪪", "passes", "all", "grp-pass"),
+      m("equipment", "보안장비 유지관리", "🔧", "equipment", "all", "grp-pass"),
+      lk("pass-mgmt", "출입증 관리 (구버전)", "🪪", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EC%B6%9C%EC%9E%85%EC%A6%9D-%EA%B4%80%EB%A6%AC", "grp-pass"),
+      lk("equip-mgmt", "보안장비 관리 (구버전)", "🔧", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%EA%B4%80%EB%A6%AC", "grp-pass"),
       lk("equip-council", "보안장비 협의체", "🤝", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%ED%98%91%EC%9D%98%EC%B2%B4", "grp-pass"),
 
       g("grp-edu", "보안 증진"),
-      lk("edu-training", "보안 교육", "🎓", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A6%9D%EC%A7%84/%EB%B3%B4%EC%95%88-%EA%B5%90%EC%9C%A1", "grp-edu"),
+      m("training", "보안교육 관리", "🎓", "training", "all", "grp-edu"),
+      lk("edu-training", "보안 교육 (구버전)", "🎓", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A6%9D%EC%A7%84/%EB%B3%B4%EC%95%88-%EA%B5%90%EC%9C%A1", "grp-edu"),
       lk("edu-campaign", "보안 캠페인", "📣", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A6%9D%EC%A7%84/%EB%B3%B4%EC%95%88-%EC%BA%A0%ED%8E%98%EC%9D%B8", "grp-edu"),
 
       g("grp-abnormal", "비정상 상황"),
@@ -166,7 +170,11 @@ const SeMIS = (() => {
       gcal: { enabled: false, calendarId: "airzetaavsec@gmail.com", apiKey: "" },
       inspections: seedInspections(), // v2.4: 보안점검 일정
       contacts: { sections: [] },     // v2.6: 보고체계 연락망 (실데이터는 공용 DB 동기화 — 코드에 미시드)
-      branches: []                    // v2.7: 지점 관리 (해외지점 세계지도)
+      branches: [],                   // v2.7: 지점 관리 (해외지점 세계지도)
+      passes: [],                     // v2.8: 출입증 관리 (개인정보 — 공용 DB 동기화)
+      equipment: [],                  // v2.8: 보안장비 유지관리
+      trainings: [],                  // v2.8: 보안교육 관리
+      contracts: []                   // v2.8: 계약서 관리
     };
   }
 
@@ -303,6 +311,38 @@ const SeMIS = (() => {
       DATA.menus.push({ id: "branches", seq, type: "module", label: "지점 관리",
         icon: "🌍", module: "branches", vis: "all", parent: grp ? "grp-branch" : null });
     }
+    // v2.8: 출입증/보안장비/보안교육/계약서 모듈 — 배열 보정 + 메뉴 자동 삽입 + 구링크 구분
+    if (!Array.isArray(DATA.passes)) DATA.passes = [];
+    if (!Array.isArray(DATA.equipment)) DATA.equipment = [];
+    if (!Array.isArray(DATA.trainings)) DATA.trainings = [];
+    if (!Array.isArray(DATA.contracts)) DATA.contracts = [];
+    const ensureModuleMenu = (menuId, grpId, label, icon, moduleId, vis) => {
+      if (DATA.menus.some(m => m && m.type === "module" && m.module === moduleId)) return;
+      const grp = DATA.menus.find(m => m && m.id === grpId && m.type === "group");
+      const children = grp ? DATA.menus.filter(m => m && m.parent === grpId) : [];
+      const seq = children.length ? Math.min.apply(null, children.map(c => c.seq || 0)) - 0.5
+        : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
+      DATA.menus.push({ id: menuId, seq, type: "module", label, icon, module: moduleId,
+        vis: vis || "all", parent: grp ? grpId : null });
+    };
+    // grp-pass 최상단에 출입증 → 보안장비 순서 (equipment 먼저 삽입해야 passes가 위에 옴)
+    ensureModuleMenu("equipment", "grp-pass", "보안장비 유지관리", "🔧", "equipment", "all");
+    ensureModuleMenu("passes", "grp-pass", "출입증 관리", "🪪", "passes", "all");
+    ensureModuleMenu("training", "grp-edu", "보안교육 관리", "🎓", "training", "all");
+    // 계약서 관리는 '지점 관리' 바로 다음 위치 (관리자 이상 전용)
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "contracts-mgmt")) {
+      const brMenu = DATA.menus.find(m => m && m.type === "module" && m.module === "branches" && m.parent === "grp-branch");
+      if (brMenu) {
+        DATA.menus.push({ id: "contracts-mgmt", seq: (brMenu.seq || 0) + 0.25, type: "module",
+          label: "계약서 관리", icon: "💼", module: "contracts-mgmt", vis: "mgr", parent: "grp-branch" });
+      } else ensureModuleMenu("contracts-mgmt", "grp-branch", "계약서 관리", "💼", "contracts-mgmt", "mgr");
+    }
+    // 기존 시트 링크는 유지하되 "(구버전)"으로 구분
+    [["pass-mgmt", "출입증 관리"], ["equip-mgmt", "보안장비 관리"],
+     ["edu-training", "보안 교육"], ["br-contract", "계약서 관리"]].forEach(([id, orig]) => {
+      const mn = DATA.menus.find(m => m && m.id === id);
+      if (mn && mn.label === orig) mn.label = orig + " (구버전)";
+    });
     return JSON.stringify(DATA) !== before;
   }
   const saveHooks = [];

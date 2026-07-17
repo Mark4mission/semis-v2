@@ -17,6 +17,10 @@ const calJS = read("js/calendar.js");
 const inspJS = read("js/inspection.js");
 const ctJS = read("js/contacts.js");
 const brJS = read("js/branches.js");
+const psJS = read("js/passes.js");
+const eqJS = read("js/equipment.js");
+const trJS = read("js/training.js");
+const cnJS = read("js/contracts.js");
 const caresJS = read("js/cares.js");
 const syncJS = read("js/sync.js");
 const HTML = read("index.html").replace(/<script[\s\S]*?<\/script>/g, "");
@@ -48,7 +52,7 @@ function makeEnv(opts = {}) {
   if (opts.preLS) Object.entries(opts.preLS).forEach(([k, v]) => w.localStorage.setItem(k, v));
   if (opts.fetch) w.fetch = opts.fetch;
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + caresJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + caresJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) S.boot();
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -1867,7 +1871,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "branches,contacts,customUsers,gcal,inspections,levelHistory,menus,notices,pwOverrides,schedules");
+    eq(keys, "branches,contacts,contracts,customUsers,equipment,gcal,inspections,levelHistory,menus,notices,passes,pwOverrides,schedules,trainings");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -2018,9 +2022,263 @@ function makeFetchStub(server) {
     e.Sync.stop();
   });
 
+  /* ══════════ [PS/EQ/TR/CN] v2.8 신규 모듈 — 출입증/보안장비/보안교육/계약서 ══════════ */
+  const shiftDay = (days) => {
+    const t = new Date(); t.setUTCDate(t.getUTCDate() + days);
+    return t.toISOString().slice(0, 10);
+  };
+
+  t("V801 normalize: 신규 배열/메뉴 자동 삽입 (구서버 데이터 마이그레이션)", () => {
+    const e = makeEnv();
+    const d = e.S.data;
+    // 구버전 상태 시뮬레이션: 신규 모듈 메뉴/배열 제거 + 구링크 라벨 원복
+    d.menus = d.menus.filter(m => !(m.type === "module" && ["passes", "equipment", "training", "contracts-mgmt"].includes(m.module)));
+    delete d.passes; delete d.equipment; delete d.trainings; delete d.contracts;
+    [["pass-mgmt", "출입증 관리"], ["equip-mgmt", "보안장비 관리"], ["edu-training", "보안 교육"], ["br-contract", "계약서 관리"]]
+      .forEach(([id, orig]) => { const mn = d.menus.find(m => m.id === id); if (mn) mn.label = orig; });
+    const changed = e.S.normalizeData();
+    eq(changed, true, "변경 감지");
+    ok(Array.isArray(d.passes) && Array.isArray(d.equipment) && Array.isArray(d.trainings) && Array.isArray(d.contracts), "배열 보정");
+    const mOf = (mod) => d.menus.find(m => m.type === "module" && m.module === mod);
+    ok(mOf("passes") && mOf("equipment") && mOf("training") && mOf("contracts-mgmt"), "메뉴 4개 삽입");
+    ok(mOf("passes").seq < mOf("equipment").seq, "출입증이 장비보다 위");
+    const br = d.menus.find(m => m.type === "module" && m.module === "branches");
+    ok(mOf("contracts-mgmt").seq > br.seq, "계약서는 지점 관리 다음");
+    eq(mOf("contracts-mgmt").vis, "mgr", "계약서 vis=mgr");
+    eq(d.menus.find(m => m.id === "pass-mgmt").label, "출입증 관리 (구버전)", "구링크 라벨 구분");
+    eq(e.S.normalizeData(), false, "idempotent");
+  });
+
+  t("V802 SYNC_KEYS에 신규 4개 컬렉션 포함", () => {
+    const e = makeEnv();
+    ["passes", "equipment", "trainings", "contracts"].forEach(k =>
+      ok(e.Sync.SYNC_KEYS.includes(k), k + " 포함"));
+  });
+
+  /* ── [PS] 출입증 관리 ── */
+  t("PS01 렌더: manager 등록 버튼 / user 미표시", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    go(e, "passes");
+    ok(q(e, ".page-title").textContent.includes("출입증"), "제목");
+    ok(q(e, "#pass-add"), "manager 등록 버튼");
+    const e2 = makeEnv();
+    loginAs(e2, "user");
+    go(e2, "passes");
+    ok(!q(e2, "#pass-add"), "user 등록 버튼 없음");
+  });
+
+  t("PS02 등록 폼 저장 → 데이터 반영", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    go(e, "passes");
+    q(e, "#pass-add").click();
+    q(e, "#p-holder").value = "홍길동";
+    q(e, "#p-company").value = "에어제타";
+    q(e, "#p-no").value = "I-2026-001";
+    q(e, "#p-issue").value = "2026-01-01";
+    q(e, "#p-expire").value = shiftDay(20);
+    q(e, "#p-save").click();
+    eq(e.S.data.passes.length, 1);
+    const x = e.S.data.passes[0];
+    eq(x.holder, "홍길동"); eq(x.no, "I-2026-001"); eq(x.status, "사용중");
+    // 목록에 표시 + D-day 배지
+    ok(q(e, "#pass-body").textContent.includes("홍길동"));
+    ok(q(e, "#pass-body").innerHTML.includes("D-20"), "D-day 배지");
+  });
+
+  t("PS03 만료 판정: daysLeft/isExpired", () => {
+    const e = makeEnv();
+    const P = e.w.SemisPasses;
+    eq(P.daysLeft(shiftDay(5)), 5);
+    eq(P.daysLeft(shiftDay(-3)), -3);
+    ok(P.isExpired({ status: "사용중", expire: shiftDay(-1) }), "만료 경과");
+    ok(!P.isExpired({ status: "반납", expire: shiftDay(-1) }), "반납은 만료 아님");
+    ok(!P.isExpired({ status: "사용중", expire: shiftDay(1) }), "기한 내");
+  });
+
+  t("PS04 통계/필터: 만료임박·분실 집계", () => {
+    const e = makeEnv();
+    e.S.data.passes = [
+      { id: "p1", kind: "상주직원", holder: "A", company: "", no: "", area: "", issue: "", expire: shiftDay(10), status: "사용중", note: "" },
+      { id: "p2", kind: "상주직원", holder: "B", company: "", no: "", area: "", issue: "", expire: shiftDay(-2), status: "사용중", note: "" },
+      { id: "p3", kind: "차량", holder: "C", company: "", no: "", area: "", issue: "", expire: shiftDay(200), status: "분실", note: "" }
+    ];
+    const s = e.w.SemisPasses.stats();
+    eq(s.active, 2); eq(s.soon, 1); eq(s.expired, 1); eq(s.lost, 1);
+    loginAs(e, "manager");
+    e.w.SemisPasses.setFilter("만료임박");
+    go(e, "passes");
+    const rows = qa(e, "#pass-body [data-pass-row]");
+    eq(rows.length, 2, "만료임박 필터(D-10 + 만료 경과 포함)");
+  });
+
+  t("PS05 user 상세 모달 (읽기 전용)", () => {
+    const e = makeEnv();
+    e.S.data.passes = [{ id: "p1", kind: "상주직원", holder: "김직원", company: "지점", no: "N1", area: "램프", issue: "2026-01-01", expire: shiftDay(100), status: "사용중", note: "" }];
+    loginAs(e, "user");
+    go(e, "passes");
+    q(e, "[data-pass-row]").click();
+    ok(q(e, "#modal-box").textContent.includes("김직원"), "상세 모달");
+    ok(!q(e, "#p-save"), "저장 버튼 없음(읽기 전용)");
+  });
+
+  /* ── [EQ] 보안장비 유지관리 ── */
+  t("EQ01 addMonths: 말일 보정 포함", () => {
+    const e = makeEnv();
+    const E = e.w.SemisEquipment;
+    eq(E.addMonths("2026-07-17", 12), "2027-07-17");
+    eq(E.addMonths("2026-01-31", 1), "2026-02-28", "말일 보정");
+    eq(E.addMonths("2024-01-31", 1), "2024-02-29", "윤년 말일");
+    eq(E.addMonths("", 12), "");
+    eq(E.addMonths("2026-01-01", 0), "");
+  });
+
+  t("EQ02 nextCheck/isDue: 점검주기 도래 판정", () => {
+    const e = makeEnv();
+    const E = e.w.SemisEquipment;
+    ok(E.isDue({ status: "정상", lastCheck: "2024-01-01", cycleM: 12 }), "주기 경과");
+    ok(!E.isDue({ status: "정상", lastCheck: shiftDay(-30), cycleM: 12 }), "주기 이내");
+    ok(!E.isDue({ status: "폐기", lastCheck: "2024-01-01", cycleM: 12 }), "폐기 제외");
+    ok(!E.isDue({ status: "정상", lastCheck: "", cycleM: 12 }), "점검일 미지정");
+  });
+
+  t("EQ03 등록 폼 저장 + 이력 로그 → 최근 점검일 자동 반영", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    go(e, "equipment");
+    q(e, "#eq-add").click();
+    q(e, "#e-name").value = "HI-SCAN 6040i";
+    q(e, "#e-location").value = "T1 화물터미널";
+    q(e, "#elog-add").click();                      // 이력: 오늘 · 점검
+    q(e, "#e-logs .ifd-text").value = "정기 캘리브레이션";
+    q(e, "#e-save").click();
+    eq(e.S.data.equipment.length, 1);
+    const x = e.S.data.equipment[0];
+    eq(x.name, "HI-SCAN 6040i");
+    eq(x.logs.length, 1);
+    eq(x.lastCheck, todayOf(e), "점검 이력 일자 → lastCheck 자동");
+    eq(x.cycleM, 12, "기본 주기 12개월");
+  });
+
+  t("EQ04 통계/필터: 점검도래 집계", () => {
+    const e = makeEnv();
+    e.S.data.equipment = [
+      { id: "q1", type: "X-Ray", name: "장비A", serial: "", location: "", vendor: "", installed: "", lastCheck: "2024-01-01", cycleM: 12, status: "정상", logs: [], note: "" },
+      { id: "q2", type: "CCTV", name: "장비B", serial: "", location: "", vendor: "", installed: "", lastCheck: shiftDay(-10), cycleM: 12, status: "정상", logs: [], note: "" },
+      { id: "q3", type: "기타", name: "장비C", serial: "", location: "", vendor: "", installed: "", lastCheck: "", cycleM: 12, status: "고장", logs: [], note: "" }
+    ];
+    const s = e.w.SemisEquipment.stats();
+    eq(s.total, 3); eq(s.ok, 1); eq(s.due, 1); eq(s.broken, 1);
+    loginAs(e, "manager");
+    e.w.SemisEquipment.setFilter("점검도래");
+    go(e, "equipment");
+    eq(qa(e, "#eq-body [data-eq-row]").length, 1, "점검도래 필터");
+  });
+
+  /* ── [TR] 보안교육 관리 ── */
+  t("TR01 렌더 + 연도 네비게이션", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    go(e, "training");
+    ok(q(e, ".page-title").textContent.includes("보안교육"));
+    const y = new Date().getFullYear();
+    ok(q(e, ".cal-title").textContent.includes(String(y)));
+    q(e, "#tr-prev").click();
+    ok(q(e, ".cal-title").textContent.includes(String(y - 1)), "이전 연도");
+    e.w.SemisTraining.setYear(y); // 상태 복원
+  });
+
+  t("TR02 등록 폼 저장: 실시일 → 월 자동 반영 + 이수율", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    go(e, "training");
+    q(e, "#tr-add").click();
+    q(e, "#t-course").value = "항공보안 정기교육";
+    q(e, "#t-date").value = String(new Date().getFullYear()) + "-09-15";
+    q(e, "#t-planned").value = "40";
+    q(e, "#t-attended").value = "38";
+    qa(e, "#t-status option").forEach(o => { o.selected = o.textContent === "완료"; });
+    q(e, "#t-save").click();
+    eq(e.S.data.trainings.length, 1);
+    const x = e.S.data.trainings[0];
+    eq(x.month, 9, "실시일 → 월 자동");
+    eq(x.status, "완료");
+    const s = e.w.SemisTraining.stats();
+    eq(s.done, 1); eq(s.rate, 95, "이수율 38/40=95%");
+  });
+
+  t("TR03 user 읽기 전용 상세", () => {
+    const e = makeEnv();
+    e.S.data.trainings = [{ id: "t1", year: new Date().getFullYear(), month: 3, course: "초기교육", type: "초기", method: "집합", target: "신규자", date: "", hours: 8, planned: 5, attended: 5, status: "완료", note: "" }];
+    loginAs(e, "user");
+    go(e, "training");
+    ok(!q(e, "#tr-add"), "user 등록 버튼 없음");
+    q(e, "[data-tr-row]").click();
+    ok(q(e, "#modal-box").textContent.includes("초기교육"), "상세 모달");
+    ok(!q(e, "#t-save"), "저장 버튼 없음");
+  });
+
+  /* ── [CN] 계약서 관리 ── */
+  t("CN01 stateOf: 유효/만료/해지 판정", () => {
+    const e = makeEnv();
+    const C = e.w.SemisContracts;
+    eq(C.stateOf({ status: "유효", end: shiftDay(10) }), "유효");
+    eq(C.stateOf({ status: "유효", end: shiftDay(-1) }), "만료");
+    eq(C.stateOf({ status: "해지", end: shiftDay(10) }), "해지");
+    eq(C.stateOf({ status: "유효", end: "" }), "유효", "기한없음");
+  });
+
+  t("CN02 렌더(manager) + 등록 저장 + D-day 배지", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    go(e, "contracts-mgmt");
+    ok(q(e, ".page-title").textContent.includes("계약서"));
+    q(e, "#cn-add").click();
+    q(e, "#c-name").value = "보안검색 위탁용역";
+    q(e, "#c-party").value = "프로에스콤";
+    q(e, "#c-start").value = "2026-01-01";
+    q(e, "#c-end").value = shiftDay(45);
+    q(e, "#c-save").click();
+    eq(e.S.data.contracts.length, 1);
+    eq(e.S.data.contracts[0].party, "프로에스콤");
+    ok(q(e, "#cn-body").innerHTML.includes("D-45"), "D-day 배지(90일 내 amber)");
+    const s = e.w.SemisContracts.stats();
+    eq(s.active, 1); eq(s.soon, 1);
+  });
+
+  t("CN03 user 접근 차단 (vis=mgr → 대시보드 폴백)", () => {
+    const e = makeEnv();
+    loginAs(e, "user");
+    go(e, "contracts-mgmt");
+    ok(q(e, ".page-title").textContent.includes("대시보드"), "대시보드로 폴백");
+  });
+
+  /* ── [DX] 대시보드 만료·점검 도래 통합 카드 ── */
+  t("DX01 만료·점검 도래 카드: 출입증/계약/장비 통합 (manager)", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    e.S.data.passes = [{ id: "p1", kind: "상주직원", holder: "박만료", company: "", no: "", area: "", issue: "", expire: shiftDay(5), status: "사용중", note: "" }];
+    e.S.data.contracts = [{ id: "c1", name: "만료임박계약", party: "", category: "기타", start: "", end: shiftDay(20), amount: "", owner: "", autoRenew: false, fileUrl: "", status: "유효", note: "" }];
+    e.S.data.equipment = [{ id: "q1", type: "X-Ray", name: "점검도래장비", serial: "", location: "", vendor: "", installed: "", lastCheck: "2024-01-01", cycleM: 12, status: "정상", logs: [], note: "" }];
+    go(e, "dashboard");
+    const box = q(e, "#expiry-box").textContent;
+    ok(box.includes("박만료"), "출입증 표시");
+    ok(box.includes("만료임박계약"), "계약 표시(manager)");
+    ok(box.includes("점검도래장비"), "장비 표시");
+  });
+
+  t("DX02 만료 카드: user에게 계약 비노출", () => {
+    const e = makeEnv();
+    loginAs(e, "user");
+    e.S.data.contracts = [{ id: "c1", name: "비밀계약", party: "", category: "기타", start: "", end: shiftDay(20), amount: "", owner: "", autoRenew: false, fileUrl: "", status: "유효", note: "" }];
+    go(e, "dashboard");
+    ok(!q(e, "#expiry-box").textContent.includes("비밀계약"), "user 계약 미표시");
+  });
+
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
-  console.log(`  SeMIS v2.7 테스트: ${passed + failed}건 실행`);
+  console.log(`  SeMIS v2.8 테스트: ${passed + failed}건 실행`);
   console.log(`  ✓ 통과 ${passed}건  ✗ 실패 ${failed}건`);
   console.log("════════════════════════════════════");
   if (failures.length) {

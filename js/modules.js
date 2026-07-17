@@ -66,6 +66,10 @@
               <div id="insp-box"></div>
             </div>
             <div class="card">
+              <div class="card-title">⏳ 만료 · 점검 도래</div>
+              <div id="expiry-box"></div>
+            </div>
+            <div class="card">
               <div class="card-title">⚡ 바로가기</div>
               <div class="quick-links">
                 ${quicks.map(m => m.type === "module"
@@ -175,6 +179,38 @@
       $$("#insp-box [data-insp-open]").forEach(el => el.onclick = () => {
         if (window.SemisInspection) SemisInspection.open(el.dataset.inspOpen);
       });
+
+      // 만료 · 점검 도래 (출입증/계약/장비 통합, v2.8)
+      {
+        const dl = (ds) => ds ? Math.round((new Date(ds) - new Date(todayISO())) / 86400000) : null;
+        const items = [];
+        (d.passes || []).forEach(x => {
+          if (x.status !== "사용중" || !x.expire) return;
+          const dd = dl(x.expire);
+          if (dd <= 30) items.push({ d: dd, route: "passes", ico: "🪪", label: `출입증 · ${x.holder}${x.company ? " (" + x.company + ")" : ""}` });
+        });
+        if (canWrite) (d.contracts || []).forEach(x => {
+          if (x.status === "해지" || !x.end) return;
+          const dd = dl(x.end);
+          if (dd <= 60) items.push({ d: dd, route: "contracts-mgmt", ico: "💼", label: `계약 · ${x.name}` });
+        });
+        (d.equipment || []).forEach(x => {
+          if (x.status === "폐기" || !x.lastCheck || !x.cycleM || !window.SemisEquipment) return;
+          const n = SemisEquipment.nextCheck(x);
+          const dd = dl(n);
+          if (dd !== null && dd <= 14) items.push({ d: dd, route: "equipment", ico: "🔧", label: `장비점검 · ${x.name}` });
+        });
+        items.sort((a, b) => a.d - b.d);
+        items.length = Math.min(items.length, 8);
+        $("#expiry-box").innerHTML = items.length
+          ? items.map(it => `<div class="insp-dash-row" data-exp-go="${esc(it.route)}" title="클릭하여 이동"
+              style="display:flex;align-items:center;gap:6px;font-size:.8rem;padding:3px 0;cursor:pointer">
+              <span class="badge ${it.d < 0 ? "badge-red" : it.d <= 30 ? "badge-amber" : "badge-gray"}" style="flex-shrink:0">${it.d < 0 ? "D+" + (-it.d) : "D-" + it.d}</span>
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.ico} ${esc(it.label)}</span>
+            </div>`).join("")
+          : '<div style="font-size:.8rem;color:var(--text-3)">30일 내 만료 예정 항목이 없습니다.</div>';
+        $$("#expiry-box [data-exp-go]").forEach(el => el.onclick = () => SeMIS.navigate(el.dataset.expGo));
+      }
 
       // CARES 환경센서 위젯
       if (window.SemisCares && $("#cares-box")) {
