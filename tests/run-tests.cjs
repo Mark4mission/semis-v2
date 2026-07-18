@@ -3231,10 +3231,11 @@ function makeFetchStub(server) {
     ok(/9,670,000/.test(q(e, "#eq-body").textContent), "1월 합계 반영");
     ok(/30,000,000/.test(q(e, "#eq-body").textContent), "정산표에 도급비(실청구) 표시");
     ok(q(e, "#eq-cost-chart"), "월 비용 변화 차트");
-    eq(qa(e, "#eq-cost-chart rect").length, 3, "장비별 막대 3개(1월 ETD·2월 X-ray·3월 ETD)");
-    ok(qa(e, "#eq-cost-chart title").some(t2 => /X-ray/.test(t2.textContent)), "X-ray 별도 표시");
-    ok(qa(e, "#eq-cost-chart title").some(t2 => /ETD/.test(t2.textContent)), "ETD 별도 표시");
-    ok(!q(e, "#eq-cost-chart polyline"), "합계 꺾은선 제거");
+    eq(qa(e, "#eq-cost-chart rect").length, 4, "세그먼트 4개(1월 ETD 정기+수리 스택 · 2월 X-ray 정기 · 3월 ETD 수리)");
+    ok(qa(e, "#eq-cost-chart title").some(t2 => /ETD 정기/.test(t2.textContent)), "ETD 정기 스택");
+    ok(qa(e, "#eq-cost-chart title").some(t2 => /ETD 수리\/부품/.test(t2.textContent)), "수리/부품 위 얹힘");
+    ok(qa(e, "#eq-cost-chart title").some(t2 => /X-ray 정기/.test(t2.textContent)), "X-ray 정기 스택");
+    ok(!q(e, "#eq-cost-chart polyline"), "합계 꺾은선 없음");
     e.w.SemisEquipment.setTab("list");
   });
 

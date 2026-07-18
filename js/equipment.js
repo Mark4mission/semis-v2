@@ -696,37 +696,56 @@
     return "기타/수동";
   }
   function costChartHTML(yc) {
-    const SERIES = [["ETD", "var(--primary)"], ["X-ray", "var(--success)"], ["기타/수동", "var(--text-3)"]];
-    // 월×장비별 집계 (자동 연동 + 집계 포함 수동 기록)
+    // 장비별 막대 + 성격별 스택: 아래 = 정기 유지보수(ETD 파랑/X-ray 녹색), 위 = 수리/부품(주황), 기타 성격 = 회색
+    const GROUPS = [["ETD", "var(--primary)"], ["X-ray", "var(--success)"], ["기타/수동", "var(--text-3)"]];
+    const REPAIR_COL = "var(--warning)", ETC_COL = "var(--text-3)";
+    const kindKey = (k) => k === "정기 유지보수" ? "maint" : k === "수리/부품" ? "repair" : "etc";
     const byM = {};
-    for (let i = 1; i <= 12; i++) byM[i] = { "ETD": 0, "X-ray": 0, "기타/수동": 0 };
+    for (let i = 1; i <= 12; i++) {
+      byM[i] = {};
+      GROUPS.forEach(([g]) => { byM[i][g] = { maint: 0, repair: 0, etc: 0 }; });
+    }
     yc.rows.concat(yc.autoRows || []).forEach(r => {
       const mo = Number(String(r.ym || "").slice(5, 7));
-      if (byM[mo]) byM[mo][costGroupOf(r)] += Number(r.amount) || 0;
+      if (byM[mo]) byM[mo][costGroupOf(r)][kindKey(r.kind)] += Number(r.amount) || 0;
     });
+    const gTotal = (c) => c.maint + c.repair + c.etc;
     const vals = [];
     for (let i = 1; i <= 12; i++) vals.push(byM[i]);
-    const allVals = vals.reduce((a, m) => a.concat(SERIES.map(([k]) => m[k])), []);
-    if (!allVals.some(Boolean)) return "";
-    const used = SERIES.filter(([k]) => vals.some(m => m[k]));
-    const max = Math.max.apply(null, allVals.concat(1));
+    const used = GROUPS.filter(([g]) => vals.some(m => gTotal(m[g])));
+    if (!used.length) return "";
+    const max = Math.max.apply(null, vals.reduce((a, m) => a.concat(used.map(([g]) => gTotal(m[g]))), [1]));
     const W = 720, H = 200, top = 16, bot = 26, slot = W / 12;
-    const bw = Math.min(16, (slot - 10) / used.length);
+    const bw = Math.min(18, (slot - 10) / used.length);
     const y = (v) => top + (H - top - bot) * (1 - v / max);
+    const anyRepair = vals.some(m => used.some(([g]) => m[g].repair));
+    const anyEtc = vals.some(m => used.some(([g]) => g !== "기타/수동" && m[g].etc));
     const bars = vals.map((m, i) => {
       const x0 = i * slot + (slot - bw * used.length) / 2;
-      const segs = used.map(([k, col], j) => {
-        const v = m[k];
-        if (!v) return "";
-        return `<rect x="${(x0 + j * bw).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw - 1.5).toFixed(1)}" height="${Math.max(y(0) - y(v), 1).toFixed(1)}" rx="2" fill="${col}" opacity=".88"><title>${i + 1}월 ${k} ${fmtWon(v)}원</title></rect>`;
+      const segs = used.map(([g, col], j) => {
+        const c = m[g];
+        if (!gTotal(c)) return "";
+        const x = (x0 + j * bw).toFixed(1);
+        let acc = 0;
+        // [값, 색, 라벨] — 아래부터 정기 → 수리/부품 → 기타
+        return [[c.maint, col, g + " 정기"], [c.repair, REPAIR_COL, g + " 수리/부품"], [c.etc, ETC_COL, g + " 기타"]]
+          .map(([v, scol, lb]) => {
+            if (!v) return "";
+            const y1 = y(acc + v), h = y(acc) - y(acc + v);
+            acc += v;
+            return `<rect x="${x}" y="${y1.toFixed(1)}" width="${(bw - 1.5).toFixed(1)}" height="${Math.max(h, 1).toFixed(1)}" rx="1.5" fill="${scol}" opacity=".88"><title>${i + 1}월 ${lb} ${fmtWon(v)}원 (합계 ${fmtWon(gTotal(c))}원)</title></rect>`;
+          }).join("");
       }).join("");
       return `<g>${segs}<text x="${(i * slot + slot / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-3)">${i + 1}월</text></g>`;
     }).join("");
+    const legend = used.filter(([g]) => g !== "기타/수동").map(([g, col]) => [g + " 정기", col])
+      .concat(anyRepair ? [["수리/부품", REPAIR_COL]] : [])
+      .concat(used.some(([g]) => g === "기타/수동") || anyEtc ? [["기타/수동", ETC_COL]] : []);
     return `
       <div style="margin:4px 0 10px">
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:.72rem;color:var(--text-3);margin-bottom:2px">
-          <span style="font-weight:700">📊 월 비용 변화 — 장비별 (${costYear}년)</span>
-          ${used.map(([k, col]) => `<span style="display:inline-flex;align-items:center;gap:4px"><i style="width:9px;height:9px;border-radius:2px;background:${col};display:inline-block"></i>${k}</span>`).join("")}
+          <span style="font-weight:700">📊 월 비용 변화 — 장비별 · 정기/수리부품 (${costYear}년)</span>
+          ${legend.map(([lb, col]) => `<span style="display:inline-flex;align-items:center;gap:4px"><i style="width:9px;height:9px;border-radius:2px;background:${col};display:inline-block"></i>${lb}</span>`).join("")}
         </div>
         <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="월별 장비별 비용 차트" id="eq-cost-chart">
           <line x1="0" y1="${y(0).toFixed(1)}" x2="${W}" y2="${y(0).toFixed(1)}" stroke="var(--border)"></line>
