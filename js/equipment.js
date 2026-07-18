@@ -683,6 +683,47 @@
       </div>`;
   }
 
+  /* v2.17.1: 월 비용 변화 복합 차트 — 스택 막대(정기/수리·부품/기타) + 월 합계 꺾은선 (인라인 SVG) */
+  function costChartHTML(yc) {
+    const KINDS3 = [["정기 유지보수", "var(--primary)"], ["수리/부품", "var(--danger)"], ["기타", "var(--text-3)"]];
+    const vals = [];
+    for (let i = 1; i <= 12; i++) vals.push(yc.byM[i]);
+    if (!vals.some(m => m.total)) return "";
+    const max = Math.max.apply(null, vals.map(m => m.total).concat(1));
+    const W = 720, H = 200, top = 16, bot = 26, slot = W / 12, bw = slot * 0.52;
+    const y = (v) => top + (H - top - bot) * (1 - v / max);
+    const bars = vals.map((m, i) => {
+      const x = i * slot + (slot - bw) / 2;
+      let acc = 0;
+      const segs = KINDS3.map(([k, col]) => {
+        const v = m[k] || 0;
+        if (!v) return "";
+        const y1 = y(acc + v), h = y(acc) - y(acc + v);
+        acc += v;
+        return `<rect x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(h, 1).toFixed(1)}" rx="2" fill="${col}" opacity=".85"></rect>`;
+      }).join("");
+      const tip = `<title>${i + 1}월 합계 ${fmtWon(m.total)}원 — 정기 ${fmtWon(m["정기 유지보수"])} · 수리/부품 ${fmtWon(m["수리/부품"])} · 기타 ${fmtWon(m["기타"])}</title>`;
+      return `<g>${tip}${segs}<text x="${(i * slot + slot / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-3)">${i + 1}월</text></g>`;
+    }).join("");
+    const pts = vals.map((m, i) => `${(i * slot + slot / 2).toFixed(1)},${y(m.total).toFixed(1)}`).join(" ");
+    const dots = vals.map((m, i) => m.total
+      ? `<circle cx="${(i * slot + slot / 2).toFixed(1)}" cy="${y(m.total).toFixed(1)}" r="3" fill="var(--warning)"></circle>` : "").join("");
+    return `
+      <div style="margin:4px 0 10px">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:.72rem;color:var(--text-3);margin-bottom:2px">
+          <span style="font-weight:700">📊 월 비용 변화 (${costYear}년)</span>
+          ${KINDS3.map(([k, col]) => `<span style="display:inline-flex;align-items:center;gap:4px"><i style="width:9px;height:9px;border-radius:2px;background:${col};display:inline-block"></i>${k}</span>`).join("")}
+          <span style="display:inline-flex;align-items:center;gap:4px"><i style="width:14px;height:2px;background:var(--warning);display:inline-block"></i>월 합계</span>
+        </div>
+        <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="월별 비용 차트" id="eq-cost-chart">
+          <line x1="0" y1="${(H - bot).toFixed(1)}" x2="${W}" y2="${(H - bot).toFixed(1)}" stroke="var(--border)"></line>
+          ${bars}
+          <polyline points="${pts}" fill="none" stroke="var(--warning)" stroke-width="2"></polyline>
+          ${dots}
+        </svg>
+      </div>`;
+  }
+
   function costsHTML(canWrite) {
     const yc = yearCosts(costYear);
     const monthRows = [];
@@ -721,6 +762,7 @@
         <span class="spacer"></span>
         <span style="font-size:.88rem">연간 합계 <b style="color:var(--primary)">${fmtWon(yc.total)}원</b></span>
       </div>
+      ${costChartHTML(yc)}
       <div class="table-wrap"><table class="tbl" style="font-size:.84rem"><thead><tr>
         <th style="width:56px">월</th><th style="text-align:right">정기 유지보수</th>
         <th style="text-align:right">수리/부품</th><th style="text-align:right">기타</th><th style="text-align:right">계</th></tr></thead>
@@ -763,7 +805,7 @@
       body = `<div class="table-wrap"><table class="tbl" style="font-size:.8rem"><thead><tr>
           <th style="width:48px">월</th><th style="width:96px">업체</th>
           <th style="text-align:right">장비 유지보수</th><th style="text-align:right">보안검색&경비</th>
-          <th style="text-align:right">기타수익 차감(50%)</th><th style="text-align:right">실청구액</th></tr></thead>
+          <th style="text-align:right">기타 수익 차감</th><th style="text-align:right">실청구액</th></tr></thead>
         <tbody>${trs}
           <tr style="font-weight:700;border-top:2px solid var(--border)"><td colspan="2">합계</td>
             <td style="text-align:right">${fw(tot.maint)}</td>
@@ -779,7 +821,7 @@
           <button class="btn btn-ghost btn-sm" id="eq-go-billing">대금 청구 관리 ↗</button>
         </div>
         ${body}
-        <div class="form-hint" style="margin-top:6px">실청구액 = ETD/X-ray 유지보수 + 보안검색&경비 − 기타 수익×50% (프로에스콤 계약 정산 로직).
+        <div class="form-hint" style="margin-top:6px">실청구액 = ETD/X-ray 유지보수 + 보안검색&경비 − 기타 수익(에어제타 몫 50% 기계산 입력분, 프로에스콤 계약).
           장비 유지보수분은 위 월별 비용 표에도 자동 집계됩니다.</div>
       </div>`;
   }

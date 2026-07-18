@@ -3069,7 +3069,7 @@ function makeFetchStub(server) {
     ok(Array.isArray(e2.S.data.billing) && e2.S.data.menus.some(m => m.module === "billing"), "구데이터 보정");
   });
 
-  t("BL02 정산 계산: 실청구액 = ETD + 검색&경비 − 기타수익×50%", () => {
+  t("BL02 정산 계산: 실청구액 = ETD + 검색&경비 − 기타수익(50% 기계산 입력분 전액 차감)", () => {
     const e = makeEnv();
     loginAs(e, "hq");
     e.S.data.billing = [
@@ -3084,10 +3084,10 @@ function makeFetchStub(server) {
     const B = e.w.SemisBilling;
     const s = B.settle("프로에스콤", "2026-07");
     eq(s.byCat["ETD 유지보수"], 9670000, "ETD 합");
-    eq(s.revenue, 10000000, "기타 수익 합");
-    eq(s.deduct, 5000000, "50% 차감");
+    eq(s.revenue, 10000000, "기타 수익 합 (50% 기계산 입력분)");
+    eq(s.deduct, 10000000, "입력분 전액 차감 (재계산 없음)");
     eq(s.pay, 39670000, "지급 대상 합");
-    eq(s.net, 34670000, "실청구액");
+    eq(s.net, 29670000, "실청구액 = ①+②−③");
     const si = B.settle("인씨스", "2026-07");
     eq(si.net, 3300000, "인씨스 합계(차감 없음)");
     eq(B.parseWon("5,170,000원"), 5170000, "콤마 금액 파싱");
@@ -3150,7 +3150,7 @@ function makeFetchStub(server) {
     go(e, "billing");
     ok(qa(e, "[data-bl-vendor]").length === 2, "hq: 업체 전환 버튼 2개");
     ok(q(e, ".bl-summary"), "정산 요약 카드");
-    ok(/18,000,000/.test(q(e, ".bl-summary").textContent), "실청구액 20,000,000−2,000,000");
+    ok(/16,000,000/.test(q(e, ".bl-summary").textContent), "실청구액 20,000,000−4,000,000 (전액 차감)");
     ok(/50%/.test(q(e, ".bl-summary").textContent), "50% 차감 표기");
     ok(q(e, "[data-bl-add]"), "hq 편집 가능");
     const em = makeEnv({ preData: pre });
@@ -3195,7 +3195,7 @@ function makeFetchStub(server) {
     go(e, "equipment");
     ok(q(e, "#eq-go-billing"), "이동 버튼");
     ok(/프로에스콤/.test(q(e, "#eq-body").textContent), "업체 집계 표시");
-    ok(/9,000,000/.test(q(e, "#eq-body").textContent), "연간 실청구(10M−1M)");
+    ok(/8,000,000/.test(q(e, "#eq-body").textContent), "연간 실청구(10M−2M 전액 차감)");
   });
 
   t("BL08 비용 기록 자동 반영: 유지보수 청구 → 월별 표 + 정기/수리부품 분류 (v2.17)", () => {
@@ -3230,6 +3230,7 @@ function makeFetchStub(server) {
     ok(/실청구액/.test(q(e, "#eq-body").textContent), "월별 정산표");
     ok(/9,670,000/.test(q(e, "#eq-body").textContent), "1월 합계 반영");
     ok(/30,000,000/.test(q(e, "#eq-body").textContent), "정산표에 도급비(실청구) 표시");
+    ok(q(e, "#eq-cost-chart"), "월 비용 변화 차트(막대+꺾은선)");
     e.w.SemisEquipment.setTab("list");
   });
 
@@ -3263,6 +3264,35 @@ function makeFetchStub(server) {
     ok(q(e, "#ct-force").checked, "강제 포함 체크 유지");
     q(e, "#ct-cancel").click();
     e.w.SemisEquipment.setTab("list");
+  });
+
+  t("BL10 증빙 첨부 다중화: 최대 5개 + 구버전 단일 fileUrl 호환 (v2.17.1)", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const B = e.w.SemisBilling;
+    eq(B.MAX_FILES, 5, "최대 5개");
+    const legacy = { fileUrl: "https://x/a.pdf", fileName: "a.pdf" };
+    eq(B.filesOf(legacy).length, 1, "구버전 단일 필드 호환");
+    eq(B.filesOf(legacy)[0].name, "a.pdf");
+    const many = { files: [1, 2, 3, 4, 5, 6].map(n => ({ url: "https://x/" + n + ".pdf", name: n + ".pdf" })),
+      fileUrl: "https://x/legacy.pdf" };
+    eq(B.filesOf(many).length, 5, "5개 초과 잘림");
+    eq(B.filesOf(many)[0].name, "1.pdf", "files 배열 우선");
+    // 화면: 항목에 첨부 수만큼 📎 링크 + 폼 다중 관리
+    e.S.data.billing = [blSeed({ month: "2026-07",
+      files: [{ url: "https://x/1.pdf", name: "1.pdf" }, { url: "https://x/2.pdf", name: "2.pdf" }] })];
+    e.S.saveSilent();
+    B.setVendor("프로에스콤"); B.setMonth("2026-07");
+    go(e, "billing");
+    eq(qa(e, ".bl-item .nb-file").length, 2, "📎 링크 2개");
+    q(e, "[data-bl-edit]").click();
+    ok(q(e, "#bl-file").multiple, "다중 선택 입력");
+    eq(qa(e, "#bl-file-box [data-bl-frm]").length, 2, "폼 첨부 목록 2건");
+    q(e, '[data-bl-frm="0"]').click();
+    q(e, "#bl-save").click();
+    const r = e.S.data.billing[0];
+    eq(r.files.length, 1, "첨부 제거 반영");
+    eq(r.fileUrl, "https://x/2.pdf", "구버전 필드 첫 첨부 동기화");
   });
 
   /* ══════════ [CO] 이수증 선택지 관리 (v2.17) ══════════ */

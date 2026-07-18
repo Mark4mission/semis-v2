@@ -4,14 +4,16 @@
    에어제타(HQ 이상)가 전체를 확인·정산하는 화면.
 
    데이터: DATA.billing = [{ id, vendor, month "YYYY-MM", category,
-     title, amount(원, 숫자), fileUrl, fileName, note, by, updated }]
+     title, amount(원, 숫자), files:[{url,name}](최대 5개, v2.17.1),
+     fileUrl, fileName(구버전 단일 첨부 — filesOf()가 호환 처리), note, by, updated }]
 
    업체/카테고리:
    - 프로에스콤: ETD 유지보수 / 보안검색&경비 / 기타 수익
    - 인씨스:     X-ray 유지보수
-   정산(프로에스콤 계약): 기타 수익(터키항공 B터미널 보안검색·특별보안검색 등)의
-   50%는 에어제타 몫 — 별도 지급이 아니라 당월 보안검색&경비(도급비) 청구액에서
-   차감하여 청구. 실청구액 = ETD + 보안검색&경비 − 기타수익×50%.
+   정산(프로에스콤 계약): 기타 수익(터키항공 B터미널 보안검색·특별보안검색 등)은
+   에어제타 몫 50%로 이미 계산된 금액을 업체가 그대로 입력 (100% 입력 후 재계산 없음).
+   별도 지급이 아니라 당월 도급비 청구액에서 전액 차감.
+   실청구액 = ① ETD + ② 보안검색&경비 − ③ 기타 수익(50% 기계산 입력분).
 
    권한:
    - vendor 역할(업체 계정): 자기 업체 내역만 입력/조회 (타 업체 차단)
@@ -25,14 +27,22 @@
   const D = () => SeMIS.data;
   const uid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const PDF_MAX = 20 * 1024 * 1024;
+  const MAX_FILES = 5; // v2.17.1: 항목당 증빙 첨부 최대 개수
+
+  /* 첨부 목록 조회 — 신규 files 배열 우선, 구버전 단일 fileUrl/fileName 호환 */
+  function filesOf(r) {
+    if (r && Array.isArray(r.files) && r.files.length)
+      return r.files.filter(f => f && f.url).slice(0, MAX_FILES);
+    return r && r.fileUrl ? [{ url: r.fileUrl, name: r.fileName || "청구서.pdf" }] : [];
+  }
 
   const VENDORS = {
     "프로에스콤": {
       icon: "🛡", cats: ["ETD 유지보수", "보안검색&경비", "기타 수익"],
-      revenueCat: "기타 수익", share: 0.5,
+      revenueCat: "기타 수익", share: 1, // v2.17.1: 50% 기계산 금액을 그대로 입력받아 전액 차감
       hint: { "ETD 유지보수": "장비 잔존가+수선유지비, 부품교체건 등 (보안장비 대금청구)",
               "보안검색&경비": "보안검색·경비 도급비 청구액",
-              "기타 수익": "터키항공 B터미널 보안검색(물량×단가)·특별보안검색 등 수익 발생 내역 — 50%는 도급비 청구 시 차감" }
+              "기타 수익": "터키항공 B터미널 보안검색·특별보안검색 등 — 에어제타 몫 50%로 계산된 금액을 그대로 입력 (당월 도급비 청구에서 전액 차감)" }
     },
     "인씨스": {
       icon: "🖥", cats: ["X-ray 유지보수"], revenueCat: null, share: 0,
@@ -125,7 +135,7 @@
     const cfg = VENDORS[vendor];
     const x = id ? list().find(r => r.id === id) : null;
     if (x && isVendorUser() && x.vendor !== myVendor()) return; // 격리 가드
-    let file = x && x.fileUrl ? { url: x.fileUrl, name: x.fileName || "청구서.pdf" } : null;
+    let files = filesOf(x).map(f => ({ url: f.url, name: f.name }));
     openModal(`
       <h3>${x ? "청구 항목 수정" : "청구 항목 추가"} <span class="badge badge-gray">${esc(vendor)} · ${esc(month)}</span></h3>
       <div class="form-grid">
@@ -146,10 +156,10 @@
           <option value="">자동 판별 — 내용에 '부품·교체·수리' 포함 시 수리/부품, 그 외 정기 유지보수</option>
           ${COST_KINDS.map(k => `<option value="${k}" ${x && x.costKind === k ? "selected" : ""}>${k}</option>`).join("")}
         </select></div>
-      <div class="form-row"><label>증빙 PDF (선택 — 청구서·명세서 등)</label>
+      <div class="form-row"><label>증빙 PDF (선택 — 청구서·명세서 등 · 최대 ${MAX_FILES}개)</label>
         <div id="bl-file-box" class="nb-files-view"></div>
-        <label class="btn btn-ghost btn-sm" style="cursor:pointer;align-self:flex-start">📎 PDF 업로드 (20MB 이하)
-          <input type="file" id="bl-file" accept="application/pdf,.pdf" style="display:none"></label></div>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;align-self:flex-start">📎 PDF 업로드 (각 20MB 이하)
+          <input type="file" id="bl-file" accept="application/pdf,.pdf" multiple style="display:none"></label></div>
       <div class="form-row"><label>메모</label>
         <input id="bl-note" value="${esc(x ? x.note || "" : "")}" maxlength="200" placeholder="예: 12월 도급비 청구 시 차감 예정"></div>
       <div class="modal-actions">
@@ -164,26 +174,34 @@
       $("#bl-costkind-row").style.display = MAINT_CATS.includes($("#bl-cat").value) ? "" : "none";
     };
     $("#bl-cat").onchange = updHint; updHint();
-    const renderFile = () => {
-      $("#bl-file-box").innerHTML = file
-        ? `<span class="nb-file">📎 ${esc(file.name)} <button type="button" class="mt-btn danger" id="bl-file-rm">✕</button></span>`
+    const renderFiles = () => {
+      $("#bl-file-box").innerHTML = files.length
+        ? files.map((f, i) => `<span class="nb-file"><a href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>
+            <button type="button" class="mt-btn danger" data-bl-frm="${i}" title="첨부 제거">✕</button></span>`).join("")
+          + `<span class="form-hint" style="align-self:center">${files.length}/${MAX_FILES}</span>`
         : '<span class="form-hint">첨부된 파일이 없습니다.</span>';
-      if (file && $("#bl-file-rm")) $("#bl-file-rm").onclick = () => { file = null; renderFile(); };
+      $$("#bl-file-box [data-bl-frm]").forEach(b => b.onclick = () => {
+        files.splice(Number(b.dataset.blFrm), 1); renderFiles();
+      });
     };
-    renderFile();
+    renderFiles();
     $("#bl-file").onchange = async (e) => {
-      const f = e.target.files[0]; e.target.value = "";
-      if (!f) return;
-      const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name || "");
-      if (!isPdf) { toast("PDF 파일만 업로드할 수 있습니다.", true); return; }
-      if (f.size > PDF_MAX) { toast("20MB를 초과합니다.", true); return; }
+      const picked = Array.prototype.slice.call(e.target.files || []);
+      e.target.value = "";
+      if (!picked.length) return;
       if (!window.SemisSync || typeof fetch === "undefined") { toast("오프라인에서는 업로드할 수 없습니다.", true); return; }
-      toast("업로드 중: " + f.name);
-      try {
-        const up = await SemisSync.uploadFile(f, "billing");
-        file = { url: up.url, name: f.name }; renderFile();
-        toast("업로드되었습니다.");
-      } catch (err) { toast("업로드 실패 — 네트워크를 확인하세요.", true); }
+      for (const f of picked) {
+        if (files.length >= MAX_FILES) { toast("첨부는 최대 " + MAX_FILES + "개까지 가능합니다.", true); break; }
+        const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name || "");
+        if (!isPdf) { toast(f.name + ": PDF 파일만 업로드할 수 있습니다.", true); continue; }
+        if (f.size > PDF_MAX) { toast(f.name + ": 20MB를 초과합니다.", true); continue; }
+        toast("업로드 중: " + f.name);
+        try {
+          const up = await SemisSync.uploadFile(f, "billing");
+          files.push({ url: up.url, name: f.name }); renderFiles();
+          toast("업로드되었습니다: " + f.name);
+        } catch (err) { toast(f.name + ": 업로드 실패 — 네트워크를 확인하세요.", true); }
+      }
     };
 
     $("#bl-cancel").onclick = closeModal;
@@ -202,7 +220,9 @@
       const cat = $("#bl-cat").value;
       const rec = { vendor, month: m, category: cat, title, amount,
         costKind: MAINT_CATS.includes(cat) ? $("#bl-costkind").value : "",
-        fileUrl: file ? file.url : "", fileName: file ? file.name : "",
+        files: files.slice(0, MAX_FILES),
+        // 구버전 호환 필드 (첫 번째 첨부)
+        fileUrl: files.length ? files[0].url : "", fileName: files.length ? files[0].name : "",
         note: $("#bl-note").value.trim(),
         by: SeMIS.user ? SeMIS.user.name : "", updated: new Date().toISOString() };
       if (x) Object.assign(x, rec);
@@ -225,12 +245,12 @@
           <span class="spacer"></span>
           ${canWrite ? `<button class="btn btn-primary btn-sm" data-bl-add="${esc(cat)}">+ 항목 추가</button>` : ""}
         </div>
-        ${items.length ? items.map(r => `
+        ${items.length ? items.map(r => { const fl = filesOf(r); return `
           <div class="bl-item" ${canWrite ? `data-bl-edit="${esc(r.id)}" style="cursor:pointer" title="클릭하여 수정"` : ""}>
             <span class="bl-item-title">${esc(r.title)}${r.note ? `<span class="bl-item-note"> · ${esc(r.note)}</span>` : ""}</span>
-            ${r.fileUrl ? `<a class="nb-file" href="${esc(r.fileUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📎</a>` : ""}
+            ${fl.map((f, i) => `<a class="nb-file" href="${esc(f.url)}" target="_blank" rel="noopener" title="${esc(f.name)}" onclick="event.stopPropagation()">📎${fl.length > 1 ? i + 1 : ""}</a>`).join("")}
             <b class="bl-item-amt">${fmtWon(r.amount)}원</b>
-          </div>`).join("") + `
+          </div>`; }).join("") + `
           <div class="bl-subtotal">소계 <b>${fmtWon(sum)}원</b></div>`
         : '<div class="form-hint" style="padding:6px 0">등록된 항목이 없습니다.</div>'}
       </div>`;
@@ -246,12 +266,11 @@
         <table class="tbl bl-sum-tbl">
           <tr><td>① ETD 유지보수 청구</td><td class="r">${fmtWon(s.byCat["ETD 유지보수"])}원</td></tr>
           <tr><td>② 보안검색&경비 (도급비) 청구</td><td class="r">${fmtWon(s.byCat["보안검색&경비"])}원</td></tr>
-          <tr><td>③ 기타 수익 합계 (터키항공 등)</td><td class="r">${fmtWon(s.revenue)}원</td></tr>
-          <tr class="bl-deduct"><td>④ 에어제타 수익 반환분 — ③ × 50% 차감</td><td class="r">− ${fmtWon(s.deduct)}원</td></tr>
-          <tr class="bl-net"><td><b>당월 실청구액 (① + ② − ④)</b></td><td class="r"><b>${fmtWon(s.net)}원</b></td></tr>
+          <tr class="bl-deduct"><td>③ 기타 수익 차감 (에어제타 몫 50% 기계산 입력분)</td><td class="r">− ${fmtWon(s.deduct)}원</td></tr>
+          <tr class="bl-net"><td><b>당월 실청구액 (① + ② − ③)</b></td><td class="r"><b>${fmtWon(s.net)}원</b></td></tr>
         </table>
-        <div class="form-hint" style="margin-top:8px">계약 조건: 인천화물터미널 B동 보안검색 수익(터키항공 등)은 에어제타와 50% 배분하되,
-          별도 지급 없이 <b>당월 도급비 청구액에서 차감</b>하여 청구합니다.</div>
+        <div class="form-hint" style="margin-top:8px">계약 조건: 인천화물터미널 B동 보안검색 수익(터키항공 등)은 에어제타 몫 50%로
+          <b>이미 계산된 금액을 그대로 입력</b>하며, 별도 지급 없이 <b>당월 도급비 청구액에서 전액 차감</b>하여 청구합니다.</div>
       </div>`;
     }
     return `
@@ -334,8 +353,8 @@
 
   /* ─────── 테스트/외부 노출 ─────── */
   window.SemisBilling = {
-    VENDORS, MAINT_CATS, list, visible, recsOf, settle, yearSummary,
-    classifyCost, maintRows, monthlySettles, itemForm, parseWon, fmtWon,
+    VENDORS, MAINT_CATS, MAX_FILES, list, visible, recsOf, settle, yearSummary,
+    classifyCost, maintRows, monthlySettles, filesOf, itemForm, parseWon, fmtWon,
     setVendor: (v) => { curVendor = v; },
     setMonth: (m) => { curMonth = m; },
     get month() { return curMonth; }
