@@ -776,3 +776,24 @@ a.ct-tel:hover { color: var(--primary); }
 @media (max-width: 768px) {
   .pol-pane-body { height: calc(100vh - 300px); min-height: 340px; }
 }
+
+/* ═══════ 교육 이수증 관리 (v2.15) ═══════ */
+.cert-charts { display: flex; gap: 24px; flex-wrap: wrap; }
+.cert-chart { flex: 1; min-width: 280px; }
+.cert-chart-title { font-size: .82rem; font-weight: 700; color: var(--text-2); margin-bottom: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cert-legend { display: inline-flex; align-items: center; gap: 8px; font-size: .7rem; font-weight: 600; color: var(--text-3); }
+.cert-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 3px; }
+.cert-legend i.ok, .cert-seg.ok { background: #16a34a; }
+.cert-legend i.soon, .cert-seg.soon { background: #d97706; }
+.cert-legend i.exp, .cert-seg.exp { background: #dc2626; }
+.cert-brow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cert-blabel { flex: 0 0 108px; font-size: .78rem; font-weight: 700; color: var(--text-2); text-align: right; }
+.cert-bar { flex: 1; display: flex; height: 20px; border-radius: 5px; overflow: hidden; background: var(--surface-2); }
+.cert-seg { display: flex; align-items: center; justify-content: center; color: #fff; font-size: .68rem; font-weight: 800; min-width: 16px; }
+.cert-btotal { flex: 0 0 26px; font-size: .76rem; font-weight: 800; color: var(--text-2); }
+.cert-months { display: flex; align-items: flex-end; gap: 4px; height: 110px; padding-top: 14px; }
+.cert-mcol { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+.cert-mnum { font-size: .66rem; font-weight: 800; color: var(--warning, #d97706); line-height: 1.1; }
+.cert-mbar { width: 70%; max-width: 26px; min-height: 2px; background: linear-gradient(180deg, #f59e0b, #d97706); border-radius: 4px 4px 0 0; }
+.cert-mlabel { font-size: .64rem; color: var(--text-3); margin-top: 3px; white-space: nowrap; }
+@media (max-width: 768px) { .cert-blabel { flex-basis: 88px; } }

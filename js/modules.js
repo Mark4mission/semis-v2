@@ -21,6 +21,7 @@
     level:    "mgr",  // 🚨 보안등급
     insp:     "mgr",  // 🕵️ 보안점검 실적
     expiry:   "all",  // ⏳ 만료 · 점검 도래 (계약은 내부에서 hq 필터)
+    certs:    "mgr",  // 🎖 교육 이수증 — 보안사항: 보안관리자 이상 열람 (v2.15)
     quick:    "all",  // ⚡ 바로가기
     upcoming: "mgr"   // 📅 다가오는 일정
   };
@@ -95,6 +96,11 @@
             ${cardVis("expiry") ? `<div class="card">
               <div class="card-title">⏳ 만료 · 점검 도래</div>
               <div id="expiry-box"></div>
+            </div>` : ""}
+            ${cardVis("certs") && window.SemisCerts ? `<div class="card">
+              <div class="card-title">🎖 교육 이수증 <span class="spacer"></span>
+                <button class="btn btn-ghost btn-sm" id="btn-go-certs">전체보기</button></div>
+              <div id="certs-box"></div>
             </div>` : ""}
             ${cardVis("quick") ? `<div class="card">
               <div class="card-title">⚡ 바로가기</div>
@@ -236,6 +242,11 @@
           const dd = dl(n);
           if (dd !== null && dd <= 90) items.push({ d: dd, route: "equipment", ico: "🔧", label: `장비 내용연수 · ${x.name}` });
         });
+        (d.certs || []).forEach(x => { // v2.15: 교육 이수증 만료 (mgr 이상 카드지만 expiry는 all — 보안관리자 조건)
+          if (!x.expire || SeMIS.roleRank() < 2) return;
+          const dd = dl(x.expire);
+          if (dd <= 60) items.push({ d: dd, route: "certs", ico: "🎖", label: `이수증 · ${x.name} (${x.role || "교육"})` });
+        });
         items.sort((a, b) => a.d - b.d);
         items.length = Math.min(items.length, 8);
         if ($("#expiry-box")) $("#expiry-box").innerHTML = items.length
@@ -252,6 +263,12 @@
       if (window.SemisEquipment && SemisEquipment.renderDash && $("#equip-box")) {
         SemisEquipment.renderDash($("#equip-box"));
         if ($("#btn-go-equip")) $("#btn-go-equip").onclick = () => SeMIS.navigate("equipment");
+      }
+
+      // 교육 이수증 위젯 (v2.15)
+      if (window.SemisCerts && $("#certs-box")) {
+        SemisCerts.renderDash($("#certs-box"));
+        if ($("#btn-go-certs")) $("#btn-go-certs").onclick = () => SeMIS.navigate("certs");
       }
 
       // CARES 환경센서 위젯

@@ -23,6 +23,7 @@ const trJS = read("js/training.js");
 const cnJS = read("js/contracts.js");
 const rgJS = read("js/regulations.js");
 const plJS = read("js/policy.js");
+const ctcJS = read("js/certs.js");
 const vtJS = read("js/vault.js");
 const caresJS = read("js/cares.js");
 const syncJS = read("js/sync.js");
@@ -60,7 +61,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) S.boot();
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -1885,7 +1886,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "branches,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
+    eq(keys, "branches,certs,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -2897,6 +2898,144 @@ function makeFetchStub(server) {
     eq(e.w.SemisPolicy.zoom, "fit", "폭 맞춤 모드");
     const ui = JSON.parse(e.w.localStorage.getItem("semis2:policyUi"));
     eq(ui.zoom, "fit", "줌 상태 저장");
+  });
+
+  /* ══════════ [CT2] 교육 이수증 관리 (v2.15) ══════════ */
+  const certSeed = (over) => Object.assign({
+    id: "ct-test", certNo: "KASI-2026-01-0001", name: "홍길동", dept: "항공보안팀",
+    role: "보안감독자", kind: "초기", org: "한국항공안전교육원",
+    issued: "2026-01-15", expire: "2027-02-14", fileUrl: "", fileName: "", note: "",
+    updated: "2026-07-18T00:00:00Z", by: "T" }, over || {});
+  const isoDay = (off) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + off); return d.toISOString().slice(0, 10); };
+
+  t("CT01 마이그레이션: certs 배열 + 메뉴(보안교육 다음, mgr) + 동기화 키", () => {
+    const e = makeEnv();
+    ok(Array.isArray(e.S.data.certs), "certs 배열");
+    const mn = e.S.data.menus.find(m => m.type === "module" && m.module === "certs");
+    ok(mn, "certs 메뉴");
+    eq(mn.parent, "grp-edu", "보안 증진 그룹");
+    eq(mn.vis, "mgr", "열람 권한 mgr");
+    const tr = e.S.data.menus.find(m => m.type === "module" && m.module === "training");
+    ok((tr.seq || 0) < (mn.seq || 0), "보안교육 관리 다음 위치");
+    ok(e.Sync.SYNC_KEYS.includes("certs"), "SYNC_KEYS 등록");
+    // 구데이터 보정
+    const pre = JSON.parse(JSON.stringify(e.S.data));
+    delete pre.certs;
+    pre.menus = pre.menus.filter(m => m.module !== "certs");
+    const e2 = makeEnv({ preData: pre });
+    ok(Array.isArray(e2.S.data.certs), "구데이터 certs 보정");
+    ok(e2.S.data.menus.some(m => m.module === "certs"), "메뉴 재삽입");
+  });
+
+  t("CT02 유효만료일 자동 계산: 수료일+13개월−1일 (월말 보정)", () => {
+    const e = makeEnv();
+    const C = e.w.SemisCerts;
+    eq(C.calcExpire("2026-01-15"), "2027-02-14", "시트 실데이터 규칙 일치 ①");
+    eq(C.calcExpire("2025-05-08"), "2026-06-07", "시트 실데이터 규칙 일치 ②");
+    eq(C.calcExpire("2025-12-04"), "2027-01-03", "연도 이월");
+    eq(C.calcExpire("2025-01-31"), "2026-02-27", "월말 보정(2월)");
+    eq(C.calcExpire(""), "", "빈 값");
+  });
+
+  t("CT03 상태 판정/통계: 유효·임박(60일)·만료", () => {
+    const e = makeEnv();
+    const C = e.w.SemisCerts;
+    e.S.data.certs = [
+      certSeed({ id: "c1", expire: isoDay(200) }),
+      certSeed({ id: "c2", name: "김임박", expire: isoDay(30), fileUrl: "https://x.test/a.pdf" }),
+      certSeed({ id: "c3", name: "박만료", expire: isoDay(-10) })
+    ];
+    e.S.saveSilent();
+    eq(C.stateOf(e.S.data.certs[0]), "유효", "유효");
+    eq(C.stateOf(e.S.data.certs[1]), "임박", "60일 이내 임박");
+    eq(C.stateOf(e.S.data.certs[2]), "만료", "만료");
+    const s = C.stats();
+    eq(s.total, 3, "전체"); eq(s.ok, 1, "유효"); eq(s.soon, 1, "임박"); eq(s.expired, 1, "만료"); eq(s.pdf, 1, "PDF");
+    // 정렬: 만료일 임박순
+    eq(C.filtered()[0].id, "c3", "만료 우선 정렬");
+  });
+
+  t("CT04 권한: hq 편집, manager 열람 전용, user 접근 차단", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.certs = [certSeed({ fileUrl: "https://x.test/c.pdf" })]; return d; })();
+    const eh = makeEnv({ preData: pre });
+    loginAs(eh, "hq");
+    go(eh, "certs");
+    ok(q(eh, "#ct-add"), "hq: 등록 버튼");
+    ok(q(eh, "#ct-body [data-ct-row]"), "목록 렌더");
+    const em = makeEnv({ preData: pre });
+    loginAs(em, "manager");
+    go(em, "certs");
+    ok(!q(em, "#ct-add"), "manager: 등록 버튼 없음");
+    ok(q(em, "#ct-body [data-ct-row]"), "manager: 목록 열람 가능");
+    ok(q(em, "#ct-body [data-ct-pdf]"), "manager: PDF 열람 버튼");
+    const eu = makeEnv({ preData: pre });
+    loginAs(eu, "user");
+    go(eu, "certs");
+    ok(q(eu, ".dash-grid"), "user: 접근 차단 → 대시보드");
+  });
+
+  t("CT05 등록 폼: 검증 + 수료일 변경 시 만료일 자동 입력", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "certs");
+    q(e, "#ct-add").click();
+    q(e, "#ct-save").click();
+    eq(e.S.data.certs.length, 0, "성명 없이 저장 차단");
+    q(e, "#ct-name").value = "유준상";
+    q(e, "#ct-dept").value = "화물서비스팀";
+    q(e, "#ct-issued").value = "2026-01-15";
+    q(e, "#ct-issued").dispatchEvent(new e.w.Event("change"));
+    eq(q(e, "#ct-expire").value, "2027-02-14", "만료일 자동 계산");
+    q(e, "#ct-no").value = "KASI-2026-01-1623";
+    q(e, "#ct-save").click();
+    eq(e.S.data.certs.length, 1, "저장");
+    const c = e.S.data.certs[0];
+    eq(c.expire, "2027-02-14", "만료일 저장");
+    eq(c.role, "보안감독자", "기본 과정");
+    ok(c.by, "등록자 기록");
+  });
+
+  t("CT06 PDF 뷰어: iframe + 인쇄/다운로드/새 탭 버튼", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    e.S.data.certs = [certSeed({ fileUrl: "https://x.test/cert.pdf", fileName: "이수증.pdf" })];
+    e.S.saveSilent();
+    go(e, "certs");
+    q(e, "#ct-body [data-ct-pdf]").click();
+    const fr = q(e, ".reg-pdf-frame");
+    ok(fr, "뷰어 iframe");
+    eq(fr.getAttribute("src"), "https://x.test/cert.pdf", "src=업로드 URL");
+    ok(q(e, "#ct-print"), "인쇄 버튼");
+    ok(q(e, "#ct-dl"), "다운로드 버튼");
+    ok(qa(e, "#modal-box a").some(a => a.getAttribute("target") === "_blank"), "새 탭 버튼");
+    q(e, "#ct-view-close").click();
+    ok(!q(e, ".reg-pdf-frame"), "닫기");
+  });
+
+  t("CT07 대시보드 연동: 카드(mgr) + 만료도래 통합 + 차트 렌더", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.certs = [certSeed({ id: "c1", name: "김임박", expire: isoDay(20) }),
+                 certSeed({ id: "c2", name: "박유효", expire: isoDay(300) })];
+      return d; })();
+    const em = makeEnv({ preData: pre });
+    loginAs(em, "manager");
+    go(em, "dashboard");
+    ok(q(em, "#certs-box"), "manager: 이수증 카드");
+    ok(/김임박/.test(q(em, "#certs-box").textContent), "임박자 알람 표시");
+    ok(!/박유효/.test(q(em, "#certs-box").textContent), "유효자는 알람 미표시");
+    ok(/이수증 · 김임박/.test(q(em, "#expiry-box").textContent), "만료·도래 카드 통합");
+    const eu = makeEnv({ preData: pre });
+    loginAs(eu, "user");
+    go(eu, "dashboard");
+    ok(!q(eu, "#certs-box"), "user: 이수증 카드 숨김");
+    ok(!/이수증/.test((q(eu, "#expiry-box") || { textContent: "" }).textContent), "user: 만료도래에도 미표시");
+    // 모듈 페이지 차트
+    go(em, "certs");
+    ok(q(em, ".cert-charts"), "차트 영역");
+    ok(qa(em, ".cert-brow").length >= 1, "과정별 바");
+    eq(qa(em, ".cert-mcol").length, 12, "월별 12칸");
+    ok(qa(em, ".cert-seg.soon").length >= 1, "임박 세그먼트");
   });
 
   /* ══════════ 결과 ══════════ */

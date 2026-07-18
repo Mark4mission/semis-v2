@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.14.0";
+  const VERSION = "2.15.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -141,6 +141,7 @@ const SeMIS = (() => {
 
       g("grp-edu", "보안 증진"),
       m("training", "보안교육 관리", "🎓", "training", "mgr", "grp-edu"),
+      m("certs", "교육 이수증 관리", "🎖", "certs", "mgr", "grp-edu"),
       lk("edu-training", "보안 교육 (구버전)", "🎓", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A6%9D%EC%A7%84/%EB%B3%B4%EC%95%88-%EA%B5%90%EC%9C%A1", "grp-edu"),
       lk("edu-campaign", "보안 캠페인", "📣", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A6%9D%EC%A7%84/%EB%B3%B4%EC%95%88-%EC%BA%A0%ED%8E%98%EC%9D%B8", "grp-edu"),
 
@@ -191,6 +192,7 @@ const SeMIS = (() => {
       equipMaint: { contracts: [], costs: [] }, // v2.10: 장비 유지보수 계약/월별 비용 (SeMIS 고유)
       regulations: [],                // v2.12: 규정 관리 (국제/국가 + 자체, PDF/링크 + 개정 아이디어 노트)
       policy: { ko: null, en: null }, // v2.14: 에어제타 보안정책 (국문/영문 PDF)
+      certs: [],                      // v2.15: 교육 이수증 관리 (외부기관 보안책임자/감독자 등)
       vault: { v: 1, members: [], data: null, updated: "" } // v2.9: 암호 관리 (암호문만 저장)
     };
   }
@@ -407,6 +409,14 @@ const SeMIS = (() => {
     {
       const mn = DATA.menus.find(m => m && m.id === "ref-policy" && m.type === "link");
       if (mn && mn.label === "에어제타 보안정책") mn.label = "에어제타 보안정책 (구버전)";
+    }
+    // v2.15: 교육 이수증 관리 — 데이터 보정 + 메뉴 자동 삽입 (보안교육 관리 바로 다음, mgr 열람)
+    if (!Array.isArray(DATA.certs)) DATA.certs = [];
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "certs")) {
+      const tr = DATA.menus.find(m => m && m.type === "module" && m.module === "training" && m.parent === "grp-edu");
+      if (tr) DATA.menus.push({ id: "certs", seq: (tr.seq || 0) + 0.25, type: "module",
+        label: "교육 이수증 관리", icon: "🎖", module: "certs", vis: "mgr", parent: "grp-edu" });
+      else ensureModuleMenu("certs", "grp-edu", "교육 이수증 관리", "🎖", "certs", "mgr");
     }
     return JSON.stringify(DATA) !== before;
   }
