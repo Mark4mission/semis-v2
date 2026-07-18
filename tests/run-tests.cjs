@@ -22,6 +22,7 @@ const eqJS = read("js/equipment.js");
 const trJS = read("js/training.js");
 const cnJS = read("js/contracts.js");
 const rgJS = read("js/regulations.js");
+const plJS = read("js/policy.js");
 const vtJS = read("js/vault.js");
 const caresJS = read("js/cares.js");
 const syncJS = read("js/sync.js");
@@ -59,7 +60,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) S.boot();
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -1884,7 +1885,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "branches,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
+    eq(keys, "branches,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -2795,6 +2796,107 @@ function makeFetchStub(server) {
     ok(!qf.getAttribute("target"), "frame은 새 탭 아님");
     eq(qt.getAttribute("href"), "https://example.com/q2", "tab → 외부 URL");
     eq(qt.getAttribute("target"), "_blank", "tab은 새 탭");
+  });
+
+  /* ══════════ [PL] 보안정책 뷰어 (v2.14) ══════════ */
+  t("PL01 마이그레이션: policy 구조 + 메뉴 삽입 + 구링크 구분 + 동기화 키", () => {
+    const e = makeEnv();
+    ok(e.S.data.policy && "ko" in e.S.data.policy && "en" in e.S.data.policy, "policy {ko,en}");
+    const mn = e.S.data.menus.find(m => m.type === "module" && m.module === "policy");
+    ok(mn, "policy 모듈 메뉴");
+    eq(mn.parent, "grp-ref", "참고/링크 그룹 소속");
+    const old = e.S.data.menus.find(m => m.id === "ref-policy");
+    ok(/구버전/.test(old.label), "구링크 (구버전) 표기");
+    ok(e.Sync.SYNC_KEYS.includes("policy"), "SYNC_KEYS 등록");
+    // 기존 데이터(policy 없음)에서도 보정
+    const pre = JSON.parse(JSON.stringify(e.S.data));
+    delete pre.policy;
+    pre.menus = pre.menus.filter(m => m.module !== "policy");
+    const e2 = makeEnv({ preData: pre });
+    ok(e2.S.data.policy && "ko" in e2.S.data.policy, "구데이터 policy 보정");
+    ok(e2.S.data.menus.some(m => m.type === "module" && m.module === "policy"), "메뉴 재삽입");
+  });
+
+  t("PL02 페이지 렌더 + 권한: hq 파일관리, user 미표시 + 빈 상태", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "policy");
+    ok(q(e, "#pol-manage"), "hq: 파일 관리 버튼");
+    ok(qa(e, "[data-pol-mode]").length === 3, "모드 버튼 3개(국문/영문/분할)");
+    ok(q(e, "#pol-zoom-in") && q(e, "#pol-zoom-out") && q(e, "#pol-zoom-fit"), "줌 컨트롤");
+    ok(q(e, ".pol-empty"), "빈 상태 안내");
+    ok(q(e, "[data-pol-upload]"), "빈 상태에서 업로드 버튼(hq)");
+    const e2 = makeEnv();
+    loginAs(e2, "user");
+    go(e2, "policy");
+    ok(!q(e2, "#pol-manage"), "user: 파일 관리 없음");
+    ok(!q(e2, "[data-pol-upload]"), "user: 업로드 버튼 없음");
+    ok(q(e2, ".pol-empty"), "user: 빈 상태 안내는 표시");
+  });
+
+  t("PL03 모드 전환: 국문/영문/분할 페인 구성 + 상태 저장", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.policy = {
+      ko: { url: "https://x.test/ko.pdf", name: "정책_국문.pdf", size: 1000, updated: "2026-07-18T00:00:00Z", by: "T" },
+      en: { url: "https://x.test/en.pdf", name: "policy_en.pdf", size: 1000, updated: "2026-07-18T00:00:00Z", by: "T" }
+    };
+    e.S.saveSilent();
+    e.w.SemisPolicy.setMode("ko");
+    go(e, "policy");
+    eq(qa(e, "[data-pol-pane]").length, 1, "국문 모드 1페인");
+    eq(q(e, "[data-pol-pane]").dataset.polPane, "ko", "국문 페인");
+    ok(q(e, '[data-pol-print="ko"]') && q(e, '[data-pol-dl="ko"]'), "인쇄/다운로드 버튼");
+    qa(e, "[data-pol-mode]").find(b => b.dataset.polMode === "en").click();
+    eq(qa(e, "[data-pol-pane]").length, 1, "영문 모드 1페인");
+    eq(q(e, "[data-pol-pane]").dataset.polPane, "en", "영문 페인");
+    qa(e, "[data-pol-mode]").find(b => b.dataset.polMode === "split").click();
+    eq(qa(e, "[data-pol-pane]").length, 2, "분할 모드 2페인");
+    ok(q(e, ".pol-panes.split"), "분할 레이아웃 클래스");
+    const ui = JSON.parse(e.w.localStorage.getItem("semis2:policyUi"));
+    eq(ui.mode, "split", "모드 localStorage 저장");
+    ok(q(e, '[data-pol-body="ko"]') && q(e, '[data-pol-body="en"]'), "양쪽 문서 영역");
+  });
+
+  t("PL04 파일 관리 모달: 국문/영문 업로드 행 + 삭제", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.policy = { ko: { url: "https://x.test/ko.pdf", name: "정책_국문.pdf", size: 2097152, updated: "2026-07-18T00:00:00Z", by: "T" }, en: null };
+    e.S.saveSilent();
+    go(e, "policy");
+    q(e, "#pol-manage").click();
+    eq(qa(e, "[data-pm-up]").length, 2, "업로드 입력 2개(국문/영문)");
+    ok(q(e, "#pm-cur-ko .nb-file"), "국문 현재 파일 표시");
+    ok(/2\.0 MB/.test(q(e, "#pm-cur-ko").textContent), "용량 표시");
+    ok(q(e, '[data-pm-del="ko"]'), "국문 삭제 버튼");
+    ok(!q(e, '[data-pm-del="en"]'), "영문(미등록) 삭제 버튼 없음");
+    q(e, '[data-pm-del="ko"]').click();
+    q(e, "#modal-box [data-act=ok]").click();
+    eq(e.S.data.policy.ko, null, "국문 삭제 반영");
+    // 권한: manager는 manageForm 직접 호출해도 무시
+    const e2 = makeEnv();
+    loginAs(e2, "manager");
+    e2.w.SemisPolicy.manageForm();
+    ok(!q(e2, "[data-pm-up]"), "manager: 관리 모달 차단");
+  });
+
+  t("PL05 줌 컨트롤: 배율 증감·맞춤·범위 제한", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.w.SemisPolicy.setMode("ko");
+    e.w.SemisPolicy.setZoom(1);
+    go(e, "policy");
+    q(e, "#pol-zoom-in").click();
+    eq(e.w.SemisPolicy.zoom, 1.2, "확대 1.2x");
+    q(e, "#pol-zoom-out").click();
+    eq(e.w.SemisPolicy.zoom, 1, "축소 복귀");
+    e.w.SemisPolicy.setZoom(2.9);
+    q(e, "#pol-zoom-in").click();
+    eq(e.w.SemisPolicy.zoom, 3, "최대 3x 제한");
+    q(e, "#pol-zoom-fit").click();
+    eq(e.w.SemisPolicy.zoom, "fit", "폭 맞춤 모드");
+    const ui = JSON.parse(e.w.localStorage.getItem("semis2:policyUi"));
+    eq(ui.zoom, "fit", "줌 상태 저장");
   });
 
   /* ══════════ 결과 ══════════ */

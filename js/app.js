@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.13.0";
+  const VERSION = "2.14.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -151,7 +151,8 @@ const SeMIS = (() => {
       lk("ab-guide", "문자의 신 이용 안내", "📖", "https://sites.google.com/view/kjsemis/%EB%B9%84%EC%A0%95%EC%83%81-%EC%83%81%ED%99%A9/%EB%AC%B8%EC%9E%90%EC%9D%98-%EC%8B%A0-%EB%B3%B4%EA%B3%A0-%EB%B0%A9%EB%B2%95-%EC%95%88%EB%82%B4", "grp-abnormal"),
 
       g("grp-ref", "참고 / 링크"),
-      lk("ref-policy", "에어제타 보안정책", "🛡️", "https://drive.google.com/file/d/15V_aIYU9gB6nCp9AYQPE3kxePisQ2vJV/view?usp=sharing", "grp-ref"),
+      m("policy", "에어제타 보안정책", "🛡️", "policy", "all", "grp-ref"),
+      lk("ref-policy", "에어제타 보안정책 (구버전)", "🛡️", "https://drive.google.com/file/d/15V_aIYU9gB6nCp9AYQPE3kxePisQ2vJV/view?usp=sharing", "grp-ref"),
       lk("ref-agreement", "보안 서약서", "✍️", "https://mark4mission.github.io/airzeta-security-agreement/", "grp-ref"),
       lk("ref-drive", "SeMIS Drive", "🗂️", "https://drive.google.com/drive/folders/1KSKO1ioqb8I0s-kysIkkP4yb2SwURXTW?usp=drive_link", "grp-ref", { vis: "mgr" }),
       lk("ref-legacy", "구버전 (kjsemis)", "🕰️", "https://sites.google.com/view/kjsemis/", "grp-ref"),
@@ -189,6 +190,7 @@ const SeMIS = (() => {
       contracts: [],                  // v2.8: 계약서 관리
       equipMaint: { contracts: [], costs: [] }, // v2.10: 장비 유지보수 계약/월별 비용 (SeMIS 고유)
       regulations: [],                // v2.12: 규정 관리 (국제/국가 + 자체, PDF/링크 + 개정 아이디어 노트)
+      policy: { ko: null, en: null }, // v2.14: 에어제타 보안정책 (국문/영문 PDF)
       vault: { v: 1, members: [], data: null, updated: "" } // v2.9: 암호 관리 (암호문만 저장)
     };
   }
@@ -397,6 +399,15 @@ const SeMIS = (() => {
       const mn = DATA.menus.find(m => m && m.id === id && m.type === "link");
       if (mn && mn.label === orig) mn.label = orig + " (구버전)";
     });
+    // v2.14: 보안정책 뷰어 — 데이터 보정 + 메뉴 자동 삽입(grp-ref 최상단) + 구링크 구분
+    if (!DATA.policy || typeof DATA.policy !== "object" || Array.isArray(DATA.policy)) DATA.policy = { ko: null, en: null };
+    if (!("ko" in DATA.policy)) DATA.policy.ko = null;
+    if (!("en" in DATA.policy)) DATA.policy.en = null;
+    ensureModuleMenu("policy", "grp-ref", "에어제타 보안정책", "🛡️", "policy", "all");
+    {
+      const mn = DATA.menus.find(m => m && m.id === "ref-policy" && m.type === "link");
+      if (mn && mn.label === "에어제타 보안정책") mn.label = "에어제타 보안정책 (구버전)";
+    }
     return JSON.stringify(DATA) !== before;
   }
   const saveHooks = [];
