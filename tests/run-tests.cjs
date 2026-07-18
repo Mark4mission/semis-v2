@@ -2716,6 +2716,87 @@ function makeFetchStub(server) {
     ok(e.Sync.SYNC_KEYS.includes("regulations"), "SYNC_KEYS 등록");
   });
 
+  /* ══════════ [LM] 링크 메뉴 열기 방식 (v2.13) ══════════ */
+  t("LM01 메뉴 폼: 열기 방식 선택 저장 (tab/frame)", () => {
+    const e = makeEnv();
+    loginAs(e, "admin");
+    go(e, "settings");
+    q(e, "#btn-add-menu").click();
+    ok(q(e, "#f-open"), "열기 방식 select 존재");
+    eq(q(e, "#f-open").value, "tab", "기본값 새 탭");
+    q(e, "#f-label").value = "내부 문서";
+    q(e, "#f-url").value = "https://example.com/embed-doc";
+    q(e, "#f-open").value = "frame";
+    q(e, "#f-save").click();
+    const mn = e.S.data.menus.find(m => m.label === "내부 문서");
+    ok(mn, "메뉴 저장");
+    eq(mn.open, "frame", "open=frame 저장");
+    // 수정 폼 재열람 시 선택 유지
+    go(e, "settings");
+    q(e, `#menu-tree [data-edit="${mn.id}"]`).click();
+    eq(q(e, "#f-open").value, "frame", "수정 폼 값 유지");
+    e.S.closeModal();
+  });
+
+  t("LM02 네비 렌더: frame=내부 버튼(embed 라우트), tab=새 탭 앵커", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.menus.push(
+      { id: "lmf", seq: 990, type: "link", label: "프레임링크", icon: "🧪", url: "https://example.com/f", open: "frame", vis: "all", parent: null },
+      { id: "lmt", seq: 991, type: "link", label: "탭링크", icon: "🧪", url: "https://example.com/t", open: "tab", vis: "all", parent: null });
+    e.S.saveSilent(); e.S.renderNav();
+    const fBtn = qa(e, "#nav-menu .nav-item").find(el => el.textContent.includes("프레임링크"));
+    const tA = qa(e, "#nav-menu .nav-item").find(el => el.textContent.includes("탭링크"));
+    eq(fBtn.tagName, "BUTTON", "frame은 버튼");
+    eq(fBtn.dataset.route, "embed/lmf", "embed 라우트");
+    ok(/▣/.test(fBtn.textContent), "내부 표식 ▣");
+    eq(tA.tagName, "A", "tab은 앵커");
+    eq(tA.getAttribute("target"), "_blank", "새 탭");
+    // 구버전 데이터(open 미지정)는 앵커 유지
+    const legacy = qa(e, "#nav-menu .nav-item").find(el => el.textContent.includes("보안뉴스"));
+    ok(!legacy || legacy.tagName === "A", "open 미지정 링크는 새 탭 유지");
+  });
+
+  t("LM03 embed 라우트: iframe 렌더 + 새 탭 버튼 + 권한 차단", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.menus.push({ id: "lmf2", seq: 992, type: "link", label: "내부화면", icon: "🧪",
+      url: "https://example.com/page", open: "frame", vis: "hq", parent: null });
+    e.S.saveSilent();
+    go(e, "embed/lmf2");
+    const fr = q(e, ".embed-frame");
+    ok(fr, "iframe 렌더");
+    eq(fr.getAttribute("src"), "https://example.com/page", "src=URL");
+    ok(qa(e, ".page-head a").some(a => a.getAttribute("target") === "_blank"), "새 탭 열기 버튼");
+    ok(q(e, ".page-title").textContent.includes("내부화면"), "제목 표시");
+    // 권한 미달 → 대시보드 폴백
+    const e2 = makeEnv({ preData: JSON.parse(JSON.stringify(e.S.data)) });
+    loginAs(e2, "user");
+    go(e2, "embed/lmf2");
+    ok(!q(e2, ".embed-frame"), "user: iframe 없음");
+    ok(q(e2, ".dash-grid"), "대시보드 폴백");
+    // 없는 메뉴 id → 대시보드 폴백
+    go(e, "embed/no-such-id");
+    ok(!q(e, ".embed-frame") && q(e, ".dash-grid"), "잘못된 id 폴백");
+  });
+
+  t("LM04 대시보드 바로가기: frame 링크는 내부 라우트로 연결", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.menus.push(
+      { id: "lmq1", seq: 993, type: "link", label: "퀵프레임", icon: "🧪", url: "https://example.com/q1", open: "frame", vis: "all", parent: null, quick: true },
+      { id: "lmq2", seq: 994, type: "link", label: "퀵탭", icon: "🧪", url: "https://example.com/q2", vis: "all", parent: null, quick: true });
+    e.S.saveSilent();
+    go(e, "dashboard");
+    const links = qa(e, ".quick-link");
+    const qf = links.find(a => a.textContent.includes("퀵프레임"));
+    const qt = links.find(a => a.textContent.includes("퀵탭"));
+    eq(qf.getAttribute("href"), "#/embed/lmq1", "frame → 내부 해시");
+    ok(!qf.getAttribute("target"), "frame은 새 탭 아님");
+    eq(qt.getAttribute("href"), "https://example.com/q2", "tab → 외부 URL");
+    eq(qt.getAttribute("target"), "_blank", "tab은 새 탭");
+  });
+
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
   console.log(`  SeMIS v2.9 테스트: ${passed + failed}건 실행`);

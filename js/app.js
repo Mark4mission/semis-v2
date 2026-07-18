@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.12.0";
+  const VERSION = "2.13.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -533,18 +533,43 @@ const SeMIS = (() => {
 
   function renderView() {
     const route = currentRoute();
-    let def = modules[route];
-    const menu = menuForModule(route);
-    if (menu && !canSee(menu)) { toast("접근 권한이 없습니다.", true); def = modules.dashboard; }
-    if (!def) def = modules.dashboard;
-    $("#view").innerHTML = "";
-    def.render($("#view"));
+    const view = $("#view");
+    view.innerHTML = "";
+    if (route.indexOf("embed/") === 0) {
+      // v2.13: 링크 메뉴 내부 프레임 열기 (open: "frame")
+      renderEmbedView(view, route.slice(6));
+    } else {
+      let def = modules[route];
+      const menu = menuForModule(route);
+      if (menu && !canSee(menu)) { toast("접근 권한이 없습니다.", true); def = modules.dashboard; }
+      if (!def) def = modules.dashboard;
+      def.render(view);
+    }
     highlightNav(route);
     // 모바일: 이동 시 사이드바 닫기
     $("#sidebar").classList.remove("open");
     $("#sidebar-backdrop").classList.remove("show");
     $("#main").scrollTop = 0;
     window.scrollTo(0, 0);
+  }
+
+  /* v2.13: 외부 링크를 시스템 내부 화면(iframe)에서 열기 */
+  function renderEmbedView(root, id) {
+    const mn = DATA.menus.find(m => m && m.id === id && m.type === "link");
+    if (!mn || !canSee(mn)) {
+      toast(mn ? "접근 권한이 없습니다." : "메뉴를 찾을 수 없습니다.", true);
+      modules.dashboard.render(root);
+      return;
+    }
+    root.innerHTML = `
+      <div class="page-head">
+        <div class="page-title">${esc(mn.icon || "🔗")} ${esc(mn.label)}</div>
+        <span class="spacer"></span>
+        <a class="btn btn-ghost btn-sm" href="${esc(mn.url)}" target="_blank" rel="noopener">새 탭에서 열기 ↗</a>
+        <div class="page-desc">화면이 비어 있으면 해당 사이트가 내부 열기(iframe)를 차단하는 것입니다 — 새 탭에서 열기를 이용하세요.</div>
+      </div>
+      <iframe class="embed-frame" src="${esc(mn.url)}" title="${esc(mn.label)}"
+        allow="fullscreen" referrerpolicy="no-referrer-when-downgrade"></iframe>`;
   }
 
   function highlightNav(route) {
@@ -565,6 +590,15 @@ const SeMIS = (() => {
 
     const itemEl = (mn) => {
       if (mn.type === "link") {
+        if (mn.open === "frame") {
+          // v2.13: 내부 프레임 열기 — 내부 라우트 버튼
+          const b2 = document.createElement("button");
+          b2.className = "nav-item";
+          b2.dataset.route = "embed/" + mn.id;
+          b2.innerHTML = '<span class="nav-ico">' + esc(mn.icon || "🔗") + '</span><span>' + esc(mn.label) + '</span><span class="ext-mark">▣</span>';
+          b2.onclick = () => navigate("embed/" + mn.id);
+          return b2;
+        }
         const a = document.createElement("a");
         a.className = "nav-item";
         a.href = mn.url;

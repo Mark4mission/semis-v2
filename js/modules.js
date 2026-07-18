@@ -102,6 +102,9 @@
                 ${quicks.map(m => m.type === "module"
                   ? `<a class="quick-link" href="#/${esc(m.module)}">
                   <span>${esc(m.icon || "▪")}</span><span>${esc(m.label)}</span></a>`
+                  : m.open === "frame"
+                  ? `<a class="quick-link" href="#/embed/${esc(m.id)}">
+                  <span>${esc(m.icon || "🔗")}</span><span>${esc(m.label)}</span></a>`
                   : `<a class="quick-link" href="${esc(m.url)}" target="_blank" rel="noopener">
                   <span>${esc(m.icon || "🔗")}</span><span>${esc(m.label)}</span></a>`).join("") ||
                   '<div class="empty">등록된 바로가기가 없습니다.</div>'}
@@ -552,7 +555,9 @@
     const menus = SeMIS.sortedMenus();
     const typeBadge = (m) =>
       m.type === "group" ? '<span class="badge badge-gray mt-type">그룹</span>'
-      : m.type === "link" ? '<span class="badge badge-blue mt-type">링크</span>'
+      : m.type === "link" ? (m.open === "frame"
+        ? '<span class="badge badge-blue mt-type">링크 ▣ 내부</span>'
+        : '<span class="badge badge-blue mt-type">링크 ↗</span>')
       : '<span class="badge badge-green mt-type">모듈</span>';
 
     const row = (m, isChild) => `
@@ -633,6 +638,13 @@
       <div class="form-row" id="row-url" ${type !== "link" ? 'style="display:none"' : ""}>
         <label>웹주소 (URL)</label><input id="f-url" value="${esc(m && m.url ? m.url : "")}" placeholder="https://...">
         <div class="form-hint">기존 구글 문서/사이트 등 외부 주소를 그대로 연결합니다.</div></div>
+      <div class="form-row" id="row-open" ${type !== "link" ? 'style="display:none"' : ""}>
+        <label>열기 방식</label>
+        <select id="f-open">
+          <option value="tab" ${!m || m.open !== "frame" ? "selected" : ""}>새 탭(새 창)에서 열기 ↗</option>
+          <option value="frame" ${m && m.open === "frame" ? "selected" : ""}>시스템 내부 화면에서 열기 ▣</option>
+        </select>
+        <div class="form-hint">일부 사이트는 내부 열기(iframe)를 차단합니다. 화면이 비어 보이면 새 탭 방식으로 변경하세요.</div></div>
       <div class="form-row" id="row-parent" ${type === "group" ? 'style="display:none"' : ""}>
         <label>소속 그룹</label>
         <select id="f-parent">
@@ -659,6 +671,7 @@
     if (typeSel) typeSel.onchange = () => {
       const t = typeSel.value;
       $("#row-url").style.display = t === "link" ? "" : "none";
+      $("#row-open").style.display = t === "link" ? "" : "none";
       $("#row-parent").style.display = t === "group" ? "none" : "";
       $("#row-vis").style.display = t === "group" ? "none" : "";
       $("#row-quick").style.display = t === "link" ? "" : "none";
@@ -672,8 +685,9 @@
       if (t === "link") {
         const url = $("#f-url").value.trim();
         if (!/^https?:\/\/.+/.test(url)) { toast("올바른 웹주소(https://...)를 입력하세요.", true); return; }
-        if (m) Object.assign(m, { label, icon, url, parent: $("#f-parent").value || null, vis: $("#f-vis").value, quick: $("#f-quick").checked });
-        else D().menus.push({ id: uid("mn"), seq: nextSeq(), type: "link", label, icon, url,
+        const open = $("#f-open").value === "frame" ? "frame" : "tab";
+        if (m) Object.assign(m, { label, icon, url, open, parent: $("#f-parent").value || null, vis: $("#f-vis").value, quick: $("#f-quick").checked });
+        else D().menus.push({ id: uid("mn"), seq: nextSeq(), type: "link", label, icon, url, open,
           parent: $("#f-parent").value || null, vis: $("#f-vis").value, quick: $("#f-quick").checked });
       } else if (t === "group") {
         if (m) Object.assign(m, { label });

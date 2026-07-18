@@ -749,3 +749,7 @@ a.ct-tel:hover { color: var(--primary); }
 .reg-idea-meta { font-size: .72rem; color: var(--text-3); margin-top: 6px; }
 .reg-idea-open { display: inline-block; min-width: 15px; padding: 0 4px; margin-left: 3px; border-radius: 8px; background: var(--warning, #d97706); color: #fff; font-size: .66rem; font-weight: 800; line-height: 15px; text-align: center; }
 @media (max-width: 768px) { .reg-pdf-frame { height: 60vh; } }
+
+/* ═══════ 링크 내부 프레임 열기 (v2.13) ═══════ */
+.embed-frame { width: 100%; height: calc(100vh - 205px); min-height: 420px; border: 1px solid var(--border); border-radius: 10px; background: #fff; box-shadow: var(--shadow); }
+@media (max-width: 768px) { .embed-frame { height: calc(100vh - 235px); min-height: 340px; } }
