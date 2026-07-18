@@ -257,17 +257,17 @@
     const showIdeas = own && canSeeIdeas();
     if (!items.length) return '<div class="empty">등록된 규정이 없습니다.</div>';
     return `<div class="table-wrap"><table class="tbl"><thead><tr>
-        <th>규정명</th><th style="width:110px">버전</th><th style="width:106px">제·개정일자</th>
-        <th style="width:${own ? 150 : 120}px">열람</th>
-        ${own ? '<th style="width:90px">신구대조표</th>' : ""}
-        ${showIdeas ? '<th style="width:76px">노트</th>' : ""}</tr></thead><tbody>
+        <th>규정명</th><th style="width:190px">버전</th><th style="width:130px">제·개정일자</th>
+        <th style="width:${own ? 190 : 160}px">열람</th>
+        ${own ? '<th style="width:110px">신구대조표</th>' : ""}
+        ${showIdeas ? '<th style="width:90px">노트</th>' : ""}</tr></thead><tbody>
       ${items.map(r => {
         const openCnt = ideasOf(r).filter(i => i.status === "검토중").length;
         return `
       <tr data-rg-row="${esc(r.id)}"${SeMIS.canEdit() ? ' style="cursor:pointer" title="클릭하여 수정"' : ""}>
         <td><b>${esc(r.title)}</b>${r.org || r.note ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(r.org || "")}${r.org && r.note ? " · " : ""}${esc(r.note || "")}</div>` : ""}</td>
-        <td>${r.rev ? `<span class="badge badge-blue">${esc(r.rev)}</span>` : "-"}</td>
-        <td style="font-size:.82rem">${esc(r.date || "-")}</td>
+        <td>${r.rev ? `<span class="badge badge-blue" style="white-space:nowrap">${esc(r.rev)}</span>` : "-"}</td>
+        <td style="font-size:.82rem;white-space:nowrap">${esc(r.date || "-")}</td>
         <td style="white-space:nowrap">
           ${r.linkUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(r.linkUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">링크 ↗</a>` : ""}
           ${r.fileUrl ? `<button class="btn btn-ghost btn-sm" data-rg-pdf="${esc(r.id)}">📄 PDF</button>` : ""}
