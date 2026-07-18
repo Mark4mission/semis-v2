@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.11.1";
+  const VERSION = "2.12.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -111,8 +111,10 @@ const SeMIS = (() => {
       lk("lvl-now", "보안등급 현황 [현재]", "✅", "https://docs.google.com/document/d/1Fvsi7bcOofgXNv7PA5gPF4USuFAJ1JtLWrAApNY4BDM/edit?usp=sharing", "grp-level", { quick: true }),
 
       g("grp-rule", "규정 / 인허가"),
-      lk("rule-intl", "국제/국가 보안규정", "🌐", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EA%B5%AD%EC%A0%9C%EA%B5%AD%EA%B0%80-%EB%B3%B4%EC%95%88%EA%B7%9C%EC%A0%95", "grp-rule"),
-      lk("rule-own", "자체 보안규정", "📘", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EC%9E%90%EC%B2%B4-%EB%B3%B4%EC%95%88%EA%B7%9C%EC%A0%95", "grp-rule"),
+      m("regs-intl", "국제/국가 보안규정", "🌐", "regs-intl", "all", "grp-rule"),
+      m("regs-own", "자체 보안규정", "📘", "regs-own", "all", "grp-rule"),
+      lk("rule-intl", "국제/국가 보안규정 (구버전)", "🌐", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EA%B5%AD%EC%A0%9C%EA%B5%AD%EA%B0%80-%EB%B3%B4%EC%95%88%EA%B7%9C%EC%A0%95", "grp-rule"),
+      lk("rule-own", "자체 보안규정 (구버전)", "📘", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EC%9E%90%EC%B2%B4-%EB%B3%B4%EC%95%88%EA%B7%9C%EC%A0%95", "grp-rule"),
       lk("rule-iosa", "IOSA (국제 인허가)", "🏅", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/iosa%EA%B5%AD%EC%A0%9C-%EC%9D%B8%ED%97%88%EA%B0%80", "grp-rule"),
       lk("rule-ssi", "비밀 취급 / SSI", "㊙️", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EB%B9%84%EB%B0%80-%EC%B7%A8%EA%B8%89ssi", "grp-rule", { vis: "mgr" }),
 
@@ -186,6 +188,7 @@ const SeMIS = (() => {
       trainings: [],                  // v2.8: 보안교육 관리
       contracts: [],                  // v2.8: 계약서 관리
       equipMaint: { contracts: [], costs: [] }, // v2.10: 장비 유지보수 계약/월별 비용 (SeMIS 고유)
+      regulations: [],                // v2.12: 규정 관리 (국제/국가 + 자체, PDF/링크 + 개정 아이디어 노트)
       vault: { v: 1, members: [], data: null, updated: "" } // v2.9: 암호 관리 (암호문만 저장)
     };
   }
@@ -384,6 +387,15 @@ const SeMIS = (() => {
     ["contracts-mgmt", "vault"].forEach(id => {
       const mn = DATA.menus.find(m => m && m.id === id && m.type === "module");
       if (mn && mn.vis !== "hq") mn.vis = "hq";
+    });
+    // v2.12: 규정 관리 — 데이터 보정 + 메뉴 자동 삽입(grp-rule 최상단: 국제/국가 → 자체) + 구링크 구분
+    if (!Array.isArray(DATA.regulations)) DATA.regulations = [];
+    DATA.regulations.forEach(r => { if (r && !Array.isArray(r.ideas)) r.ideas = []; });
+    ensureModuleMenu("regs-own", "grp-rule", "자체 보안규정", "📘", "regs-own", "all");
+    ensureModuleMenu("regs-intl", "grp-rule", "국제/국가 보안규정", "🌐", "regs-intl", "all");
+    [["rule-intl", "국제/국가 보안규정"], ["rule-own", "자체 보안규정"]].forEach(([id, orig]) => {
+      const mn = DATA.menus.find(m => m && m.id === id && m.type === "link");
+      if (mn && mn.label === orig) mn.label = orig + " (구버전)";
     });
     return JSON.stringify(DATA) !== before;
   }

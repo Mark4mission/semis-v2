@@ -21,6 +21,7 @@ const psJS = read("js/passes.js");
 const eqJS = read("js/equipment.js");
 const trJS = read("js/training.js");
 const cnJS = read("js/contracts.js");
+const rgJS = read("js/regulations.js");
 const vtJS = read("js/vault.js");
 const caresJS = read("js/cares.js");
 const syncJS = read("js/sync.js");
@@ -58,7 +59,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) S.boot();
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -1883,7 +1884,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "branches,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,pwOverrides,schedules,trainings,userOverrides,vault");
+    eq(keys, "branches,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -2545,6 +2546,174 @@ function makeFetchStub(server) {
     VT._fireExpire();
     ok(!VT.isUnlocked(), "연장 후에도 만료 잠금 정상");
     eq(e.w.location.hash, "#/dashboard", "만료 시 대시보드 이동");
+  });
+
+  /* ══════════ [RG] 규정 관리 (v2.12) ══════════ */
+  t("RG01 마이그레이션: regulations 배열 + 메뉴 자동 삽입 + 구링크 구분", () => {
+    const e = makeEnv();
+    ok(Array.isArray(e.S.data.regulations), "regulations 배열");
+    const mi = e.S.data.menus.find(m => m.type === "module" && m.module === "regs-intl");
+    const mo = e.S.data.menus.find(m => m.type === "module" && m.module === "regs-own");
+    ok(mi && mo, "모듈 메뉴 존재");
+    eq(mi.parent, "grp-rule", "국제/국가 소속 그룹");
+    eq(mo.parent, "grp-rule", "자체 소속 그룹");
+    ok((mi.seq || 0) < (mo.seq || 0), "국제/국가가 자체보다 위");
+    const oldIntl = e.S.data.menus.find(m => m.id === "rule-intl");
+    const oldOwn = e.S.data.menus.find(m => m.id === "rule-own");
+    ok(/구버전/.test(oldIntl.label) && /구버전/.test(oldOwn.label), "구링크 (구버전) 표기");
+  });
+
+  t("RG02 기존 데이터 마이그레이션: 구 링크 메뉴만 있어도 모듈 메뉴 삽입", () => {
+    const e = makeEnv();
+    const pre = JSON.parse(JSON.stringify(e.S.data));
+    pre.menus = pre.menus.filter(m => m.module !== "regs-intl" && m.module !== "regs-own");
+    delete pre.regulations;
+    pre.regulations = [{ id: "rgx", scope: "own", title: "테스트 규정" }]; // ideas 누락 케이스
+    const e2 = makeEnv({ preData: pre });
+    ok(e2.S.data.menus.some(m => m.type === "module" && m.module === "regs-intl"), "regs-intl 재삽입");
+    ok(e2.S.data.menus.some(m => m.type === "module" && m.module === "regs-own"), "regs-own 재삽입");
+    ok(Array.isArray(e2.S.data.regulations[0].ideas), "ideas 필드 보정");
+  });
+
+  t("RG03 페이지 렌더 + 권한: hq 등록 버튼, user 미표시", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "regs-intl");
+    ok(q(e, "#rg-add"), "hq: 등록 버튼");
+    ok(q(e, "#rg-search"), "검색 입력");
+    ok(qa(e, ".stat").length >= 4, "통계 카드");
+    const e2 = makeEnv();
+    loginAs(e2, "user");
+    go(e2, "regs-intl");
+    ok(!q(e2, "#rg-add"), "user: 등록 버튼 없음");
+    ok(q(e2, "#rg-body .empty"), "빈 목록 안내");
+  });
+
+  t("RG04 규정 등록 폼: 저장/검증 (제목 필수, 링크 형식)", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "regs-intl");
+    q(e, "#rg-add").click();
+    ok(q(e, "#rg-title"), "폼 열림");
+    ok(!q(e, "#rg-diff"), "intl에는 신구대조표 없음");
+    q(e, "#rg-save").click();
+    eq(e.S.data.regulations.length, 0, "제목 없이 저장 차단");
+    q(e, "#rg-title").value = "항공보안법";
+    q(e, "#rg-link").value = "not-a-url";
+    q(e, "#rg-save").click();
+    eq(e.S.data.regulations.length, 0, "잘못된 링크 차단");
+    q(e, "#rg-link").value = "https://law.go.kr/법령/항공보안법";
+    q(e, "#rg-rev").value = "개정 제19호";
+    q(e, "#rg-date").value = "2026-01-15";
+    q(e, "#rg-save").click();
+    eq(e.S.data.regulations.length, 1, "저장됨");
+    const r = e.S.data.regulations[0];
+    eq(r.scope, "intl", "scope");
+    eq(r.rev, "개정 제19호", "버전");
+    eq(r.date, "2026-01-15", "제개정일자");
+    ok(Array.isArray(r.ideas), "ideas 초기화");
+    go(e, "regs-intl");
+    ok(qa(e, "#rg-body [data-rg-row]").length === 1, "목록 1건");
+    ok(q(e, '#rg-body a[href*="law.go.kr"]'), "링크 열람 버튼");
+  });
+
+  t("RG05 자체 규정: 신구대조표 필드 + PDF 뷰어 모달", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.regulations.push({ id: "rg1", scope: "own", title: "AirZeta 보안계획", rev: "Rev.7",
+      date: "2026-05-01", org: "AVSEC-001", linkUrl: "", fileUrl: "https://x.test/f.pdf",
+      fileName: "f.pdf", diffUrl: "https://x.test/d.pdf", diffName: "d.pdf", note: "", ideas: [] });
+    e.S.saveSilent();
+    go(e, "regs-own");
+    q(e, "#rg-add").click();
+    ok(q(e, "#rg-diff"), "own 폼에 신구대조표 업로드");
+    e.S.closeModal();
+    go(e, "regs-own");
+    ok(q(e, "#rg-body [data-rg-pdf]"), "PDF 버튼");
+    ok(q(e, "#rg-body [data-rg-diff]"), "신구대조표 버튼");
+    q(e, "#rg-body [data-rg-pdf]").click();
+    const fr = q(e, ".reg-pdf-frame");
+    ok(fr && fr.getAttribute("src") === "https://x.test/f.pdf", "뷰어 iframe src");
+    q(e, "#rg-view-close").click();
+    q(e, "#rg-body [data-rg-diff]").click();
+    ok(q(e, ".reg-pdf-frame").getAttribute("src") === "https://x.test/d.pdf", "신구대조표 src");
+  });
+
+  t("RG06 개정 아이디어 노트: 추가/수정/삭제 + 검토중 카운트", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.regulations.push({ id: "rg2", scope: "own", title: "보안업무 지침", rev: "Rev.3",
+      date: "2025-11-01", linkUrl: "https://x.test", fileUrl: "", ideas: [] });
+    e.S.saveSilent();
+    go(e, "regs-own");
+    q(e, "#rg-body [data-rg-idea]").click();
+    ok(q(e, "#rg-idea-add"), "노트 모달 + 추가 버튼");
+    q(e, "#rg-idea-add").click();
+    q(e, "#ri-save").click();
+    eq(e.w.SemisRegs.ideasOf(e.S.data.regulations[0]).length, 0, "내용 없이 저장 차단");
+    q(e, "#ri-loc").value = "제3장 3.2.1 / p.14";
+    q(e, "#ri-content").value = "위탁수하물 개봉검색 절차에 ETD 병행 기준 신설 필요";
+    q(e, "#ri-kind").value = "신규";
+    q(e, "#ri-save").click();
+    const r = e.S.data.regulations[0];
+    eq(r.ideas.length, 1, "노트 저장");
+    eq(r.ideas[0].kind, "신규", "구분");
+    eq(r.ideas[0].status, "검토중", "기본 상태");
+    ok(r.ideas[0].author, "작성자 기록");
+    // 목록 카운트 배지
+    ok(q(e, "#rg-idea-list .reg-idea"), "모달 내 노트 표시");
+    e.S.closeModal();
+    go(e, "regs-own");
+    ok(/💡\s*1/.test(q(e, "#rg-body [data-rg-idea]").textContent), "노트 수 표시");
+    ok(q(e, "#rg-body .reg-idea-open"), "검토중 배지");
+    // 수정 → 반영완료
+    q(e, "#rg-body [data-rg-idea]").click();
+    q(e, "#rg-idea-list [data-iedit]").click();
+    q(e, "#ri-status").value = "반영완료";
+    q(e, "#ri-save").click();
+    eq(r.ideas[0].status, "반영완료", "상태 수정");
+    // 삭제
+    q(e, "#rg-idea-list [data-idel]").click();
+    q(e, "#modal-box [data-act=ok]").click();
+    eq(r.ideas.length, 0, "노트 삭제");
+  });
+
+  t("RG07 아이디어 노트 권한: user 비노출, manager 열람 전용", () => {
+    const pre = (() => { const t0 = makeEnv(); return JSON.parse(JSON.stringify(t0.S.data)); })();
+    pre.regulations = [{ id: "rg3", scope: "own", title: "보안규정", linkUrl: "https://x.test",
+      ideas: [{ id: "i1", loc: "p.1", kind: "변경", status: "검토중", content: "내부 검토", author: "T", created: "2026-07-01T00:00:00Z" }] }];
+    const eu = makeEnv({ preData: pre });
+    loginAs(eu, "user");
+    go(eu, "regs-own");
+    ok(!q(eu, "#rg-body [data-rg-idea]"), "user: 노트 열 비노출");
+    const em = makeEnv({ preData: pre });
+    loginAs(em, "manager");
+    go(em, "regs-own");
+    ok(q(em, "#rg-body [data-rg-idea]"), "manager: 노트 열람 가능");
+    q(em, "#rg-body [data-rg-idea]").click();
+    ok(!q(em, "#rg-idea-add"), "manager: 추가 버튼 없음");
+    ok(!q(em, "#rg-idea-list [data-iedit]"), "manager: 수정 버튼 없음");
+    ok(q(em, "#rg-idea-list .reg-idea"), "manager: 내용 열람");
+  });
+
+  t("RG08 검색/정렬 + 동기화 키", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.regulations.push(
+      { id: "a", scope: "intl", title: "ICAO Annex 17", rev: "Ed.12", date: "2024-01-01", linkUrl: "https://x", ideas: [] },
+      { id: "b", scope: "intl", title: "항공보안법", rev: "제19호", date: "2026-01-15", linkUrl: "https://x", ideas: [] },
+      { id: "c", scope: "own", title: "자체규정", date: "2025-01-01", linkUrl: "https://x", ideas: [] });
+    e.S.saveSilent();
+    const R = e.w.SemisRegs;
+    eq(R.byScope("intl").length, 2, "scope 분리");
+    eq(R.filtered("intl")[0].id, "b", "최근 제개정일 우선 정렬");
+    R.setQuery("intl", "icao");
+    eq(R.filtered("intl").length, 1, "검색 필터");
+    eq(R.filtered("intl")[0].id, "a", "검색 결과");
+    R.setQuery("intl", "");
+    eq(R.stats("intl").total, 2, "통계 total");
+    eq(R.stats("intl").latest, "2026-01-15", "통계 latest");
+    ok(e.Sync.SYNC_KEYS.includes("regulations"), "SYNC_KEYS 등록");
   });
 
   /* ══════════ 결과 ══════════ */

@@ -739,3 +739,13 @@ a.ct-tel:hover { color: var(--primary); }
   .br-ex-row { flex-wrap: wrap; }
   .br-ex-row .br-ex-label { flex: 1 1 100%; }
 }
+
+/* ═══════ 규정 관리 (v2.12) ═══════ */
+.reg-pdf-frame { width: 100%; height: 70vh; min-height: 320px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.reg-idea { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: var(--surface); }
+.reg-idea-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.reg-idea-loc { font-size: .76rem; font-weight: 700; color: var(--text-2); }
+.reg-idea-body { font-size: .86rem; color: var(--text); margin-top: 6px; line-height: 1.55; word-break: break-word; }
+.reg-idea-meta { font-size: .72rem; color: var(--text-3); margin-top: 6px; }
+.reg-idea-open { display: inline-block; min-width: 15px; padding: 0 4px; margin-left: 3px; border-radius: 8px; background: var(--warning, #d97706); color: #fff; font-size: .66rem; font-weight: 800; line-height: 15px; text-align: center; }
+@media (max-width: 768px) { .reg-pdf-frame { height: 60vh; } }
