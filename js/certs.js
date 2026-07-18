@@ -19,9 +19,9 @@
   const D = () => SeMIS.data;
   const uid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-  const ROLES = ["보안책임자", "보안감독자", "보안검색감독자", "기타"];
+  const ROLES = ["보안책임자", "보안감독자", "보안검색감독자", "기타"]; // 기본값 (초기 시드)
   const KINDS = ["초기", "정기"];
-  const ORGS = ["한국항공안전교육원", "극동대 항공안전교육원", "KAC 항공보안교육", "항공보안아카데미"];
+  const ORGS = ["한국항공안전교육원", "극동대 항공안전교육원", "KAC 항공보안교육", "항공보안아카데미"]; // 기본값 (초기 시드)
   const ROLE_BADGE = { "보안책임자": "badge-red", "보안감독자": "badge-blue", "보안검색감독자": "badge-green", "기타": "badge-gray" };
   const PDF_MAX = 20 * 1024 * 1024;
   const SOON_DAYS = 60;
@@ -29,6 +29,24 @@
   const todayISO = () => new Date().toISOString().slice(0, 10);
   const daysLeft = (ds) => ds ? Math.round((new Date(ds) - new Date(todayISO())) / 86400000) : null;
   const list = () => (Array.isArray(D().certs) ? D().certs : []);
+
+  /* v2.17: 선택지(과정/수료기관) 사용자 관리 — DATA.certOpts {roles,orgs}, hq 이상 추가/삭제.
+     삭제된 값도 기존 데이터에서 사용 중이면 목록·필터·차트에 계속 표시 (호환 유지). */
+  function certOpts() {
+    let o = D().certOpts;
+    if (!o || typeof o !== "object" || Array.isArray(o)) o = D().certOpts = { roles: [], orgs: [] };
+    if (!Array.isArray(o.roles)) o.roles = [];
+    if (!Array.isArray(o.orgs)) o.orgs = [];
+    return o;
+  }
+  const rolesList = () => (certOpts().roles.length ? certOpts().roles : ROLES);
+  const orgsList = () => (certOpts().orgs.length ? certOpts().orgs : ORGS);
+  /* 선택지 + 데이터에서 사용 중인 값 합집합 */
+  function rolesAll() {
+    const set = rolesList().slice();
+    list().forEach(c => { if (c && c.role && set.indexOf(c.role) < 0) set.push(c.role); });
+    return set;
+  }
 
   /* 유효만료일 자동 계산: 수료일 + 13개월 − 1일 (월말 보정) */
   function calcExpire(iso) {
@@ -118,6 +136,57 @@
     $("#ct-view-close").onclick = closeModal;
   }
 
+  /* ─────── 선택지 관리 (hq+): 과정/수료기관 추가·삭제 ─────── */
+  function optsForm() {
+    if (!SeMIS.canEdit()) return;
+    const o = certOpts();
+    // 최초 진입 시 기본값으로 시드 (normalize 이전 구데이터 대비)
+    if (!o.roles.length) o.roles = ROLES.slice();
+    if (!o.orgs.length) o.orgs = ORGS.slice();
+    const usedN = (key, v) => list().filter(c => c && (key === "roles" ? c.role : c.org) === v).length;
+    openModal(`
+      <h3>선택지 관리 <span class="badge badge-gray">교육 이수증</span></h3>
+      <div class="form-hint" style="margin-bottom:10px">과정(자격 구분)과 수료기관 선택지를 추가/삭제합니다.
+        선택지를 삭제해도 기존 이수증 데이터는 유지되며, 사용 중인 값은 목록·필터·차트에 계속 표시됩니다.</div>
+      <div class="form-grid">
+        ${[["roles", "과정 (자격 구분)", "예: 폭발물 처리요원"], ["orgs", "수료기관", "예: 인천국제공항공사"]].map(([key, label, ph]) => `
+        <div class="form-row"><label>${label}</label>
+          <div id="co-list-${key}" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <input id="co-new-${key}" maxlength="40" placeholder="${ph}" style="flex:1" autocomplete="off">
+            <button type="button" class="btn btn-ghost btn-sm" data-co-add="${key}">+ 추가</button>
+          </div></div>`).join("")}
+      </div>
+      <div class="modal-actions"><button class="btn btn-primary" id="co-close">닫기</button></div>`, { wide: true });
+    const paint = (key) => {
+      $("#co-list-" + key).innerHTML = o[key].map((v, i) => {
+        const n = usedN(key, v);
+        return `<span class="nb-file" style="display:inline-flex;align-items:center;gap:5px">${esc(v)}
+          ${n ? `<span style="font-size:.7rem;color:var(--text-3)">${n}건</span>` : ""}
+          <button type="button" class="mt-btn danger" data-co-del="${key}:${i}" title="삭제">✕</button></span>`;
+      }).join("") || '<span class="form-hint">항목이 없습니다.</span>';
+      $$("#co-list-" + key + " [data-co-del]").forEach(b => b.onclick = () => {
+        const idx = Number(b.dataset.coDel.split(":")[1]);
+        if (o[key].length <= 1) { toast("최소 1개는 남겨야 합니다.", true); return; }
+        const v = o[key][idx], n = usedN(key, v);
+        o[key].splice(idx, 1);
+        SeMIS.save(); paint(key);
+        toast("삭제되었습니다." + (n ? " (사용 중 " + n + "건 데이터는 유지)" : ""));
+      });
+    };
+    ["roles", "orgs"].forEach(paint);
+    $$("[data-co-add]").forEach(b => b.onclick = () => {
+      const key = b.dataset.coAdd, inp = $("#co-new-" + key);
+      const v = inp.value.trim();
+      if (!v) { toast("추가할 값을 입력하세요.", true); return; }
+      if (o[key].indexOf(v) >= 0) { toast("이미 있는 항목입니다.", true); return; }
+      o[key].push(v);
+      SeMIS.save(); inp.value = ""; paint(key);
+      toast("추가되었습니다: " + v);
+    });
+    $("#co-close").onclick = () => { closeModal(); SeMIS.renderView(); };
+  }
+
   /* ─────── 등록/수정 폼 (hq+) ─────── */
   function certForm(id) {
     const c = id ? list().find(x => x.id === id) : null;
@@ -132,14 +201,19 @@
       </div>
       <div class="form-grid">
         <div class="form-row"><label>과정 (자격 구분)</label>
-          <select id="ct-role">${ROLES.map(r => `<option ${(c ? c.role : ROLES[1]) === r ? "selected" : ""}>${r}</option>`).join("")}</select></div>
+          <select id="ct-role">${(() => {
+            const opts = rolesList().slice();
+            if (c && c.role && opts.indexOf(c.role) < 0) opts.push(c.role); // 삭제된 선택지 호환
+            const sel = c ? c.role : (opts.indexOf("보안감독자") >= 0 ? "보안감독자" : opts[0]);
+            return opts.map(r => `<option ${sel === r ? "selected" : ""}>${esc(r)}</option>`).join("");
+          })()}</select></div>
         <div class="form-row"><label>초기 / 정기</label>
           <select id="ct-kind">${KINDS.map(k => `<option ${(c ? c.kind : "초기") === k ? "selected" : ""}>${k}</option>`).join("")}</select></div>
       </div>
       <div class="form-grid">
         <div class="form-row"><label>수료기관</label>
           <input id="ct-org" value="${esc(c ? c.org || "" : "")}" maxlength="60" list="ct-orgs" placeholder="예: 한국항공안전교육원">
-          <datalist id="ct-orgs">${ORGS.map(o => `<option value="${esc(o)}">`).join("")}</datalist></div>
+          <datalist id="ct-orgs">${orgsList().map(o => `<option value="${esc(o)}">`).join("")}</datalist></div>
         <div class="form-row"><label>수료번호</label>
           <input id="ct-no" value="${esc(c ? c.certNo || "" : "")}" maxlength="40" placeholder="예: KASI-2026-01-1234"></div>
       </div>
@@ -209,8 +283,8 @@
   /* ─────── 시각화: 과정·상태별 / 월별 만료 도래 ─────── */
   function chartHTML() {
     const l = list();
-    // ① 과정별 상태 스택 바
-    const roleRows = ROLES.map(r => {
+    // ① 과정별 상태 스택 바 (선택지 + 사용 중 값 합집합)
+    const roleRows = rolesAll().map(r => {
       const rl = l.filter(c => c.role === r);
       if (!rl.length) return "";
       const ok = rl.filter(c => stateOf(c) === "유효").length;
@@ -287,6 +361,7 @@
         <div class="page-head">
           <div class="page-title">🎖 교육 이수증 관리</div>
           <span class="spacer"></span>
+          ${canWrite ? '<button class="btn btn-ghost" id="ct-opts" title="과정/수료기관 선택지 관리">⚙ 선택지</button>' : ""}
           ${canWrite ? '<button class="btn btn-primary" id="ct-add">+ 이수증 등록</button>' : ""}
           <div class="page-desc">외부기관 보안책임자 · 보안감독자 · 보안검색감독자 교육 이수증 현황</div>
         </div>
@@ -302,7 +377,7 @@
             <input id="ct-search" class="ct-search" type="search" style="max-width:250px"
               placeholder="🔍 성명 · 소속 · 수료번호 검색" value="${esc(query)}" autocomplete="off">
             <select id="ct-rolefilter" style="max-width:170px">
-              ${["전체"].concat(ROLES).map(r => `<option ${roleFilter === r ? "selected" : ""}>${r}</option>`).join("")}
+              ${["전체"].concat(rolesAll()).map(r => `<option ${roleFilter === r ? "selected" : ""}>${esc(r)}</option>`).join("")}
             </select>
             <span class="spacer"></span>
             <div class="cal-views">${["전체", "유효", "만료임박", "만료"].map(f =>
@@ -330,6 +405,7 @@
       };
       $$("[data-ctfilter]").forEach(b => b.onclick = () => { stFilter = b.dataset.ctfilter; SeMIS.renderView(); });
       if (canWrite) $("#ct-add").onclick = () => certForm(null);
+      if (canWrite) $("#ct-opts").onclick = optsForm;
       wire();
     }
   });
@@ -359,6 +435,7 @@
   /* ─────── 테스트/외부 노출 ─────── */
   window.SemisCerts = {
     ROLES, KINDS, ORGS, SOON_DAYS,
+    rolesList, orgsList, rolesAll, optsForm,
     list, stats, stateOf, daysLeft, calcExpire, filtered, renderDash, viewCert, certForm,
     setQuery: (q) => { query = String(q || ""); },
     setFilter: (f) => { stFilter = f; },

@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.16.0";
+  const VERSION = "2.17.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -195,6 +195,7 @@ const SeMIS = (() => {
       regulations: [],                // v2.12: 규정 관리 (국제/국가 + 자체, PDF/링크 + 개정 아이디어 노트)
       policy: { ko: null, en: null }, // v2.14: 에어제타 보안정책 (국문/영문 PDF)
       certs: [],                      // v2.15: 교육 이수증 관리 (외부기관 보안책임자/감독자 등)
+      certOpts: { roles: [], orgs: [] }, // v2.17: 이수증 선택지(과정/수료기관 — 사용자 관리, 빈 배열이면 normalize가 기본값 시드)
       billing: [],                    // v2.16: 대금 청구 (협력업체 월별 입력 — 프로에스콤/인씨스)
       vault: { v: 1, members: [], data: null, updated: "" } // v2.9: 암호 관리 (암호문만 저장)
     };
@@ -429,6 +430,17 @@ const SeMIS = (() => {
         label: "교육 이수증 관리", icon: "🎖", module: "certs", vis: "mgr", parent: "grp-edu" });
       else ensureModuleMenu("certs", "grp-edu", "교육 이수증 관리", "🎖", "certs", "mgr");
     }
+    // v2.17: 이수증 선택지(과정/수료기관) — 구조 보정 + 빈 목록이면 기본값 시드 (사용자 추가/삭제 가능)
+    if (!DATA.certOpts || typeof DATA.certOpts !== "object" || Array.isArray(DATA.certOpts))
+      DATA.certOpts = { roles: [], orgs: [] };
+    if (!Array.isArray(DATA.certOpts.roles)) DATA.certOpts.roles = [];
+    if (!Array.isArray(DATA.certOpts.orgs)) DATA.certOpts.orgs = [];
+    DATA.certOpts.roles = DATA.certOpts.roles.map(v => String(v || "").trim()).filter(Boolean);
+    DATA.certOpts.orgs = DATA.certOpts.orgs.map(v => String(v || "").trim()).filter(Boolean);
+    if (!DATA.certOpts.roles.length)
+      DATA.certOpts.roles = ["보안책임자", "보안감독자", "보안검색감독자", "기타"];
+    if (!DATA.certOpts.orgs.length)
+      DATA.certOpts.orgs = ["한국항공안전교육원", "극동대 항공안전교육원", "KAC 항공보안교육", "항공보안아카데미"];
     return JSON.stringify(DATA) !== before;
   }
   const saveHooks = [];

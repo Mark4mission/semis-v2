@@ -1887,7 +1887,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "billing,branches,certs,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
+    eq(keys, "billing,branches,certOpts,certs,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -3196,6 +3196,123 @@ function makeFetchStub(server) {
     ok(q(e, "#eq-go-billing"), "이동 버튼");
     ok(/프로에스콤/.test(q(e, "#eq-body").textContent), "업체 집계 표시");
     ok(/9,000,000/.test(q(e, "#eq-body").textContent), "연간 실청구(10M−1M)");
+  });
+
+  t("BL08 비용 기록 자동 반영: 유지보수 청구 → 월별 표 + 정기/수리부품 분류 (v2.17)", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.billing = [
+        blSeed({ month: "2026-01", category: "ETD 유지보수", title: "장비 잔존가+수선유지비", amount: 5170000 }),
+        blSeed({ month: "2026-01", category: "ETD 유지보수", title: "드리프트튜브 부품교체", amount: 4500000 }),
+        blSeed({ month: "2026-02", vendor: "인씨스", category: "X-ray 유지보수", title: "정기 유지보수", amount: 2610000 }),
+        blSeed({ month: "2026-02", category: "보안검색&경비", title: "도급비", amount: 30000000 }),
+        blSeed({ month: "2026-03", category: "ETD 유지보수", title: "수선유지비", costKind: "수리/부품", amount: 111 })
+      ];
+      return d; })();
+    const e = makeEnv({ preData: pre });
+    loginAs(e, "hq");
+    const B = e.w.SemisBilling;
+    eq(B.classifyCost({ title: "드리프트튜브 부품교체" }), "수리/부품", "자동 분류: 부품");
+    eq(B.classifyCost({ title: "장비 잔존가+수선유지비" }), "정기 유지보수", "자동 분류: 정기");
+    eq(B.classifyCost({ title: "수선유지비", costKind: "수리/부품" }), "수리/부품", "명시 override 우선");
+    eq(B.maintRows(2026).length, 4, "도급비 제외 유지보수 4건");
+    const yc = e.w.SemisEquipment.yearCosts(2026);
+    eq(yc.autoRows.length, 4, "가상 행 병합");
+    eq(yc.byM[1]["정기 유지보수"], 5170000, "1월 정기");
+    eq(yc.byM[1]["수리/부품"], 4500000, "1월 수리부품");
+    eq(yc.byM[2]["정기 유지보수"], 2610000, "2월 인씨스 X-ray");
+    eq(yc.byM[3]["수리/부품"], 111, "costKind 명시분");
+    eq(yc.total, 5170000 + 4500000 + 2610000 + 111, "도급비 미포함 연간 합계");
+    // 화면: 청구 연동 배지 + 월별 정산표(settle 그대로)
+    e.w.SemisEquipment.setTab("costs");
+    e.w.SemisEquipment.setCostYear(2026);
+    go(e, "equipment");
+    ok(/청구 연동/.test(q(e, "#eq-body").textContent), "청구 연동 표시");
+    ok(/실청구액/.test(q(e, "#eq-body").textContent), "월별 정산표");
+    ok(/9,670,000/.test(q(e, "#eq-body").textContent), "1월 합계 반영");
+    ok(/30,000,000/.test(q(e, "#eq-body").textContent), "정산표에 도급비(실청구) 표시");
+    e.w.SemisEquipment.setTab("list");
+  });
+
+  t("BL09 중복 계상 방지: 같은 달·업체 수동 기록 자동 제외 + 강제 포함(force)", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.billing = [blSeed({ month: "2026-05", category: "ETD 유지보수", title: "수선유지비", amount: 5200000 })];
+      d.equipMaint = { contracts: [], costs: [
+        { id: "m1", ym: "2026-05", kind: "정기 유지보수", vendor: "프로에스콤", amount: 5000000, memo: "수동 중복 기록" },
+        { id: "m2", ym: "2026-05", kind: "기타", vendor: "프로에스콤", amount: 700, memo: "별개 비용", force: true },
+        { id: "m3", ym: "2026-04", kind: "정기 유지보수", vendor: "프로에스콤", amount: 30 },
+        { id: "m4", ym: "2026-05", kind: "정기 유지보수", vendor: "타업체", amount: 5 }
+      ] };
+      return d; })();
+    const e = makeEnv({ preData: pre });
+    loginAs(e, "hq");
+    const yc = e.w.SemisEquipment.yearCosts(2026);
+    eq(yc.excluded.length, 1, "같은 달·업체 수동 기록 1건 제외");
+    eq(yc.excluded[0].id, "m1", "제외 대상");
+    eq(yc.total, 5200000 + 700 + 30 + 5, "자동 행 + force/타월/타업체만 합산");
+    // 편집 권한 없으면(비로그인) 연동 미적용 → 수동 기록 그대로
+    const e2 = makeEnv({ preData: pre });
+    const yc2 = e2.w.SemisEquipment.yearCosts(2026);
+    eq(yc2.autoRows.length, 0, "권한 없음: 연동 없음");
+    eq(yc2.total, 5000000 + 700 + 30 + 5, "수동 기록만 합산");
+    // 화면: 제외 배지 + 폼 강제 포함 체크박스
+    e.w.SemisEquipment.setTab("costs");
+    e.w.SemisEquipment.setCostYear(2026);
+    go(e, "equipment");
+    ok(/집계 제외/.test(q(e, "#eq-body").textContent), "제외 배지 표시");
+    q(e, '#eq-body [data-ct="m2"]').click();
+    ok(q(e, "#ct-force").checked, "강제 포함 체크 유지");
+    q(e, "#ct-cancel").click();
+    e.w.SemisEquipment.setTab("list");
+  });
+
+  /* ══════════ [CO] 이수증 선택지 관리 (v2.17) ══════════ */
+  t("CO01 이수증 선택지 관리: certOpts 시드/동기화 + 추가·삭제 + 기존 데이터 호환", () => {
+    const e = makeEnv();
+    ok(e.Sync.SYNC_KEYS.includes("certOpts"), "SYNC_KEYS 등록");
+    const o = e.S.data.certOpts;
+    ok(Array.isArray(o.roles) && o.roles.length === 4 && o.roles.includes("보안검색감독자"), "기본 과정 시드");
+    ok(o.orgs.includes("한국항공안전교육원"), "기본 수료기관 시드");
+    loginAs(e, "hq");
+    e.S.data.certs = [{ id: "ct-x", certNo: "1", name: "홍길동", dept: "", role: "레거시과정", kind: "초기",
+      org: "구기관", issued: "2026-01-05", expire: "2027-02-04", fileUrl: "", fileName: "", note: "", updated: "", by: "" }];
+    e.S.saveSilent();
+    const C = e.w.SemisCerts;
+    ok(C.rolesAll().includes("레거시과정"), "사용 중 값 합집합(호환)");
+    go(e, "certs");
+    ok(q(e, "#ct-opts"), "선택지 버튼(hq)");
+    ok(qa(e, "#ct-rolefilter option").some(op => op.textContent === "레거시과정"), "필터에 사용 중 값");
+    // 모달: 과정/기관 추가
+    q(e, "#ct-opts").click();
+    q(e, "#co-new-roles").value = "폭발물처리요원";
+    q(e, '[data-co-add="roles"]').click();
+    ok(e.S.data.certOpts.roles.includes("폭발물처리요원"), "과정 추가");
+    q(e, "#co-new-orgs").value = "인천공항공사";
+    q(e, '[data-co-add="orgs"]').click();
+    ok(e.S.data.certOpts.orgs.includes("인천공항공사"), "기관 추가");
+    // 삭제 (기존 데이터는 유지)
+    const idx = e.S.data.certOpts.roles.indexOf("기타");
+    q(e, `[data-co-del="roles:${idx}"]`).click();
+    ok(!e.S.data.certOpts.roles.includes("기타"), "과정 삭제");
+    q(e, "#co-close").click();
+    eq(e.S.data.certs.length, 1, "기존 데이터 유지");
+    // 등록 폼 반영
+    go(e, "certs");
+    q(e, "#ct-add").click();
+    const roleOpts = qa(e, "#ct-role option").map(op => op.textContent);
+    ok(roleOpts.includes("폭발물처리요원"), "폼에 신규 과정");
+    ok(!roleOpts.includes("기타"), "삭제된 과정 미표시");
+    ok(qa(e, "#ct-orgs option").some(op => op.value === "인천공항공사"), "datalist 신규 기관");
+    q(e, "#ct-cancel").click();
+    // 삭제된 과정을 쓰는 레코드 수정 시 select에 해당 값 유지
+    go(e, "certs");
+    q(e, '[data-ct-row="ct-x"]').click();
+    eq(q(e, "#ct-role").value, "레거시과정", "레코드 값 호환 표시");
+    q(e, "#ct-cancel").click();
+    // manager: 선택지 버튼 없음
+    const em = makeEnv();
+    loginAs(em, "manager");
+    go(em, "certs");
+    ok(!q(em, "#ct-opts"), "manager: 선택지 버튼 없음");
   });
 
   /* ══════════ 결과 ══════════ */

@@ -42,6 +42,16 @@
   const CAT_BADGE = { "ETD 유지보수": "badge-blue", "보안검색&경비": "badge-green",
     "기타 수익": "badge-amber", "X-ray 유지보수": "badge-blue" };
 
+  /* v2.17: 장비 비용 기록 연동 — 장비 유지보수 성격 카테고리 (도급비·수익은 장비 비용 아님) */
+  const MAINT_CATS = ["ETD 유지보수", "X-ray 유지보수"];
+  const COST_KINDS = ["정기 유지보수", "수리/부품"];
+  /* 비용 구분 판정: 항목의 costKind 명시값 우선, 없으면 내용(제목·메모) 기반 자동 분류 */
+  function classifyCost(r) {
+    if (r && COST_KINDS.includes(r.costKind)) return r.costKind;
+    const txt = String((r && r.title) || "") + " " + String((r && r.note) || "");
+    return /부품|교체|수리|파트|part/i.test(txt) ? "수리/부품" : "정기 유지보수";
+  }
+
   const list = () => (Array.isArray(D().billing) ? D().billing : []);
   const thisMonth = () => new Date().toISOString().slice(0, 7);
   const fmtWon = (n) => Math.round(Number(n) || 0).toLocaleString("ko-KR");
@@ -87,6 +97,27 @@
     });
     return out;
   }
+  /* v2.17: 장비 비용 기록 자동 반영 — 유지보수 성격 항목을 equipMaint.costs 형태의 가상 행으로 변환.
+     billing 원본에서 렌더 시마다 계산되므로 업체 입력 수정이 비용 기록 집계에 즉시 반영됨. */
+  function maintRows(year) {
+    return visible()
+      .filter(r => r && MAINT_CATS.includes(r.category) && String(r.month || "").slice(0, 4) === String(year))
+      .map(r => ({ id: "bl:" + r.id, srcId: r.id, ym: r.month, kind: classifyCost(r),
+        vendor: r.vendor, amount: Number(r.amount) || 0,
+        memo: r.title + (r.note ? " · " + r.note : ""), auto: true }));
+  }
+  /* v2.17: 연도 내 월별 정산 결과 (settle() 그대로) — 비용 기록 탭 월별 정산표용 */
+  function monthlySettles(year) {
+    const out = [];
+    Object.keys(VENDORS).forEach(vendor => {
+      const months = {};
+      visible().forEach(r => {
+        if (r && r.vendor === vendor && String(r.month || "").slice(0, 4) === String(year)) months[r.month] = true;
+      });
+      Object.keys(months).sort().forEach(m => out.push({ vendor, month: m, s: settle(vendor, m) }));
+    });
+    return out.sort((a, b) => a.month.localeCompare(b.month) || a.vendor.localeCompare(b.vendor, "ko"));
+  }
 
   /* ─────── 항목 폼 ─────── */
   function itemForm(vendor, month, catPreset, id) {
@@ -110,6 +141,11 @@
       <div class="form-row"><label>금액 (원)</label>
         <input id="bl-amount" inputmode="numeric" value="${x ? esc(fmtWon(x.amount)) : ""}" placeholder="예: 5,170,000">
         <div class="form-hint" id="bl-cat-hint"></div></div>
+      <div class="form-row" id="bl-costkind-row"><label>장비 비용 기록 반영 구분 <span style="font-weight:400;color:var(--text-3)">(보안장비 유지관리 · 비용 기록 탭 자동 집계)</span></label>
+        <select id="bl-costkind">
+          <option value="">자동 판별 — 내용에 '부품·교체·수리' 포함 시 수리/부품, 그 외 정기 유지보수</option>
+          ${COST_KINDS.map(k => `<option value="${k}" ${x && x.costKind === k ? "selected" : ""}>${k}</option>`).join("")}
+        </select></div>
       <div class="form-row"><label>증빙 PDF (선택 — 청구서·명세서 등)</label>
         <div id="bl-file-box" class="nb-files-view"></div>
         <label class="btn btn-ghost btn-sm" style="cursor:pointer;align-self:flex-start">📎 PDF 업로드 (20MB 이하)
@@ -122,7 +158,11 @@
         <button class="btn btn-primary" id="bl-save">저장</button>
       </div>`, { wide: true });
 
-    const updHint = () => { $("#bl-cat-hint").textContent = cfg.hint[$("#bl-cat").value] || ""; };
+    const updHint = () => {
+      $("#bl-cat-hint").textContent = cfg.hint[$("#bl-cat").value] || "";
+      // 장비 유지보수 성격 카테고리에서만 비용 반영 구분 노출
+      $("#bl-costkind-row").style.display = MAINT_CATS.includes($("#bl-cat").value) ? "" : "none";
+    };
     $("#bl-cat").onchange = updHint; updHint();
     const renderFile = () => {
       $("#bl-file-box").innerHTML = file
@@ -159,7 +199,9 @@
       if (!/^\d{4}-\d{2}$/.test(m)) { toast("귀속 월을 선택하세요.", true); return; }
       if (!title) { toast("내역(항목명)을 입력하세요.", true); return; }
       if (!amount) { toast("금액을 입력하세요.", true); return; }
-      const rec = { vendor, month: m, category: $("#bl-cat").value, title, amount,
+      const cat = $("#bl-cat").value;
+      const rec = { vendor, month: m, category: cat, title, amount,
+        costKind: MAINT_CATS.includes(cat) ? $("#bl-costkind").value : "",
         fileUrl: file ? file.url : "", fileName: file ? file.name : "",
         note: $("#bl-note").value.trim(),
         by: SeMIS.user ? SeMIS.user.name : "", updated: new Date().toISOString() };
@@ -292,7 +334,8 @@
 
   /* ─────── 테스트/외부 노출 ─────── */
   window.SemisBilling = {
-    VENDORS, list, visible, recsOf, settle, yearSummary, itemForm, parseWon, fmtWon,
+    VENDORS, MAINT_CATS, list, visible, recsOf, settle, yearSummary,
+    classifyCost, maintRows, monthlySettles, itemForm, parseWon, fmtWon,
     setVendor: (v) => { curVendor = v; },
     setMonth: (m) => { curMonth = m; },
     get month() { return curMonth; }

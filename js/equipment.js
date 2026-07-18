@@ -216,19 +216,45 @@
     if (!Array.isArray(m.costs)) m.costs = [];
     return m;
   }
+  /* v2.17: 대금 청구(billing) 연동 — 유지보수 성격 청구를 비용 기록에 자동 반영.
+     billing이 원본(가상 행)이라 업체 입력 수정 시 즉시 집계에 반영됨. */
+  const blMod = () => (window.SemisBilling && SeMIS.canEdit() ? window.SemisBilling : null);
+  function billingAutoRows(year) {
+    const B = blMod();
+    try { return B ? B.maintRows(year) : []; } catch (e) { return []; }
+  }
+  // 수동 기록의 업체명이 청구 연동 업체(프로에스콤/인씨스)와 일치하는지
+  function billingVendorOf(name) {
+    const B = blMod();
+    const n = String(name || "").replace(/\s+/g, "");
+    if (!B || !n) return null;
+    return Object.keys(B.VENDORS).find(v => n.includes(v.replace(/\s+/g, ""))) || null;
+  }
+  /* 중복 계상 방지: 같은 달·같은 업체의 유지보수 청구(자동 행)가 있으면
+     수동 기록은 집계에서 자동 제외 — force 플래그(비용 기록 폼 체크박스)로 강제 포함 가능 */
+  function isDupManual(c, autoRows) {
+    if (!c || c.force) return false;
+    const v = billingVendorOf(c.vendor);
+    if (!v) return false;
+    return autoRows.some(a => a.vendor === v && a.ym === c.ym);
+  }
   function yearCosts(year) {
-    const rows = M().costs.filter(c => String(c.ym || "").slice(0, 4) === String(year));
+    const all = M().costs.filter(c => String(c.ym || "").slice(0, 4) === String(year));
+    const autoRows = billingAutoRows(year);
+    const excluded = all.filter(c => isDupManual(c, autoRows));
+    const rows = all.filter(c => excluded.indexOf(c) < 0);
     const byM = {};
     for (let i = 1; i <= 12; i++) byM[i] = { "정기 유지보수": 0, "수리/부품": 0, "기타": 0, total: 0 };
-    rows.forEach(c => {
+    const addRow = (c) => {
       const mo = Number(String(c.ym || "").slice(5, 7));
       if (!byM[mo]) return;
       const k = COST_KINDS.includes(c.kind) ? c.kind : "기타";
       byM[mo][k] += Number(c.amount) || 0;
       byM[mo].total += Number(c.amount) || 0;
-    });
-    const total = rows.reduce((s, c) => s + (Number(c.amount) || 0), 0);
-    return { byM, total, rows };
+    };
+    rows.forEach(addRow); autoRows.forEach(addRow);
+    const total = Object.keys(byM).reduce((s, k) => s + byM[k].total, 0);
+    return { byM, total, rows, autoRows, excluded };
   }
 
   /* ─────── 상태/필터 ─────── */
@@ -584,6 +610,11 @@
         <div class="form-row"><label>관련 장비 S/N (선택)</label><input id="ct-serial" value="${esc(x ? x.serial || "" : "")}" maxlength="40"></div>
         <div class="form-row"><label>메모</label><input id="ct-memo" value="${esc(x ? x.memo || "" : "")}" maxlength="200" placeholder="예: 드리프트튜브 Sys 교체"></div>
       </div>
+      <div class="form-row"><label style="display:flex;gap:6px;align-items:center;font-weight:500;cursor:pointer">
+          <input type="checkbox" id="ct-force" ${x && x.force ? "checked" : ""} style="width:auto;margin:0">
+          청구 연동 중복 제외를 무시하고 항상 집계에 포함</label>
+        <div class="form-hint">프로에스콤·인씨스는 대금 청구 관리 입력이 비용 기록에 자동 반영됩니다.
+          같은 달 유지보수 청구가 있으면 이 수동 기록은 중복 계상 방지를 위해 집계에서 자동 제외되며, 별개 비용이면 체크하세요.</div></div>
       <div class="modal-actions">
         ${x ? '<button class="btn btn-danger" id="ct-del" style="margin-right:auto">삭제</button>' : ""}
         <button class="btn btn-ghost" id="ct-cancel">취소</button>
@@ -599,7 +630,8 @@
       if (!/^\d{4}-\d{2}$/.test(ym)) { toast("귀속 월을 선택하세요.", true); return; }
       const amount = Number($("#ct-amount").value) || 0;
       const rec = { ym, kind: $("#ct-kind").value, vendor: $("#ct-vendor").value.trim(),
-        amount, serial: $("#ct-serial").value.trim(), memo: $("#ct-memo").value.trim() };
+        amount, serial: $("#ct-serial").value.trim(), memo: $("#ct-memo").value.trim(),
+        force: !!$("#ct-force").checked };
       if (x) Object.assign(x, rec);
       else m.costs.push(Object.assign({ id: uid("ct") }, rec));
       SeMIS.save(); closeModal(); SeMIS.renderView(); toast("저장되었습니다.");
@@ -663,13 +695,24 @@
         <td style="text-align:right"><b>${r.total ? fmtWon(r.total) : "-"}</b></td></tr>`);
     }
     const sum = (k) => Object.values(yc.byM).reduce((s, r) => s + r[k], 0);
-    const detail = yc.rows.slice().sort((a, b) => String(b.ym).localeCompare(String(a.ym)))
-      .map(c => `<div style="display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:.84rem;${canWrite ? "cursor:pointer" : ""}" ${canWrite ? `data-ct="${esc(c.id)}"` : ""}>
+    // 상세 목록: 수동 기록 + 청구 연동(자동) + 집계 제외(청구 중복) 통합, 월 내림차순
+    const merged = yc.rows.map(c => ({ c, tag: "manual" }))
+      .concat((yc.autoRows || []).map(c => ({ c, tag: "auto" })))
+      .concat((yc.excluded || []).map(c => ({ c, tag: "excl" })))
+      .sort((a, b) => String(b.c.ym).localeCompare(String(a.c.ym)));
+    const detail = merged.map(({ c, tag }) => {
+      const auto = tag === "auto", excl = tag === "excl";
+      const attr = auto ? 'data-ct-bl="1" title="대금 청구 연동 항목 — 클릭 시 대금 청구 관리로 이동"'
+        : (canWrite ? `data-ct="${esc(c.id)}" title="클릭하여 수정"` : "");
+      return `<div style="display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:.84rem;${(auto || canWrite) ? "cursor:pointer;" : ""}${excl ? "opacity:.55" : ""}" ${attr}>
         <span style="color:var(--text-3);white-space:nowrap">${esc(c.ym)}</span>
         <span class="badge ${c.kind === "정기 유지보수" ? "badge-blue" : c.kind === "수리/부품" ? "badge-red" : "badge-gray"}">${esc(c.kind)}</span>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.vendor || "-")}${c.memo ? " · " + esc(c.memo) : ""}${c.serial ? ` <span style="color:var(--text-3)">(${esc(c.serial)})</span>` : ""}</span>
-        <b style="white-space:nowrap">${fmtWon(c.amount)}원</b>
-      </div>`).join("");
+        ${auto ? '<span class="badge badge-amber" style="font-size:.64rem">🧾 청구 연동</span>' : ""}
+        ${excl ? '<span class="badge badge-gray" style="font-size:.64rem">집계 제외 · 청구 중복</span>' : ""}
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${excl ? "text-decoration:line-through" : ""}">${esc(c.vendor || "-")}${c.memo ? " · " + esc(c.memo) : ""}${c.serial ? ` <span style="color:var(--text-3)">(${esc(c.serial)})</span>` : ""}</span>
+        <b style="white-space:nowrap;${excl ? "text-decoration:line-through" : ""}">${fmtWon(c.amount)}원</b>
+      </div>`;
+    }).join("");
     return `
       <div style="display:flex;align-items:center;gap:8px;margin:8px 0">
         <button class="btn btn-ghost btn-sm" id="cy-prev">◀</button>
@@ -687,31 +730,57 @@
           <td style="text-align:right">${fmtWon(sum("수리/부품"))}</td>
           <td style="text-align:right">${fmtWon(sum("기타"))}</td>
           <td style="text-align:right">${fmtWon(yc.total)}</td></tr></tbody></table></div>
-      <div style="font-size:.78rem;font-weight:700;color:var(--text-3);margin:12px 0 4px">기록 상세 (${yc.rows.length}건${canWrite ? " · 클릭하여 수정" : ""})</div>
+      <div style="font-size:.78rem;font-weight:700;color:var(--text-3);margin:12px 0 4px">기록 상세
+        (수동 ${yc.rows.length}건 + 청구 연동 ${(yc.autoRows || []).length}건${(yc.excluded || []).length ? ` · 중복 제외 ${yc.excluded.length}건` : ""})</div>
       ${detail || '<div class="form-hint">해당 연도 비용 기록이 없습니다.</div>'}
+      ${(yc.autoRows || []).length || (yc.excluded || []).length ? `<div class="form-hint" style="margin-top:4px">
+        🧾 청구 연동: 프로에스콤 ETD·인씨스 X-ray 유지보수 청구가 월별 표에 자동 집계됩니다 (수정은 대금 청구 관리에서).
+        같은 달·같은 업체의 수동 기록은 중복 계상 방지를 위해 자동 제외되며, 별개 비용은 기록 수정에서 '항상 집계에 포함'을 체크하세요.</div>` : ""}
       ${billingCostBlock()}
       ${caresCostBlock()}`;
   }
 
-  /* v2.16: 협력업체 대금 청구(billing) 연간 집계 — 참고 표시 + 이동 버튼 */
+  /* v2.17: 협력업체 대금 청구(billing) 월별 정산표 — settle() 결과 그대로 자동 대입 + 이동 버튼 */
   function billingCostBlock() {
     if (!window.SemisBilling || !SeMIS.canEdit()) return "";
-    const rows = SemisBilling.yearSummary(costYear);
+    const ms = SemisBilling.monthlySettles(costYear);
+    const fw = SemisBilling.fmtWon;
+    let body = '<div class="form-hint">해당 연도 업체 청구 입력이 없습니다.</div>';
+    if (ms.length) {
+      const maintOf = (s) => (s.byCat["ETD 유지보수"] || 0) + (s.byCat["X-ray 유지보수"] || 0);
+      const guardOf = (s) => s.byCat["보안검색&경비"] || 0;
+      const tot = { maint: 0, guard: 0, deduct: 0, net: 0 };
+      const trs = ms.map(({ vendor, month, s }) => {
+        tot.maint += maintOf(s); tot.guard += guardOf(s); tot.deduct += s.deduct; tot.net += s.net;
+        return `<tr>
+          <td style="white-space:nowrap">${esc(month.slice(5, 7))}월</td>
+          <td style="white-space:nowrap">${esc(vendor)}</td>
+          <td style="text-align:right">${maintOf(s) ? fw(maintOf(s)) : "-"}</td>
+          <td style="text-align:right">${guardOf(s) ? fw(guardOf(s)) : "-"}</td>
+          <td style="text-align:right;color:var(--danger)">${s.deduct ? "− " + fw(s.deduct) : "-"}</td>
+          <td style="text-align:right"><b>${fw(s.net)}</b></td></tr>`;
+      }).join("");
+      body = `<div class="table-wrap"><table class="tbl" style="font-size:.8rem"><thead><tr>
+          <th style="width:48px">월</th><th style="width:96px">업체</th>
+          <th style="text-align:right">장비 유지보수</th><th style="text-align:right">보안검색&경비</th>
+          <th style="text-align:right">기타수익 차감(50%)</th><th style="text-align:right">실청구액</th></tr></thead>
+        <tbody>${trs}
+          <tr style="font-weight:700;border-top:2px solid var(--border)"><td colspan="2">합계</td>
+            <td style="text-align:right">${fw(tot.maint)}</td>
+            <td style="text-align:right">${fw(tot.guard)}</td>
+            <td style="text-align:right;color:var(--danger)">− ${fw(tot.deduct)}</td>
+            <td style="text-align:right">${fw(tot.net)}</td></tr></tbody></table></div>`;
+    }
     return `
       <div style="margin-top:14px;padding:10px 12px;border:1px dashed var(--border);border-radius:10px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-          <span style="font-size:.78rem;font-weight:700;color:var(--text-3)">🧾 협력업체 대금 청구 집계 (${costYear}년 · 업체 직접 입력)</span>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:.78rem;font-weight:700;color:var(--text-3)">🧾 협력업체 월별 정산 (${costYear}년 · 대금 청구 자동 반영)</span>
           <span class="spacer"></span>
           <button class="btn btn-ghost btn-sm" id="eq-go-billing">대금 청구 관리 ↗</button>
         </div>
-        ${rows.length ? rows.map(r => `
-          <div style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:.82rem">
-            <span style="flex:1">${esc(r.vendor)} <span style="color:var(--text-3)">(${r.months}개월 입력)</span></span>
-            <b style="white-space:nowrap">실청구 ${SemisBilling.fmtWon(r.net)}원</b>
-          </div>`).join("")
-        : '<div class="form-hint">해당 연도 업체 청구 입력이 없습니다.</div>'}
-        <div class="form-hint" style="margin-top:6px">프로에스콤(ETD 유지보수·보안검색&경비·기타 수익 50% 차감)과 인씨스(X-ray 유지보수)가
-          매월 직접 입력한 청구 내역의 연간 실청구 합계입니다.</div>
+        ${body}
+        <div class="form-hint" style="margin-top:6px">실청구액 = ETD/X-ray 유지보수 + 보안검색&경비 − 기타 수익×50% (프로에스콤 계약 정산 로직).
+          장비 유지보수분은 위 월별 비용 표에도 자동 집계됩니다.</div>
       </div>`;
   }
 
@@ -830,6 +899,8 @@
           $$("#eq-body [data-mc]").forEach(el => el.onclick = () => contractForm(el.dataset.mc));
           $$("#eq-body [data-ct]").forEach(el => el.onclick = () => costForm(el.dataset.ct));
         }
+        // 청구 연동 행 클릭 → 대금 청구 관리로 이동
+        $$("#eq-body [data-ct-bl]").forEach(el => el.onclick = () => SeMIS.navigate("billing"));
       };
       const syncLabel = () => {
         const n = $("#eq-sync");
