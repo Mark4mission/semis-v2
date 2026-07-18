@@ -3235,6 +3235,8 @@ function makeFetchStub(server) {
     ok(qa(e, "#eq-cost-chart title").some(t2 => /ETD 정기/.test(t2.textContent)), "ETD 정기 스택");
     ok(qa(e, "#eq-cost-chart title").some(t2 => /ETD 수리\/부품/.test(t2.textContent)), "수리/부품 위 얹힘");
     ok(qa(e, "#eq-cost-chart title").some(t2 => /X-ray 정기/.test(t2.textContent)), "X-ray 정기 스택");
+    ok(qa(e, "#eq-cost-chart text").some(t2 => t2.textContent === "9.7"), "1월 값 라벨(백만원)");
+    ok(qa(e, "#eq-cost-chart text").some(t2 => t2.textContent === "2.6"), "2월 X-ray 값 라벨");
     ok(!q(e, "#eq-cost-chart polyline"), "합계 꺾은선 없음");
     e.w.SemisEquipment.setTab("list");
   });

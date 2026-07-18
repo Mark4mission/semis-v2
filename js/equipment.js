@@ -720,21 +720,30 @@
     const y = (v) => top + (H - top - bot) * (1 - v / max);
     const anyRepair = vals.some(m => used.some(([g]) => m[g].repair));
     const anyEtc = vals.some(m => used.some(([g]) => g !== "기타/수동" && m[g].etc));
+    // 막대 상단 값 라벨 (백만원 단위 — 0.05M 미만은 생략)
+    const lblOf = (v) => {
+      const m = v / 1e6;
+      if (m < 0.05) return "";
+      return m >= 10 ? String(Math.round(m)) : String(Math.round(m * 10) / 10);
+    };
     const bars = vals.map((m, i) => {
       const x0 = i * slot + (slot - bw * used.length) / 2;
       const segs = used.map(([g, col], j) => {
         const c = m[g];
         if (!gTotal(c)) return "";
         const x = (x0 + j * bw).toFixed(1);
+        const cx = (x0 + j * bw + (bw - 1.5) / 2).toFixed(1);
         let acc = 0;
         // [값, 색, 라벨] — 아래부터 정기 → 수리/부품 → 기타
-        return [[c.maint, col, g + " 정기"], [c.repair, REPAIR_COL, g + " 수리/부품"], [c.etc, ETC_COL, g + " 기타"]]
+        const rects = [[c.maint, col, g + " 정기"], [c.repair, REPAIR_COL, g + " 수리/부품"], [c.etc, ETC_COL, g + " 기타"]]
           .map(([v, scol, lb]) => {
             if (!v) return "";
             const y1 = y(acc + v), h = y(acc) - y(acc + v);
             acc += v;
-            return `<rect x="${x}" y="${y1.toFixed(1)}" width="${(bw - 1.5).toFixed(1)}" height="${Math.max(h, 1).toFixed(1)}" rx="1.5" fill="${scol}" opacity=".88"><title>${i + 1}월 ${lb} ${fmtWon(v)}원 (합계 ${fmtWon(gTotal(c))}원)</title></rect>`;
+            return `<rect x="${x}" y="${y1.toFixed(1)}" width="${(bw - 1.5).toFixed(1)}" height="${Math.max(h, 1).toFixed(1)}" rx="1.5" fill="${scol}" opacity=".88" style="pointer-events:all"><title>${i + 1}월 ${lb} ${fmtWon(v)}원 (합계 ${fmtWon(gTotal(c))}원)</title></rect>`;
           }).join("");
+        const lbl = lblOf(gTotal(c));
+        return rects + (lbl ? `<text x="${cx}" y="${(y(gTotal(c)) - 3).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--text-2)">${lbl}</text>` : "");
       }).join("");
       return `<g>${segs}<text x="${(i * slot + slot / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-3)">${i + 1}월</text></g>`;
     }).join("");
@@ -744,7 +753,7 @@
     return `
       <div style="margin:4px 0 10px">
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:.72rem;color:var(--text-3);margin-bottom:2px">
-          <span style="font-weight:700">📊 월 비용 변화 — 장비별 · 정기/수리부품 (${costYear}년)</span>
+          <span style="font-weight:700">📊 월 비용 변화 — 장비별 · 정기/수리부품 (${costYear}년 · 막대 위 숫자: 백만원)</span>
           ${legend.map(([lb, col]) => `<span style="display:inline-flex;align-items:center;gap:4px"><i style="width:9px;height:9px;border-radius:2px;background:${col};display:inline-block"></i>${lb}</span>`).join("")}
         </div>
         <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="월별 장비별 비용 차트" id="eq-cost-chart">
