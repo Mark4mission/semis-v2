@@ -683,43 +683,54 @@
       </div>`;
   }
 
-  /* v2.17.1: 월 비용 변화 복합 차트 — 스택 막대(정기/수리·부품/기타) + 월 합계 꺾은선 (인라인 SVG) */
+  /* v2.17.2: 월 비용 변화 차트 — 장비별(ETD/X-ray/기타·수동) 그룹 막대 (인라인 SVG).
+     사용자 피드백: 합계 꺾은선은 의미 없음 → 제거, ETD와 X-ray를 각각 비교 가능하게. */
+  function costGroupOf(row) {
+    if (row.auto) return row.vendor === "인씨스" ? "X-ray" : "ETD";
+    const v = billingVendorOf(row.vendor);
+    if (v === "프로에스콤") return "ETD";
+    if (v === "인씨스") return "X-ray";
+    const txt = String(row.memo || "") + " " + String(row.serial || "") + " " + String(row.vendor || "");
+    if (/x-?ray/i.test(txt)) return "X-ray";
+    if (/etd/i.test(txt)) return "ETD";
+    return "기타/수동";
+  }
   function costChartHTML(yc) {
-    const KINDS3 = [["정기 유지보수", "var(--primary)"], ["수리/부품", "var(--danger)"], ["기타", "var(--text-3)"]];
+    const SERIES = [["ETD", "var(--primary)"], ["X-ray", "var(--success)"], ["기타/수동", "var(--text-3)"]];
+    // 월×장비별 집계 (자동 연동 + 집계 포함 수동 기록)
+    const byM = {};
+    for (let i = 1; i <= 12; i++) byM[i] = { "ETD": 0, "X-ray": 0, "기타/수동": 0 };
+    yc.rows.concat(yc.autoRows || []).forEach(r => {
+      const mo = Number(String(r.ym || "").slice(5, 7));
+      if (byM[mo]) byM[mo][costGroupOf(r)] += Number(r.amount) || 0;
+    });
     const vals = [];
-    for (let i = 1; i <= 12; i++) vals.push(yc.byM[i]);
-    if (!vals.some(m => m.total)) return "";
-    const max = Math.max.apply(null, vals.map(m => m.total).concat(1));
-    const W = 720, H = 200, top = 16, bot = 26, slot = W / 12, bw = slot * 0.52;
+    for (let i = 1; i <= 12; i++) vals.push(byM[i]);
+    const allVals = vals.reduce((a, m) => a.concat(SERIES.map(([k]) => m[k])), []);
+    if (!allVals.some(Boolean)) return "";
+    const used = SERIES.filter(([k]) => vals.some(m => m[k]));
+    const max = Math.max.apply(null, allVals.concat(1));
+    const W = 720, H = 200, top = 16, bot = 26, slot = W / 12;
+    const bw = Math.min(16, (slot - 10) / used.length);
     const y = (v) => top + (H - top - bot) * (1 - v / max);
     const bars = vals.map((m, i) => {
-      const x = i * slot + (slot - bw) / 2;
-      let acc = 0;
-      const segs = KINDS3.map(([k, col]) => {
-        const v = m[k] || 0;
+      const x0 = i * slot + (slot - bw * used.length) / 2;
+      const segs = used.map(([k, col], j) => {
+        const v = m[k];
         if (!v) return "";
-        const y1 = y(acc + v), h = y(acc) - y(acc + v);
-        acc += v;
-        return `<rect x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(h, 1).toFixed(1)}" rx="2" fill="${col}" opacity=".85"></rect>`;
+        return `<rect x="${(x0 + j * bw).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw - 1.5).toFixed(1)}" height="${Math.max(y(0) - y(v), 1).toFixed(1)}" rx="2" fill="${col}" opacity=".88"><title>${i + 1}월 ${k} ${fmtWon(v)}원</title></rect>`;
       }).join("");
-      const tip = `<title>${i + 1}월 합계 ${fmtWon(m.total)}원 — 정기 ${fmtWon(m["정기 유지보수"])} · 수리/부품 ${fmtWon(m["수리/부품"])} · 기타 ${fmtWon(m["기타"])}</title>`;
-      return `<g>${tip}${segs}<text x="${(i * slot + slot / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-3)">${i + 1}월</text></g>`;
+      return `<g>${segs}<text x="${(i * slot + slot / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-3)">${i + 1}월</text></g>`;
     }).join("");
-    const pts = vals.map((m, i) => `${(i * slot + slot / 2).toFixed(1)},${y(m.total).toFixed(1)}`).join(" ");
-    const dots = vals.map((m, i) => m.total
-      ? `<circle cx="${(i * slot + slot / 2).toFixed(1)}" cy="${y(m.total).toFixed(1)}" r="3" fill="var(--warning)"></circle>` : "").join("");
     return `
       <div style="margin:4px 0 10px">
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:.72rem;color:var(--text-3);margin-bottom:2px">
-          <span style="font-weight:700">📊 월 비용 변화 (${costYear}년)</span>
-          ${KINDS3.map(([k, col]) => `<span style="display:inline-flex;align-items:center;gap:4px"><i style="width:9px;height:9px;border-radius:2px;background:${col};display:inline-block"></i>${k}</span>`).join("")}
-          <span style="display:inline-flex;align-items:center;gap:4px"><i style="width:14px;height:2px;background:var(--warning);display:inline-block"></i>월 합계</span>
+          <span style="font-weight:700">📊 월 비용 변화 — 장비별 (${costYear}년)</span>
+          ${used.map(([k, col]) => `<span style="display:inline-flex;align-items:center;gap:4px"><i style="width:9px;height:9px;border-radius:2px;background:${col};display:inline-block"></i>${k}</span>`).join("")}
         </div>
-        <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="월별 비용 차트" id="eq-cost-chart">
-          <line x1="0" y1="${(H - bot).toFixed(1)}" x2="${W}" y2="${(H - bot).toFixed(1)}" stroke="var(--border)"></line>
+        <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="월별 장비별 비용 차트" id="eq-cost-chart">
+          <line x1="0" y1="${y(0).toFixed(1)}" x2="${W}" y2="${y(0).toFixed(1)}" stroke="var(--border)"></line>
           ${bars}
-          <polyline points="${pts}" fill="none" stroke="var(--warning)" stroke-width="2"></polyline>
-          ${dots}
         </svg>
       </div>`;
   }
