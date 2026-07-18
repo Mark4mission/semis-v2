@@ -797,3 +797,15 @@ a.ct-tel:hover { color: var(--primary); }
 .cert-mbar { width: 70%; max-width: 26px; min-height: 2px; background: linear-gradient(180deg, #f59e0b, #d97706); border-radius: 4px 4px 0 0; }
 .cert-mlabel { font-size: .64rem; color: var(--text-3); margin-top: 3px; white-space: nowrap; }
 @media (max-width: 768px) { .cert-blabel { flex-basis: 88px; } }
+
+/* ═══════ 대금 청구 관리 (v2.16) ═══════ */
+.bl-item { display: flex; align-items: center; gap: 8px; padding: 6px 2px; border-bottom: 1px solid var(--border); font-size: .86rem; }
+.bl-item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-item-note { font-size: .76rem; color: var(--text-3); }
+.bl-item-amt { white-space: nowrap; }
+.bl-subtotal { text-align: right; font-size: .84rem; padding-top: 6px; color: var(--text-2); }
+.bl-summary { border: 2px solid var(--primary-soft, #dbeafe); }
+.bl-sum-tbl td { padding: 7px 8px; font-size: .88rem; }
+.bl-sum-tbl td.r { text-align: right; white-space: nowrap; }
+.bl-sum-tbl .bl-deduct td { color: var(--danger, #dc2626); }
+.bl-sum-tbl .bl-net td { border-top: 2px solid var(--border); font-size: .95rem; }

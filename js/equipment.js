@@ -689,7 +689,30 @@
           <td style="text-align:right">${fmtWon(yc.total)}</td></tr></tbody></table></div>
       <div style="font-size:.78rem;font-weight:700;color:var(--text-3);margin:12px 0 4px">기록 상세 (${yc.rows.length}건${canWrite ? " · 클릭하여 수정" : ""})</div>
       ${detail || '<div class="form-hint">해당 연도 비용 기록이 없습니다.</div>'}
+      ${billingCostBlock()}
       ${caresCostBlock()}`;
+  }
+
+  /* v2.16: 협력업체 대금 청구(billing) 연간 집계 — 참고 표시 + 이동 버튼 */
+  function billingCostBlock() {
+    if (!window.SemisBilling || !SeMIS.canEdit()) return "";
+    const rows = SemisBilling.yearSummary(costYear);
+    return `
+      <div style="margin-top:14px;padding:10px 12px;border:1px dashed var(--border);border-radius:10px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:.78rem;font-weight:700;color:var(--text-3)">🧾 협력업체 대금 청구 집계 (${costYear}년 · 업체 직접 입력)</span>
+          <span class="spacer"></span>
+          <button class="btn btn-ghost btn-sm" id="eq-go-billing">대금 청구 관리 ↗</button>
+        </div>
+        ${rows.length ? rows.map(r => `
+          <div style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:.82rem">
+            <span style="flex:1">${esc(r.vendor)} <span style="color:var(--text-3)">(${r.months}개월 입력)</span></span>
+            <b style="white-space:nowrap">실청구 ${SemisBilling.fmtWon(r.net)}원</b>
+          </div>`).join("")
+        : '<div class="form-hint">해당 연도 업체 청구 입력이 없습니다.</div>'}
+        <div class="form-hint" style="margin-top:6px">프로에스콤(ETD 유지보수·보안검색&경비·기타 수익 50% 차감)과 인씨스(X-ray 유지보수)가
+          매월 직접 입력한 청구 내역의 연간 실청구 합계입니다.</div>
+      </div>`;
   }
 
   /* ─────── 대시보드 위젯: 고장신고·배치 현황 (CARES) ─────── */
@@ -841,6 +864,7 @@
         if (canWrite) $("#ct-add").onclick = () => costForm(null);
         $("#cy-prev").onclick = () => { costYear--; SeMIS.renderView(); };
         $("#cy-next").onclick = () => { costYear++; SeMIS.renderView(); };
+        if ($("#eq-go-billing")) $("#eq-go-billing").onclick = () => SeMIS.navigate("billing");
         if (typeof fetch !== "undefined" && !cares.ts && !cares.err)
           loadCares().then(() => { if (tab === "costs" && $("#eq-body")) SeMIS.renderView(); });
       }

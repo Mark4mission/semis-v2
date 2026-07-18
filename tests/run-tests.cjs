@@ -24,6 +24,7 @@ const cnJS = read("js/contracts.js");
 const rgJS = read("js/regulations.js");
 const plJS = read("js/policy.js");
 const ctcJS = read("js/certs.js");
+const blJS = read("js/billing.js");
 const vtJS = read("js/vault.js");
 const caresJS = read("js/cares.js");
 const syncJS = read("js/sync.js");
@@ -61,7 +62,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) S.boot();
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -1886,7 +1887,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "branches,certs,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
+    eq(keys, "billing,branches,certs,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -3036,6 +3037,165 @@ function makeFetchStub(server) {
     ok(qa(em, ".cert-brow").length >= 1, "과정별 바");
     eq(qa(em, ".cert-mcol").length, 12, "월별 12칸");
     ok(qa(em, ".cert-seg.soon").length >= 1, "임박 세그먼트");
+  });
+
+  /* ══════════ [BL] 대금 청구 관리 (v2.16) ══════════ */
+  function loginVendor(env, vendorName, uid2) {
+    const pw = "testpw-vd-" + uid2 + "-9x";
+    env.S.data.customUsers.push({ id: uid2, name: vendorName, role: "vendor", vendor: vendorName, hash: env.S.pwHash(pw) });
+    env.S.saveSilent();
+    submitLogin(env, pw);
+    if (!env.S.user || env.S.user.role !== "vendor") throw new Error("vendor login failed");
+  }
+  const blSeed = (over) => Object.assign({
+    id: "bl-t" + Math.random().toString(36).slice(2, 7), vendor: "프로에스콤", month: "2026-07",
+    category: "ETD 유지보수", title: "장비 잔존가+수선유지비 (KJ)", amount: 5170000,
+    fileUrl: "", fileName: "", note: "", by: "T", updated: "2026-07-18T00:00:00Z" }, over || {});
+
+  t("BL01 마이그레이션: billing 배열 + 메뉴(장비 다음, hq) + 동기화 키", () => {
+    const e = makeEnv();
+    ok(Array.isArray(e.S.data.billing), "billing 배열");
+    const mn = e.S.data.menus.find(m => m.type === "module" && m.module === "billing");
+    ok(mn, "billing 메뉴");
+    eq(mn.vis, "hq", "hq 전용 (대외비)");
+    eq(mn.parent, "grp-pass", "출입증/보안장비 그룹");
+    const eq2 = e.S.data.menus.find(m => m.type === "module" && m.module === "equipment");
+    ok((eq2.seq || 0) < (mn.seq || 0), "보안장비 유지관리 다음 위치");
+    ok(e.Sync.SYNC_KEYS.includes("billing"), "SYNC_KEYS 등록");
+    const pre = JSON.parse(JSON.stringify(e.S.data));
+    delete pre.billing;
+    pre.menus = pre.menus.filter(m => m.module !== "billing");
+    const e2 = makeEnv({ preData: pre });
+    ok(Array.isArray(e2.S.data.billing) && e2.S.data.menus.some(m => m.module === "billing"), "구데이터 보정");
+  });
+
+  t("BL02 정산 계산: 실청구액 = ETD + 검색&경비 − 기타수익×50%", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.billing = [
+      blSeed({ category: "ETD 유지보수", amount: 5170000 }),
+      blSeed({ category: "ETD 유지보수", title: "부품교체", amount: 4500000 }),
+      blSeed({ category: "보안검색&경비", title: "도급비", amount: 30000000 }),
+      blSeed({ category: "기타 수익", title: "B터미널 보안검색", amount: 8000000 }),
+      blSeed({ category: "기타 수익", title: "특별보안검색 7건", amount: 2000000 }),
+      blSeed({ vendor: "인씨스", category: "X-ray 유지보수", title: "정기 유지보수", amount: 3300000 })
+    ];
+    e.S.saveSilent();
+    const B = e.w.SemisBilling;
+    const s = B.settle("프로에스콤", "2026-07");
+    eq(s.byCat["ETD 유지보수"], 9670000, "ETD 합");
+    eq(s.revenue, 10000000, "기타 수익 합");
+    eq(s.deduct, 5000000, "50% 차감");
+    eq(s.pay, 39670000, "지급 대상 합");
+    eq(s.net, 34670000, "실청구액");
+    const si = B.settle("인씨스", "2026-07");
+    eq(si.net, 3300000, "인씨스 합계(차감 없음)");
+    eq(B.parseWon("5,170,000원"), 5170000, "콤마 금액 파싱");
+  });
+
+  t("BL03 업체 격리: 프로에스콤 계정은 인씨스 내역 접근 불가", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.billing = [blSeed(), blSeed({ vendor: "인씨스", category: "X-ray 유지보수", title: "인씨스전용내역", amount: 990000 })];
+      return d; })();
+    const e = makeEnv({ preData: pre });
+    loginVendor(e, "프로에스콤", "tproes");
+    // visible() 격리
+    const B = e.w.SemisBilling;
+    ok(B.visible().every(r => r.vendor === "프로에스콤"), "visible: 자기 업체만");
+    eq(B.settle("인씨스", "2026-07").net, 0, "타 업체 정산 0 (데이터 미노출)");
+    // 화면 격리
+    B.setMonth("2026-07");
+    go(e, "billing");
+    ok(/프로에스콤/.test(q(e, ".page-title").textContent), "자기 업체 화면");
+    ok(!qa(e, "[data-bl-vendor]").length, "업체 전환 버튼 없음");
+    ok(!/인씨스전용내역/.test(q(e, "#view").textContent), "타 업체 내역 미표시");
+    // 라우팅 격리: 다른 모듈 접근 시도 → billing 강제
+    go(e, "dashboard");
+    ok(/대금 청구/.test(q(e, ".page-title").textContent), "dashboard 접근 → billing 강제");
+    go(e, "settings");
+    ok(/대금 청구/.test(q(e, ".page-title").textContent), "settings 접근 → billing 강제");
+    // 네비: billing 하나만
+    eq(qa(e, "#nav-menu .nav-item").length, 1, "네비 메뉴 1개");
+  });
+
+  t("BL04 vendor 입력: 항목 추가/수정 + 자기 업체 저장", () => {
+    const e = makeEnv();
+    loginVendor(e, "인씨스", "tincis");
+    e.w.SemisBilling.setMonth("2026-07");
+    go(e, "billing");
+    ok(q(e, "[data-bl-add]"), "항목 추가 버튼");
+    q(e, "[data-bl-add]").click();
+    q(e, "#bl-save").click();
+    eq(e.S.data.billing.length, 0, "내역 없이 저장 차단");
+    q(e, "#bl-title").value = "X-ray 정기 유지보수";
+    q(e, "#bl-amount").value = "3,300,000";
+    q(e, "#bl-save").click();
+    eq(e.S.data.billing.length, 1, "저장");
+    const r = e.S.data.billing[0];
+    eq(r.vendor, "인씨스", "업체 자동 지정");
+    eq(r.amount, 3300000, "금액 파싱");
+    eq(r.month, "2026-07", "귀속 월");
+    eq(r.category, "X-ray 유지보수", "카테고리");
+  });
+
+  t("BL05 hq 전체 관리 + manager 차단 + 정산 요약 표시", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.billing = [blSeed({ category: "보안검색&경비", title: "도급비", amount: 20000000 }),
+                   blSeed({ category: "기타 수익", title: "TK 수익", amount: 4000000 })];
+      return d; })();
+    const e = makeEnv({ preData: pre });
+    loginAs(e, "hq");
+    e.w.SemisBilling.setVendor("프로에스콤");
+    e.w.SemisBilling.setMonth("2026-07");
+    go(e, "billing");
+    ok(qa(e, "[data-bl-vendor]").length === 2, "hq: 업체 전환 버튼 2개");
+    ok(q(e, ".bl-summary"), "정산 요약 카드");
+    ok(/18,000,000/.test(q(e, ".bl-summary").textContent), "실청구액 20,000,000−2,000,000");
+    ok(/50%/.test(q(e, ".bl-summary").textContent), "50% 차감 표기");
+    ok(q(e, "[data-bl-add]"), "hq 편집 가능");
+    const em = makeEnv({ preData: pre });
+    loginAs(em, "manager");
+    go(em, "billing");
+    ok(!q(em, ".bl-summary"), "manager: 접근 차단(메뉴 vis hq)");
+  });
+
+  t("BL06 설정: 협력업체 역할 계정 생성 (업체명 필수)", () => {
+    const e = makeEnv();
+    loginAs(e, "admin");
+    go(e, "settings");
+    qa(e, ".tab").find(t2 => t2.dataset.tab === "users").click();
+    q(e, "#btn-add-user").click();
+    ok(qa(e, "#f-urole option").some(o => o.value === "vendor"), "vendor 옵션");
+    q(e, "#f-uid").value = "proescom";
+    q(e, "#f-uname").value = "프로에스콤";
+    q(e, "#f-urole").value = "vendor";
+    q(e, "#f-urole").dispatchEvent(new e.w.Event("change"));
+    eq(q(e, "#row-vendor").style.display, "", "업체명 입력란 표시");
+    q(e, "#f-upw").value = "vdpw-773x";
+    const base = e.S.data.customUsers.length; // loginAs가 만든 테스트 계정 포함
+    q(e, "#f-save").click();
+    eq(e.S.data.customUsers.length, base, "업체명 없이 저장 차단");
+    q(e, "#f-uvendor").value = "프로에스콤";
+    q(e, "#f-save").click();
+    eq(e.S.data.customUsers.length, base + 1, "계정 생성");
+    const nu = e.S.data.customUsers.find(u => u.id === "proescom");
+    eq(nu.vendor, "프로에스콤", "vendor 필드 저장");
+    eq(nu.role, "vendor", "역할 저장");
+  });
+
+  t("BL07 장비 비용 탭 연동: 업체 청구 연간 집계 블록(hq)", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.billing = [blSeed({ category: "보안검색&경비", title: "도급비", amount: 10000000 }),
+                   blSeed({ category: "기타 수익", title: "TK", amount: 2000000 })];
+      return d; })();
+    const e = makeEnv({ preData: pre });
+    loginAs(e, "hq");
+    e.w.SemisEquipment.setTab("costs");
+    e.w.SemisEquipment.setCostYear(2026);
+    go(e, "equipment");
+    ok(q(e, "#eq-go-billing"), "이동 버튼");
+    ok(/프로에스콤/.test(q(e, "#eq-body").textContent), "업체 집계 표시");
+    ok(/9,000,000/.test(q(e, "#eq-body").textContent), "연간 실청구(10M−1M)");
   });
 
   /* ══════════ 결과 ══════════ */

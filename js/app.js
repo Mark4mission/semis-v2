@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.15.0";
+  const VERSION = "2.16.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -68,14 +68,15 @@ const SeMIS = (() => {
     { id: "hq",       name: "항공보안HQ",   role: "hq",
       hash: "baf18bfc212cf8a7ca80cd468495ef952b27e32f1c615f1737dc81a901b5a20a" }
   ];
-  const ROLE_LABEL = { admin: "시스템관리자", hq: "항공보안HQ", manager: "보안관리자", user: "일반사용자" };
+  const ROLE_LABEL = { admin: "시스템관리자", hq: "항공보안HQ", manager: "보안관리자", user: "일반사용자", vendor: "협력업체" };
   /* 권한 서열 (v2.11): admin(4) > hq(3) > manager(2) > user(1)
      - admin:   모든 기능 + 시스템 설정
      - hq:      항공보안파트원 — 시스템 설정 외 모든 기능(편집 포함)
      - manager: 지점·유관부서 보안감독자/담당자 — 보안사항 열람 가능, 편집 불가,
                 대외비(유지보수 비용·계약·암호 등)는 열람 불가
      - user:    일반 직원 — 일반사항·홍보사항 수준만 열람 */
-  const ROLE_RANK  = { admin: 4, hq: 3, manager: 2, user: 1 };
+  /* vendor(협력업체, v2.16): 대금 청구 입력 화면(billing)만 접근 — 자기 업체 내역 한정 */
+  const ROLE_RANK  = { admin: 4, hq: 3, manager: 2, user: 1, vendor: 1 };
   const VIS_LABEL  = { all: "전체", mgr: "보안관리자 이상", hq: "항공보안HQ 이상", admin: "시스템관리자" };
 
   /* ─────────── 국가 항공보안등급 (5단계) ─────────── */
@@ -135,6 +136,7 @@ const SeMIS = (() => {
       g("grp-pass", "출입증 / 보안장비"),
       m("passes", "출입증 관리", "🪪", "passes", "mgr", "grp-pass"),
       m("equipment", "보안장비 유지관리", "🔧", "equipment", "mgr", "grp-pass"),
+      m("billing", "대금 청구 관리", "🧾", "billing", "hq", "grp-pass"),
       lk("pass-mgmt", "출입증 관리 (구버전)", "🪪", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EC%B6%9C%EC%9E%85%EC%A6%9D-%EA%B4%80%EB%A6%AC", "grp-pass"),
       lk("equip-mgmt", "보안장비 관리 (구버전)", "🔧", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%EA%B4%80%EB%A6%AC", "grp-pass"),
       lk("equip-council", "보안장비 협의체", "🤝", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%ED%98%91%EC%9D%98%EC%B2%B4", "grp-pass"),
@@ -193,6 +195,7 @@ const SeMIS = (() => {
       regulations: [],                // v2.12: 규정 관리 (국제/국가 + 자체, PDF/링크 + 개정 아이디어 노트)
       policy: { ko: null, en: null }, // v2.14: 에어제타 보안정책 (국문/영문 PDF)
       certs: [],                      // v2.15: 교육 이수증 관리 (외부기관 보안책임자/감독자 등)
+      billing: [],                    // v2.16: 대금 청구 (협력업체 월별 입력 — 프로에스콤/인씨스)
       vault: { v: 1, members: [], data: null, updated: "" } // v2.9: 암호 관리 (암호문만 저장)
     };
   }
@@ -410,6 +413,14 @@ const SeMIS = (() => {
       const mn = DATA.menus.find(m => m && m.id === "ref-policy" && m.type === "link");
       if (mn && mn.label === "에어제타 보안정책") mn.label = "에어제타 보안정책 (구버전)";
     }
+    // v2.16: 대금 청구 — 데이터 보정 + 메뉴 자동 삽입 (보안장비 유지관리 다음, hq 전용)
+    if (!Array.isArray(DATA.billing)) DATA.billing = [];
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "billing")) {
+      const eq = DATA.menus.find(m => m && m.type === "module" && m.module === "equipment" && m.parent === "grp-pass");
+      if (eq) DATA.menus.push({ id: "billing", seq: (eq.seq || 0) + 0.2, type: "module",
+        label: "대금 청구 관리", icon: "🧾", module: "billing", vis: "hq", parent: "grp-pass" });
+      else ensureModuleMenu("billing", "grp-pass", "대금 청구 관리", "🧾", "billing", "hq");
+    }
     // v2.15: 교육 이수증 관리 — 데이터 보정 + 메뉴 자동 삽입 (보안교육 관리 바로 다음, mgr 열람)
     if (!Array.isArray(DATA.certs)) DATA.certs = [];
     if (!DATA.menus.some(m => m && m.type === "module" && m.module === "certs")) {
@@ -448,6 +459,7 @@ const SeMIS = (() => {
         id: ov.id || u.id,
         name: ov.name || u.name,
         role: u.id === "mark3464" ? "admin" : (ov.role && ROLE_RANK[ov.role] ? ov.role : u.role),
+        vendor: ov.vendor || "",
         hash: DATA.pwOverrides[u.id] || u.hash,
         origId: u.id, base: true
       });
@@ -553,9 +565,21 @@ const SeMIS = (() => {
   }
 
   function renderView() {
-    const route = currentRoute();
+    let route = currentRoute();
     const view = $("#view");
     view.innerHTML = "";
+    if (currentUser && currentUser.role === "vendor") {
+      // v2.16: 협력업체 계정은 대금 청구 화면만 접근 가능 (다른 모든 라우트 차단)
+      route = "billing";
+      const def = modules.billing || modules.dashboard;
+      def.render(view);
+      highlightNav(route);
+      $("#sidebar").classList.remove("open");
+      $("#sidebar-backdrop").classList.remove("show");
+      $("#main").scrollTop = 0;
+      window.scrollTo(0, 0);
+      return;
+    }
     if (route.indexOf("embed/") === 0) {
       // v2.13: 링크 메뉴 내부 프레임 열기 (open: "frame")
       renderEmbedView(view, route.slice(6));
@@ -606,6 +630,17 @@ const SeMIS = (() => {
   function renderNav() {
     const box = $("#nav-menu");
     box.innerHTML = "";
+    if (currentUser && currentUser.role === "vendor") {
+      // v2.16: 협력업체 계정 — 대금 청구 메뉴만 표시
+      const b = document.createElement("button");
+      b.className = "nav-item";
+      b.dataset.route = "billing";
+      b.innerHTML = '<span class="nav-ico">🧾</span><span>대금 청구 입력</span>';
+      b.onclick = () => navigate("billing");
+      box.appendChild(b);
+      highlightNav("billing");
+      return;
+    }
     const menus = sortedMenus();
     const collapsed = uiState().collapsed || {};
 

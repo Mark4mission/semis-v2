@@ -722,7 +722,26 @@
   }
 
   /* ───── 사용자 / 암호 탭 (v2.11.1: admin이 전 계정 완전 관리) ───── */
-  const ROLE_BADGE = { admin: "badge-red", hq: "badge-amber", manager: "badge-blue", user: "badge-gray" };
+  const ROLE_BADGE = { admin: "badge-red", hq: "badge-amber", manager: "badge-blue", user: "badge-gray", vendor: "badge-green" };
+  const ROLE_OPTS = [
+    ["user", "일반사용자 (일반·홍보 열람)"],
+    ["manager", "보안관리자 (보안사항 열람 전용)"],
+    ["hq", "항공보안HQ (파트원 · 편집 가능)"],
+    ["vendor", "협력업체 (대금 청구 입력 전용)"],
+    ["admin", "시스템관리자"]];
+  const VENDOR_NAMES = ["프로에스콤", "인씨스"];
+  const vendorRowHTML = (u) => `
+      <div class="form-row" id="row-vendor" ${u && u.role === "vendor" ? "" : 'style="display:none"'}>
+        <label>업체명 (협력업체 계정)</label>
+        <input id="f-uvendor" maxlength="30" list="f-vendors" value="${esc(u && u.vendor ? u.vendor : "")}" placeholder="예: 프로에스콤">
+        <datalist id="f-vendors">${VENDOR_NAMES.map(v => `<option value="${v}">`).join("")}</datalist>
+        <div class="form-hint">협력업체 계정은 로그인 시 자기 업체의 대금 청구 화면만 접근합니다.</div></div>`;
+  function wireVendorRow() {
+    const sel = $("#f-urole");
+    if (!sel) return;
+    const upd = () => { $("#row-vendor").style.display = sel.value === "vendor" ? "" : "none"; };
+    sel.addEventListener("change", upd); upd();
+  }
   function renderUserTab(box) {
     const users = SeMIS.allUsers();
     box.innerHTML = `
@@ -777,29 +796,32 @@
       </div>
       <div class="form-row"><label>권한${lockRole ? " (최고관리자 — 변경 불가)" : ""}</label>
         <select id="f-urole" ${lockRole ? "disabled" : ""}>
-          ${[["user", "일반사용자 (일반·홍보 열람)"], ["manager", "보안관리자 (보안사항 열람 전용)"],
-             ["hq", "항공보안HQ (파트원 · 편집 가능)"], ["admin", "시스템관리자"]].map(([v, lb]) =>
+          ${ROLE_OPTS.map(([v, lb]) =>
             `<option value="${v}" ${u.role === v ? "selected" : ""}>${lb}</option>`).join("")}
         </select></div>
+      ${vendorRowHTML(u)}
       <div class="modal-actions">
         <button class="btn btn-ghost" id="f-cancel">취소</button>
         <button class="btn btn-primary" id="f-save">저장</button>
       </div>`);
+    wireVendorRow();
     $("#f-cancel").onclick = closeModal;
     $("#f-save").onclick = () => {
       const id = $("#f-uid").value.trim(), name = $("#f-uname").value.trim();
       const role = lockRole ? "admin" : $("#f-urole").value;
+      const vendor = role === "vendor" ? $("#f-uvendor").value.trim() : "";
+      if (role === "vendor" && !vendor) { toast("업체명을 입력하세요.", true); return; }
       if (!/^[A-Za-z0-9_-]{2,20}$/.test(id)) { toast("계정 ID는 영문/숫자 2~20자입니다.", true); return; }
       if (!name) { toast("이름을 입력하세요.", true); return; }
       if (SeMIS.allUsers().some(x => x.id === id && x.origId !== u.origId)) { toast("이미 존재하는 계정 ID입니다.", true); return; }
       if (u.base) {
         const ov = Object.assign({}, D().userOverrides[u.origId]);
         ov.id = id; ov.name = name;
-        if (!lockRole) ov.role = role;
+        if (!lockRole) { ov.role = role; ov.vendor = vendor; }
         D().userOverrides[u.origId] = ov;
       } else {
         const cu = D().customUsers.find(x => x.id === u.origId);
-        if (cu) { cu.id = id; cu.name = name; cu.role = role; }
+        if (cu) { cu.id = id; cu.name = name; cu.role = role; cu.vendor = vendor; }
       }
       SeMIS.save(); closeModal(); renderUserTab($("#tab-body")); toast("계정 정보가 변경되었습니다.");
     };
@@ -843,26 +865,28 @@
       </div>
       <div class="form-row"><label>권한</label>
         <select id="f-urole">
-          <option value="user">일반사용자 (일반·홍보 열람)</option>
-          <option value="manager">보안관리자 (보안사항 열람 전용)</option>
-          <option value="hq">항공보안HQ (파트원 · 편집 가능)</option>
-          <option value="admin">시스템관리자</option>
+          ${ROLE_OPTS.map(([v, lb]) => `<option value="${v}">${lb}</option>`).join("")}
         </select></div>
+      ${vendorRowHTML(null)}
       <div class="form-row"><label>암호</label><input type="password" id="f-upw" autocomplete="new-password"></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="f-cancel">취소</button>
         <button class="btn btn-primary" id="f-save">추가</button>
       </div>`);
+    wireVendorRow();
     $("#f-cancel").onclick = closeModal;
     $("#f-save").onclick = () => {
       const id = $("#f-uid").value.trim(), name = $("#f-uname").value.trim(), pw = $("#f-upw").value;
+      const role = $("#f-urole").value;
+      const vendor = role === "vendor" ? $("#f-uvendor").value.trim() : "";
       if (!/^[A-Za-z0-9_-]{2,20}$/.test(id)) { toast("계정 ID는 영문/숫자 2~20자입니다.", true); return; }
       if (SeMIS.allUsers().some(u => u.id === id)) { toast("이미 존재하는 계정입니다.", true); return; }
       if (!name) { toast("이름을 입력하세요.", true); return; }
+      if (role === "vendor" && !vendor) { toast("업체명을 입력하세요.", true); return; }
       if (pw.length < 4) { toast("암호는 4자 이상이어야 합니다.", true); return; }
       const h = SeMIS.pwHash(pw);
       if (hashInUse(h, id)) { toast("다른 사용자가 사용 중인 암호입니다.", true); return; }
-      D().customUsers.push({ id, name, role: $("#f-urole").value, hash: h });
+      D().customUsers.push({ id, name, role, vendor, hash: h });
       SeMIS.save(); closeModal(); renderUserTab($("#tab-body")); toast("사용자가 추가되었습니다.");
     };
   }
