@@ -13,7 +13,9 @@
   /* ─────────── 보안 뉴스 ─────────── */
   const FN_URL = "https://mzyuzrxkdcpzxojenwat.supabase.co/functions/v1/semis-news?t=azs-news-7d3f9a2c";
   const CACHE_KEY = "semis2:news";
-  const TTL = 30 * 60 * 1000; // 30분
+  const TTL = 30 * 60 * 1000;        // 캐시 유효 30분
+  const REFRESH_MS = 60 * 60 * 1000; // 화면 열려 있는 동안 60분마다 자동 갱신
+  let refreshTimer = null;
 
   function loadCache() {
     try {
@@ -85,6 +87,17 @@
       $$("[data-news-cat]", card).forEach(x => x.classList.toggle("on", x === b));
       paintNews(el, items, cat, note);
     });
+
+    // 60분마다 자동 갱신 (대시보드가 열려 있는 동안, 필터 상태 유지)
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(async () => {
+      if (!el.isConnected) { clearInterval(refreshTimer); refreshTimer = null; return; } // 화면 이탈 시 정리
+      try {
+        items = await fetchNews(); // 캐시 TTL(30분) 경과 → 서버 재수집
+        note = '<div style="font-size:.7rem;color:var(--text-3);margin-top:8px">출처: 보안뉴스(boannews.com) — 외부 기사로 연결됩니다.</div>';
+        paintNews(el, items, cat, note);
+      } catch (e) { /* 실패 시 기존 표시 유지, 다음 주기 재시도 */ }
+    }, REFRESH_MS);
   }
 
   /* ─────────── 항공보안 인사이트 (교육·홍보, 정적) ─────────── */
@@ -159,5 +172,5 @@
     });
   }
 
-  window.SemisNews = { renderNews, renderInsight, fetchNews };
+  window.SemisNews = { renderNews, renderInsight, fetchNews, REFRESH_MS };
 })();

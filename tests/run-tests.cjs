@@ -3569,6 +3569,7 @@ function makeFetchStub(server) {
       ok(box.textContent.includes("랜섬웨어") && !box.textContent.includes("화물터미널"), "사이버 필터 전환");
       btn("all").click();
       eq(box.querySelectorAll(".news-row").length, 3, "전체 복원");
+      eq(e.w.SemisNews.REFRESH_MS, 3600000, "자동 갱신 주기 60분");
     });
 
     await ta("DB05 뉴스 카드: 네트워크 실패 시 만료 캐시 폴백", async () => {
