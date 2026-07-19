@@ -969,6 +969,7 @@ a.ct-tel:hover { color: var(--primary); }
 .kpi-chip b { color: var(--text); }
 
 .kpi-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+.kpi-cols > * { min-width: 0; } /* 긴 텍스트가 카드 폭을 화면 밖으로 밀지 않도록 (grid min-content 제한) */
 .kpi-def { display: flex; flex-direction: column; gap: 10px; }
 .kpi-def label { font-size: .7rem; font-weight: 800; color: var(--text-3); display: block; margin-bottom: 2px; }
 .kpi-def p { font-size: .84rem; line-height: 1.55; color: var(--text-2); }

@@ -287,7 +287,6 @@
             <div class="page-desc">CSI 과제 진도관리 — 기준: ${esc(kpis().updated || "")} (${esc(kpis().src || "xlsx")})</div>
           </div>
           <span class="spacer"></span>
-          ${SeMIS.isAdmin() ? '<button class="btn btn-ghost btn-sm" id="kpi-reseed" title="원본 시드로 재설정 (수정 내용 삭제)">↺ 시드 재적용</button>' : ""}
         </div>
 
         <div class="kpi-pick">
@@ -396,11 +395,6 @@
       // 이벤트
       $$(".kpi-pick-btn", root).forEach(b => b.onclick = () => select(b.dataset.kpi));
       $$("[data-act]", root).forEach(el => el.onclick = () => detailModal(kpi.id, el.dataset.act, canW));
-      if ($("#kpi-reseed")) $("#kpi-reseed").onclick = () =>
-        confirmModal("KPI 데이터를 원본 시드로 재설정합니다. 화면에서 수정한 상태/실적/메모가 모두 삭제됩니다. 계속하시겠습니까?", () => {
-          D().kpis = seedKpis();
-          SeMIS.save(); SeMIS.renderView(); toast("KPI 시드를 재적용했습니다.");
-        });
     }
   });
 

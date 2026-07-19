@@ -3744,17 +3744,17 @@ function makeFetchStub(server) {
       ok(!r2.some(x => x.group === "KPI 현황"), "manager: 차단");
     });
 
-    t("K14 관리자 시드 재적용: 수정 내용 초기화", () => {
+    t("K14 시드 재적용 버튼 제거 — 수정 내용은 재렌더 후에도 보존", () => {
       const e = makeEnv();
       loginAs(e, "admin");
       go(e, "kpi");
-      e.S.data.kpis.items[0].actions[0].st = "정상완료";
-      e.S.saveSilent();
-      const btn = q(e, "#kpi-reseed");
-      ok(btn, "재적용 버튼 표시(admin)");
-      btn.click();
-      qa(e, "#modal-box .btn").find(b => b.dataset.act === "ok").click();
-      eq(e.S.data.kpis.items[0].actions[0].st, "지연완료", "시드로 복원");
+      ok(!q(e, "#kpi-reseed"), "위험한 초기화 버튼 미노출");
+      const aid = e.S.data.kpis.items[0].actions[0].id;
+      q(e, `.kpi-row[data-act="${aid}"]`).click();
+      q(e, "#kf-st").value = "정상완료";
+      q(e, "#kf-save").click();
+      go(e, "dashboard"); go(e, "kpi"); // 화면 이탈 후 복귀
+      eq(e.S.data.kpis.items[0].actions[0].st, "정상완료", "수정 내용 보존");
     });
   }
 
