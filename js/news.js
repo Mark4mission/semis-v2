@@ -29,36 +29,62 @@
     const r = await fetch(FN_URL);
     if (!r.ok) throw new Error("news http " + r.status);
     const j = await r.json();
-    const items = (Array.isArray(j.items) ? j.items : []).slice(0, 16);
+    const items = (Array.isArray(j.items) ? j.items : []).slice(0, 24);
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), items })); } catch (e) { /* 무시 */ }
     return items;
   }
 
+  // 분류: aviation(항공) / cargo(화물) / cyber(사이버)
+  const CAT_BADGE = {
+    aviation: ["badge-blue", "항공"],
+    cargo:    ["badge-amber", "화물"],
+    cyber:    ["badge-gray", "사이버"]
+  };
+
   const newsRow = (it) => {
     const d = it.date ? String(it.date).slice(5, 10).replace("-", ".") : "";
-    const avia = it.cat === "aviation";
+    const [bc, bl] = CAT_BADGE[it.cat] || CAT_BADGE.cyber;
     return `<a class="news-row" href="${esc(it.link)}" target="_blank" rel="noopener" title="${esc(it.src || "")} 새 창에서 열기">
-      <span class="badge ${avia ? "badge-blue" : "badge-gray"}" style="flex-shrink:0">${avia ? "항공" : "사이버"}</span>
+      <span class="badge ${bc}" style="flex-shrink:0">${bl}</span>
       <span class="news-title">${esc(it.title)}</span>
       <span class="news-meta">${esc(it.src || "")}${d ? " · " + d : ""}</span>
     </a>`;
   };
 
+  function paintNews(el, items, cat, note) {
+    const list = cat === "all" ? items : items.filter(x => (x.cat || "cyber") === cat);
+    el.innerHTML = (list.length
+      ? list.map(newsRow).join("")
+      : '<div class="empty">해당 분류의 기사가 없습니다.</div>') + (note || "");
+  }
+
   async function renderNews(el) {
     el.innerHTML = '<div class="empty">뉴스를 불러오는 중…</div>';
+    let items = [], note = "";
     try {
-      const items = await fetchNews();
-      el.innerHTML = items.length
-        ? items.map(newsRow).join("") +
-          '<div style="font-size:.7rem;color:var(--text-3);margin-top:8px">출처: 보안뉴스(boannews.com) · Google News — 외부 기사로 연결됩니다.</div>'
-        : '<div class="empty">표시할 기사가 없습니다.</div>';
+      items = await fetchNews();
+      note = items.length
+        ? '<div style="font-size:.7rem;color:var(--text-3);margin-top:8px">출처: 보안뉴스(boannews.com) — 외부 기사로 연결됩니다.</div>' : "";
+      if (!items.length) { el.innerHTML = '<div class="empty">표시할 기사가 없습니다.</div>'; return; }
     } catch (e) {
       const c = loadCache(); // 네트워크 실패 시 만료된 캐시라도 표시
-      el.innerHTML = c && c.items.length
-        ? c.items.map(newsRow).join("") +
-          '<div style="font-size:.7rem;color:var(--text-3);margin-top:8px">⚠ 갱신 실패 — 이전에 저장된 기사입니다.</div>'
-        : '<div class="empty">뉴스를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>';
+      if (c && c.items.length) {
+        items = c.items;
+        note = '<div style="font-size:.7rem;color:var(--text-3);margin-top:8px">⚠ 갱신 실패 — 이전에 저장된 기사입니다.</div>';
+      } else {
+        el.innerHTML = '<div class="empty">뉴스를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>';
+        return;
+      }
     }
+    // 카테고리 필터 (카드 헤더의 전체/항공/화물/사이버 버튼)
+    let cat = "all";
+    paintNews(el, items, cat, note);
+    const card = el.closest ? el.closest(".card") : null;
+    if (card) $$("[data-news-cat]", card).forEach(b => b.onclick = () => {
+      cat = b.dataset.newsCat;
+      $$("[data-news-cat]", card).forEach(x => x.classList.toggle("on", x === b));
+      paintNews(el, items, cat, note);
+    });
   }
 
   /* ─────────── 항공보안 인사이트 (교육·홍보, 정적) ─────────── */

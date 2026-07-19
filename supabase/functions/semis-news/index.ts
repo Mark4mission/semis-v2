@@ -1,8 +1,9 @@
 // SeMIS v2 — 보안 뉴스 수집 (guest 대시보드 뉴스 카드, v2.19)
 // 소스(모두 보안뉴스 boannews.com, EUC-KR):
-//   1) 최신기사 RSS → 사이버·일반 보안 (키워드 매칭 시 항공 분류)
-//   2) 제목 검색 "항공"/"공항" (EUC-KR 하드코딩 쿼리) → 항공보안 기사
+//   1) 최신기사 RSS → 사이버·일반 보안 (키워드 매칭 시 항공/화물 분류)
+//   2) 제목 검색 "항공"/"공항"(→항공), "화물"(→화물) — EUC-KR 하드코딩 쿼리
 //   ※ Google News RSS는 Supabase Edge IP 차단(503)으로 사용 불가 확인 (2026-07)
+// 분류(cat): cargo(화물) > aviation(항공) > cyber(사이버) 우선순위
 // 인증: 브라우저 직접 호출 → 비공개 토큰(?t=...)으로 제한 (공개 뉴스 데이터, 저민감)
 const TOKEN = "azs-news-7d3f9a2c";
 
@@ -14,10 +15,11 @@ const CORS: Record<string, string> = {
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const BASE = "https://www.boannews.com";
 
-interface Item { title: string; link: string; date: string | null; src: string; cat: "aviation" | "cyber"; }
+type Cat = "aviation" | "cargo" | "cyber";
+interface Item { title: string; link: string; date: string | null; src: string; cat: Cat; }
 
-// 항공보안 관련 키워드 (RSS 기사 제목/본문 매칭 → cat=aviation)
-const AVIA_RE = /항공|공항|기내 반입|하이재킹|보안검색|검색요원|화물터미널|드론 테러/;
+const AVIA_RE = /항공|공항|기내 반입|하이재킹|보안검색|검색요원|드론 테러/;
+const CARGO_RE = /화물|카고|물류.{0,4}보안|공급망 보안/;
 
 function decodeEntities(s: string): string {
   return s
@@ -27,6 +29,9 @@ function decodeEntities(s: string): string {
 }
 const stripCdata = (s: string) => s.replace(/^\s*<!\[CDATA\[/, "").replace(/\]\]>\s*$/, "").trim();
 const stripTags = (s: string) => s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+
+const classify = (text: string): Cat =>
+  CARGO_RE.test(text) ? "cargo" : AVIA_RE.test(text) ? "aviation" : "cyber";
 
 async function fetchEuckr(url: string): Promise<string> {
   const r = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(8000) });
@@ -52,28 +57,32 @@ function parseRss(xml: string): Item[] {
     if (!title || !link) continue;
     out.push({
       title, link, date: isNaN(d.getTime()) ? null : d.toISOString(), src: "보안뉴스",
-      cat: AVIA_RE.test(title + " " + desc) ? "aviation" : "cyber"
+      cat: classify(title + " " + desc)
     });
   }
   return out;
 }
 
 /* ── 소스 2: 제목 검색 (news_total.asp, EUC-KR 쿼리 하드코딩) ── */
-// "항공"=%C7%D7%B0%F8, "공항"=%B0%F8%C7%D7
-const SEARCH_QS = ["%C7%D7%B0%F8", "%B0%F8%C7%D7"];
+// "항공"=%C7%D7%B0%F8, "공항"=%B0%F8%C7%D7, "화물"=%C8%AD%B9%B0
+const SEARCHES: { q: string; cat: Cat }[] = [
+  { q: "%C7%D7%B0%F8", cat: "aviation" },
+  { q: "%B0%F8%C7%D7", cat: "aviation" },
+  { q: "%C8%AD%B9%B0", cat: "cargo" }
+];
 
-function parseSearch(html: string): Item[] {
+function parseSearch(html: string, cat: Cat): Item[] {
   const out: Item[] = [];
   const re = /<div class="news_list">\s*<a href="([^"]+)">[\s\S]*?class="news_txt"[^>]*>([\s\S]*?)<\/span>[\s\S]*?<span class="news_writer">([\s\S]*?)<\/span>/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
     const link = BASE + decodeEntities(m[1]);
     const title = decodeEntities(stripTags(m[2]));
-    // "홍길동 기자 | 2026년 07월 10일 11:10" → ISO (KST → UTC)
     const dm = m[3].match(/(\d{4})년\s*(\d{2})월\s*(\d{2})일\s*(\d{2}):(\d{2})/);
     let date: string | null = null;
     if (dm) date = new Date(Date.UTC(+dm[1], +dm[2] - 1, +dm[3], +dm[4] - 9, +dm[5])).toISOString();
-    if (title && link) out.push({ title, link, date, src: "보안뉴스", cat: "aviation" });
+    // 항공 검색 결과라도 화물 키워드가 있으면 화물로 승격
+    if (title && link) out.push({ title, link, date, src: "보안뉴스", cat: cat === "aviation" && CARGO_RE.test(title) ? "cargo" : cat });
   }
   return out;
 }
@@ -86,29 +95,32 @@ Deno.serve(async (req: Request) => {
 
   const jobs: Promise<Item[]>[] = [
     fetchEuckr(BASE + "/media/news_rss.xml").then(parseRss),
-    ...SEARCH_QS.map(q =>
-      fetchEuckr(BASE + "/search/news_total.asp?search=title&find=" + q).then(parseSearch))
+    ...SEARCHES.map(s =>
+      fetchEuckr(BASE + "/search/news_total.asp?search=title&find=" + s.q).then(x => parseSearch(x, s.cat)))
   ];
   const settled = await Promise.allSettled(jobs);
   const raw: Item[] = [];
   settled.forEach(s => { if (s.status === "fulfilled") raw.push(...s.value); });
 
-  // 중복 제거 (제목 정규화) + 90일 이내
-  const seen = new Set<string>();
+  // 중복 제거 (제목 정규화, cargo > aviation > cyber 우선) + 90일 이내
+  const rank: Record<Cat, number> = { cargo: 2, aviation: 1, cyber: 0 };
+  const best = new Map<string, Item>();
   const cutoff = Date.now() - 90 * 86400000;
-  const items: Item[] = [];
   for (const it of raw) {
     const norm = it.title.replace(/[\s\p{P}]/gu, "").toLowerCase();
-    if (!norm || seen.has(norm)) continue;
-    seen.add(norm);
+    if (!norm) continue;
     if (it.date && new Date(it.date).getTime() < cutoff) continue;
-    items.push(it);
+    const prev = best.get(norm);
+    if (!prev || rank[it.cat] > rank[prev.cat]) best.set(norm, it);
   }
+  const items = [...best.values()];
   const byDate = (a: Item, b: Item) => String(b.date || "").localeCompare(String(a.date || ""));
-  const aviation = items.filter(x => x.cat === "aviation").sort(byDate).slice(0, 8);
-  const cyber = items.filter(x => x.cat === "cyber").sort(byDate).slice(0, 8);
+  const pick = (c: Cat, n: number) => items.filter(x => x.cat === c).sort(byDate).slice(0, n);
 
-  return new Response(JSON.stringify({ updated: new Date().toISOString(), items: [...aviation, ...cyber] }), {
+  return new Response(JSON.stringify({
+    updated: new Date().toISOString(),
+    items: [...pick("aviation", 8), ...pick("cargo", 8), ...pick("cyber", 8)]
+  }), {
     headers: { ...CORS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=900" }
   });
 });

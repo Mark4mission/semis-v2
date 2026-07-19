@@ -3512,12 +3512,12 @@ function makeFetchStub(server) {
       ok(!q(e, "#news-box") && !q(e, "#insight-box"), "mgr+에는 뉴스/인사이트 카드 없음");
     });
 
-    t("DB02 guest 경량 레이아웃: 좌 공지→뉴스→인사이트 / 우 바로가기→환경센서→만료", () => {
+    t("DB02 guest 경량 레이아웃: 좌 공지→뉴스 / 우 바로가기→환경센서→인사이트→만료", () => {
       const e = makeEnv();
       loginAs(e, "user");
       go(e, "dashboard");
-      assertOrder(colTitles(e, 0), ["공지사항", "보안 뉴스", "항공보안 인사이트"], "guest 좌측");
-      assertOrder(colTitles(e, 1), ["바로가기", "CARES 환경센서", "만료 · 점검 도래"], "guest 우측");
+      assertOrder(colTitles(e, 0), ["공지사항", "보안 뉴스"], "guest 좌측");
+      assertOrder(colTitles(e, 1), ["바로가기", "CARES 환경센서", "항공보안 인사이트", "만료 · 점검 도래"], "guest 우측");
       ok(q(e, "#news-box") && q(e, "#insight-box"), "뉴스/인사이트 박스 존재");
       ok(!q(e, "#level-box") && !q(e, "#insp-box") && !q(e, "#upcoming-box") && !q(e, "#equip-box") && !q(e, "#certs-box"),
         "보안 카드(민감) 숨김 유지");
@@ -3537,13 +3537,14 @@ function makeFetchStub(server) {
       ok(q(e, "#ins-panel").textContent.includes("문형금속탐지기"), "검색절차 패널 전환");
     });
 
-    await ta("DB04 뉴스 카드: Edge Function 응답 렌더 + 분류 배지 (fetch 스텁)", async () => {
+    await ta("DB04 뉴스 카드: 3분류 렌더 + 카테고리 필터 버튼 (fetch 스텁)", async () => {
       const newsFetch = (url) => {
         if (String(url).includes("semis-news")) return Promise.resolve({
           ok: true, status: 200,
           json: () => Promise.resolve({ updated: "2026-07-19T00:00:00Z", items: [
-            { title: "인천공항 화물터미널 보안 강화", link: "https://news.example/1", date: "2026-07-19T01:00:00Z", src: "보안뉴스", cat: "aviation" },
-            { title: "신종 랜섬웨어 주의보", link: "https://news.example/2", date: "2026-07-18T01:00:00Z", src: "보안뉴스", cat: "cyber" }
+            { title: "공항 보안검색 강화 대책", link: "https://news.example/1", date: "2026-07-19T01:00:00Z", src: "보안뉴스", cat: "aviation" },
+            { title: "인천공항 화물터미널 보안 점검", link: "https://news.example/2", date: "2026-07-18T02:00:00Z", src: "보안뉴스", cat: "cargo" },
+            { title: "신종 랜섬웨어 주의보", link: "https://news.example/3", date: "2026-07-18T01:00:00Z", src: "보안뉴스", cat: "cyber" }
           ] })
         });
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
@@ -3553,11 +3554,21 @@ function makeFetchStub(server) {
       go(e, "dashboard");
       await new Promise(r => setTimeout(r, 20));
       const box = q(e, "#news-box");
-      ok(box.textContent.includes("인천공항 화물터미널 보안 강화"), "항공 기사 표시");
-      ok(box.textContent.includes("항공") && box.textContent.includes("사이버"), "분류 배지");
+      ok(box.textContent.includes("공항 보안검색 강화 대책"), "항공 기사 표시");
+      ok(box.textContent.includes("항공") && box.textContent.includes("화물") && box.textContent.includes("사이버"), "3분류 배지");
       const a = box.querySelector(".news-row");
       eq(a.getAttribute("target"), "_blank", "새 창 링크");
       ok(e.w.localStorage.getItem("semis2:news"), "로컬 캐시 저장");
+      // 카테고리 필터: 화물 → 화물 기사만, 전체 → 3건 복원
+      const btn = (c) => qa(e, "[data-news-cat]").find(b => b.dataset.newsCat === c);
+      btn("cargo").click();
+      ok(box.textContent.includes("인천공항 화물터미널 보안 점검"), "화물 필터: 화물 기사 표시");
+      ok(!box.textContent.includes("랜섬웨어") && !box.textContent.includes("보안검색 강화 대책"), "화물 필터: 타 분류 숨김");
+      ok(btn("cargo").classList.contains("on") && !btn("all").classList.contains("on"), "필터 버튼 활성 표시");
+      btn("cyber").click();
+      ok(box.textContent.includes("랜섬웨어") && !box.textContent.includes("화물터미널"), "사이버 필터 전환");
+      btn("all").click();
+      eq(box.querySelectorAll(".news-row").length, 3, "전체 복원");
     });
 
     await ta("DB05 뉴스 카드: 네트워크 실패 시 만료 캐시 폴백", async () => {

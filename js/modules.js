@@ -118,7 +118,13 @@
               <div id="upcoming-box"></div>
             </div>` : "",
         news: guest && cardVis("news") && window.SemisNews ? `<div class="card">
-              <div class="card-title">🗞 항공 · 사이버 보안 뉴스 <span class="spacer"></span>
+              <div class="card-title">🗞 보안 뉴스 <span class="spacer"></span>
+                <span class="news-cats">
+                  <button class="news-cat on" data-news-cat="all">전체</button>
+                  <button class="news-cat" data-news-cat="aviation">항공</button>
+                  <button class="news-cat" data-news-cat="cargo">화물</button>
+                  <button class="news-cat" data-news-cat="cyber">사이버</button>
+                </span>
                 <a class="btn btn-ghost btn-sm" href="https://www.boannews.com/" target="_blank" rel="noopener">보안뉴스 ↗</a>
               </div>
               <div id="news-box"></div>
@@ -129,10 +135,10 @@
             </div>` : ""
       };
       const colL = guest
-        ? C.notice + C.news + C.insight                                // guest 좌측: 공지 → 뉴스 → 인사이트
+        ? C.notice + C.news                                            // guest 좌측: 공지 → 뉴스
         : C.notice + C.cares + C.equip;                                // 좌측: 공지 → CARES 환경센서 → 고장신고
       const colR = guest
-        ? C.quick + C.cares + C.expiry                                 // guest 우측: 바로가기 → 환경센서 → 만료
+        ? C.quick + C.cares + C.insight + C.expiry                     // guest 우측: 바로가기 → 환경센서 → 인사이트 → 만료
         : C.level + C.quick + C.upcoming + C.insp + C.expiry + C.certs; // 우측: 등급→바로가기→일정→점검→만료→이수증
       root.innerHTML = `
         <div class="page-head">

@@ -919,3 +919,11 @@ a.ct-tel:hover { color: var(--primary); }
 }
 .ins-liq b { font-size: 1.05rem; color: var(--primary); }
 .ins-liq span { font-size: .7rem; color: var(--text-2); line-height: 1.35; }
+
+/* 뉴스 카테고리 필터 (카드 헤더) */
+.news-cats { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+.news-cat {
+  padding: 3px 9px; border: 1px solid var(--border); border-radius: 12px;
+  background: transparent; color: var(--text-2); font-size: .72rem; font-weight: 600; cursor: pointer;
+}
+.news-cat.on { background: var(--primary); border-color: var(--primary); color: #fff; }
