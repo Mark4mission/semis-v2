@@ -24,6 +24,7 @@
     certs:    "mgr",  // 🎖 교육 이수증 — 보안사항: 보안관리자 이상 열람 (v2.15)
     quick:    "all",  // ⚡ 바로가기
     upcoming: "mgr",  // 📅 다가오는 일정
+    kpi:      "hq",   // 📈 KPI 진행현황 (v2.20 — 항공보안HQ 이상)
     news:     "all",  // 🗞 보안 뉴스 (v2.19 — guest 경량 레이아웃 전용 표시)
     insight:  "all"   // 📊 항공보안 인사이트 (v2.19 — guest 경량 레이아웃 전용 표시)
   };
@@ -117,6 +118,11 @@
                 <button class="btn btn-ghost btn-sm" id="btn-go-schedule">전체보기</button></div>
               <div id="upcoming-box"></div>
             </div>` : "",
+        kpi: cardVis("kpi") && window.SemisKpi ? `<div class="card">
+              <div class="card-title">📈 KPI 진행현황 <span class="spacer"></span>
+                <button class="btn btn-ghost btn-sm" id="btn-go-kpi">전체보기</button></div>
+              <div id="kpi-box"></div>
+            </div>` : "",
         news: guest && cardVis("news") && window.SemisNews ? `<div class="card">
               <div class="card-title">🗞 보안 뉴스 <span class="spacer"></span>
                 <span class="news-cats">
@@ -139,7 +145,7 @@
         : C.notice + C.cares + C.equip;                                // 좌측: 공지 → CARES 환경센서 → 고장신고
       const colR = guest
         ? C.quick + C.cares + C.insight + C.expiry                     // guest 우측: 바로가기 → 환경센서 → 인사이트 → 만료
-        : C.level + C.quick + C.upcoming + C.insp + C.expiry + C.certs; // 우측: 등급→바로가기→일정→점검→만료→이수증
+        : C.level + C.quick + C.upcoming + C.kpi + C.insp + C.expiry + C.certs; // 우측: 등급→바로가기→일정→KPI→점검→만료→이수증
       root.innerHTML = `
         <div class="page-head">
           <div class="page-title">🏠 대시보드</div>
@@ -301,6 +307,12 @@
       if (window.SemisNews) {
         if ($("#news-box")) SemisNews.renderNews($("#news-box"));
         if ($("#insight-box")) SemisNews.renderInsight($("#insight-box"));
+      }
+
+      // KPI 진행현황 위젯 (v2.20, hq 이상)
+      if (window.SemisKpi && $("#kpi-box")) {
+        SemisKpi.renderDash($("#kpi-box"));
+        if ($("#btn-go-kpi")) $("#btn-go-kpi").onclick = () => SeMIS.navigate("kpi");
       }
 
       // CARES 환경센서 위젯

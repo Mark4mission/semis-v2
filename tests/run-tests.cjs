@@ -29,6 +29,7 @@ const vtJS = read("js/vault.js");
 const caresJS = read("js/cares.js");
 const newsJS = read("js/news.js");
 const searchJS = read("js/search.js");
+const kpiJS = read("js/kpi.js");
 const syncJS = read("js/sync.js");
 const HTML = read("index.html").replace(/<script[\s\S]*?<\/script>/g, "");
 
@@ -64,7 +65,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + searchJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) { S.boot(); if (w.SemisSearch) w.SemisSearch.init(); }
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -1889,7 +1890,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "billing,branches,certOpts,certs,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
+    eq(keys, "billing,branches,certOpts,certs,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,kpis,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -3502,13 +3503,13 @@ function makeFetchStub(server) {
       });
     };
 
-    t("DB01 카드 순서(mgr+): 좌 공지→환경센서→고장신고 / 우 등급→바로가기→일정→점검→만료→이수증", () => {
+    t("DB01 카드 순서(mgr+): 좌 공지→환경센서→고장신고 / 우 등급→바로가기→일정→KPI→점검→만료→이수증", () => {
       const e = makeEnv();
       loginAs(e, "hq");
       go(e, "dashboard");
       assertOrder(colTitles(e, 0), ["공지사항", "CARES 환경센서", "보안장비 · 고장신고"], "좌측");
       assertOrder(colTitles(e, 1),
-        ["보안등급", "바로가기", "다가오는 일정", "보안점검 실적", "만료 · 점검 도래", "교육 이수증"], "우측");
+        ["보안등급", "바로가기", "다가오는 일정", "KPI 진행현황", "보안점검 실적", "만료 · 점검 도래", "교육 이수증"], "우측");
       ok(!q(e, "#news-box") && !q(e, "#insight-box"), "mgr+에는 뉴스/인사이트 카드 없음");
     });
 
@@ -3596,6 +3597,164 @@ function makeFetchStub(server) {
       loginAs(e, "manager"); // rank 2 — guest 아님
       go(e, "dashboard");
       ok(!q(e, "#news-box"), "manager: 뉴스 카드 미표시(경량 전용)");
+    });
+  }
+
+  /* ══════════ [K] KPI 현황 (v2.20) ══════════ */
+  {
+    t("K01 시드: kpis 컨테이너 + CSI 3건(L1/C6-1/C6-2) 생성", () => {
+      const e = makeEnv();
+      const K = e.S.data.kpis;
+      ok(K && Array.isArray(K.items), "kpis.items 배열");
+      eq(K.items.length, 3, "KPI 3건");
+      eq(K.items.map(x => x.id).join(","), "L1,C6-1,C6-2", "ID 순서");
+      ok(K.items.every(x => x.title && x.leader && x.start && x.end && x.actions.length), "필수 필드");
+    });
+
+    t("K02 시드: 액션 상태값은 정의된 8종만 사용 + id 유일", () => {
+      const e = makeEnv();
+      const ST = Object.keys(e.w.SemisKpi.ST_META);
+      const all = [];
+      e.S.data.kpis.items.forEach(k => k.actions.forEach(a => all.push(a)));
+      ok(all.every(a => ST.includes(a.st)), "상태값 유효");
+      eq(new Set(all.map(a => a.id)).size, all.length, "액션 id 유일");
+      ok(all.every(a => !a.ps || !a.pe || a.ps <= a.pe), "계획 시작≤종료");
+    });
+
+    t("K03 시드: 원본 엑셀 대비 건수/상태 (L1=18건, C6-2=9건, C6-1 보완 4건)", () => {
+      const e = makeEnv();
+      const K = e.w.SemisKpi;
+      const [l1, c61, c62] = e.S.data.kpis.items;
+      eq(l1.actions.length, 18, "L1 총 18건");
+      eq(K.stats(l1).c["지연완료"], 8, "L1 지연완료 8");
+      eq(K.stats(l1).c["미실행"], 6, "L1 미실행 6");
+      eq(K.stats(l1).c["완료지연"], 2, "L1 완료지연 2");
+      eq(K.stats(l1).c["실행대기"], 2, "L1 실행대기 2");
+      eq(c62.actions.length, 9, "C6-2 총 9건");
+      eq(K.stats(c62).done, 4, "C6-2 완료 4");
+      eq(c61.actions.filter(a => a.added).length, 4, "C6-1 보완 항목 4건");
+      ok(c61.actions.some(a => a.phase === "관리증진 종합시스템 구축"), "C6-1 빈 Sub과제 보완");
+    });
+
+    t("K04 메뉴: kpi 모듈 메뉴 자동 삽입 (vis=hq)", () => {
+      const e = makeEnv();
+      const mn = e.S.data.menus.find(m => m.type === "module" && m.module === "kpi");
+      ok(mn, "메뉴 존재");
+      eq(mn.vis, "hq", "항공보안HQ 이상");
+    });
+
+    t("K05 구버전 데이터(kpis 없음) 마이그레이션: 시드 + 메뉴 삽입", () => {
+      const e0 = makeEnv();
+      const old = JSON.parse(JSON.stringify(e0.S.data));
+      delete old.kpis;
+      old.menus = old.menus.filter(m => m.module !== "kpi");
+      const e = makeEnv({ preData: old });
+      ok(e.S.data.kpis && e.S.data.kpis.items.length === 3, "시드 재생성");
+      ok(e.S.data.menus.some(m => m.module === "kpi"), "메뉴 재삽입");
+    });
+
+    t("K06 권한: hq는 화면 렌더, manager는 잠금 안내", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "kpi");
+      ok(q(e, ".kpi-pick"), "hq: KPI 선택 버튼 렌더");
+      ok(qa(e, ".kpi-pick-btn").length === 3, "3건 선택지");
+      const e2 = makeEnv();
+      loginAs(e2, "manager");
+      go(e2, "kpi");
+      ok(!q(e2, ".kpi-pick"), "manager: 미렌더");
+    });
+
+    t("K07 선택 전환: C6-1 클릭 시 해당 과제 표시 + 선택 유지", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "kpi");
+      qa(e, ".kpi-pick-btn").find(b => b.dataset.kpi === "C6-1").click();
+      ok(q(e, ".kpi-pick-btn.on").dataset.kpi === "C6-1", "선택 표시");
+      ok(q(e, "#view").textContent.includes("예방정비"), "C6-1 내용 표시");
+      eq(e.w.localStorage.getItem("semis2:kpiSel"), "C6-1", "선택 저장");
+    });
+
+    t("K08 통계: stats/timePct/nextItems 계산", () => {
+      const e = makeEnv();
+      const K = e.w.SemisKpi;
+      const l1 = e.S.data.kpis.items[0];
+      const s = K.stats(l1);
+      eq(s.total, 18); eq(s.done, 8);
+      eq(s.pct, Math.round(8 / 18 * 100), "완료율");
+      const tp = K.timePct(l1);
+      ok(tp >= 0 && tp <= 100, "기간 경과율 범위");
+      const nx = K.nextItems(l1);
+      ok(nx.length === 8, "미착수 8건(미실행6+실행대기2)");
+      ok(nx.every((x, i) => i === 0 || nx[i - 1].ps <= x.ps), "시작일순 정렬");
+    });
+
+    t("K09 편집: hq가 상태/실적 수정 → 저장 + updated 갱신", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "kpi");
+      const aid = e.S.data.kpis.items[0].actions[0].id;
+      q(e, `.kpi-row[data-act="${aid}"]`).click();
+      ok(q(e, "#kf-st"), "수정 폼 표시");
+      q(e, "#kf-st").value = "정상완료";
+      q(e, "#kf-risk").value = "테스트 메모";
+      q(e, "#kf-save").click();
+      const a2 = e.S.data.kpis.items[0].actions[0];
+      eq(a2.st, "정상완료", "상태 저장");
+      eq(a2.risk, "테스트 메모", "메모 저장");
+      ok(a2.edited && a2.edited.by === "Thq", "수정자 기록");
+    });
+
+    t("K10 대시보드 카드: hq는 표시(3건 + 이동), mgr는 미표시", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "dashboard");
+      ok(q(e, "#kpi-box"), "hq: KPI 카드 표시");
+      eq(qa(e, "#kpi-box .kpi-dash-item").length, 3, "3건 렌더");
+      ok(q(e, "#kpi-box .kpi-stack"), "누적 그래프 렌더");
+      const e2 = makeEnv();
+      loginAs(e2, "manager");
+      go(e2, "dashboard");
+      ok(!q(e2, "#kpi-box"), "manager: 미표시");
+    });
+
+    t("K11 대시보드 → KPI 이동: 항목 클릭 시 선택 반영", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "dashboard");
+      qa(e, "#kpi-box .kpi-dash-item").find(x => x.dataset.kpiGo === "C6-2").click();
+      e.S.renderView(); // hashchange 대체
+      eq(e.w.localStorage.getItem("semis2:kpiSel"), "C6-2", "선택 저장");
+      ok(q(e, ".kpi-pick-btn.on") && q(e, ".kpi-pick-btn.on").dataset.kpi === "C6-2", "해당 KPI 표시");
+    });
+
+    t("K12 동기화: kpis가 SYNC_KEYS에 포함", () => {
+      const e = makeEnv();
+      ok(e.Sync.SYNC_KEYS.includes("kpis"), "kpis 동기화 대상");
+    });
+
+    t("K13 통합검색: hq는 KPI 액션 검색 가능, manager는 차단", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      const r = e.w.SemisSearch.search("트러블슈팅");
+      ok(r.some(x => x.group === "KPI 현황"), "hq: 검색 결과");
+      const e2 = makeEnv();
+      loginAs(e2, "manager");
+      const r2 = e2.w.SemisSearch.search("트러블슈팅");
+      ok(!r2.some(x => x.group === "KPI 현황"), "manager: 차단");
+    });
+
+    t("K14 관리자 시드 재적용: 수정 내용 초기화", () => {
+      const e = makeEnv();
+      loginAs(e, "admin");
+      go(e, "kpi");
+      e.S.data.kpis.items[0].actions[0].st = "정상완료";
+      e.S.saveSilent();
+      const btn = q(e, "#kpi-reseed");
+      ok(btn, "재적용 버튼 표시(admin)");
+      btn.click();
+      qa(e, "#modal-box .btn").find(b => b.dataset.act === "ok").click();
+      eq(e.S.data.kpis.items[0].actions[0].st, "지연완료", "시드로 복원");
     });
   }
 

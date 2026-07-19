@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.19.0";
+  const VERSION = "2.20.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -106,6 +106,7 @@ const SeMIS = (() => {
     return [
       m("dashboard", "대시보드", "🏠", "dashboard"),
       m("schedule", "일정관리", "📅", "schedule", "mgr"),
+      m("kpi", "KPI 현황", "📈", "kpi", "hq"),
 
       g("grp-level", "항공보안등급"),
       lk("lvl-intro", "국가 보안등급 소개", "📖", "https://sites.google.com/view/kjsemis/%ED%95%AD%EA%B3%B5%EB%B3%B4%EC%95%88%EB%93%B1%EA%B8%89/%EA%B5%AD%EA%B0%80-%ED%95%AD%EA%B3%B5%EB%B3%B4%EC%95%88%EB%93%B1%EA%B8%89-%EC%86%8C%EA%B0%9C", "grp-level"),
@@ -441,6 +442,18 @@ const SeMIS = (() => {
       DATA.certOpts.roles = ["보안책임자", "보안감독자", "보안검색감독자", "기타"];
     if (!DATA.certOpts.orgs.length)
       DATA.certOpts.orgs = ["한국항공안전교육원", "극동대 항공안전교육원", "KAC 항공보안교육", "항공보안아카데미"];
+    // v2.20: KPI 현황 (CSI 과제 진도관리) — 시드 + 메뉴 자동 삽입 (일정관리 다음, hq 전용)
+    if ((!DATA.kpis || !Array.isArray(DATA.kpis.items) || !DATA.kpis.items.length)
+        && typeof window !== "undefined" && window.SemisKpi) {
+      DATA.kpis = window.SemisKpi.seedKpis();
+    }
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "kpi")) {
+      const sc = DATA.menus.find(m => m && m.type === "module" && m.module === "schedule");
+      const seq = sc ? (sc.seq || 0) + 0.25
+        : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
+      DATA.menus.push({ id: "kpi", seq, type: "module", label: "KPI 현황",
+        icon: "📈", module: "kpi", vis: "hq", parent: null });
+    }
     return JSON.stringify(DATA) !== before;
   }
   const saveHooks = [];
