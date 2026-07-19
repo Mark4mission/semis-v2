@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.17.2";
+  const VERSION = "2.18.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -715,6 +715,11 @@ const SeMIS = (() => {
   /* ─────────── 헤더 위젯 ─────────── */
   function renderHeader() {
     $("#user-chip").textContent = currentUser.name + " · " + (ROLE_LABEL[currentUser.role] || currentUser.role);
+    // v2.18: 전역 검색 — vendor(협력업체) 계정은 검색 미노출
+    const isVendor = currentUser.role === "vendor";
+    const sw = $("#hdr-search-wrap"), sb = $("#hdr-search-btn");
+    if (sw) sw.classList.toggle("vendor-hide", isVendor);
+    if (sb) sb.classList.toggle("vendor-hide", isVendor);
     renderSecBadge();
     $("#app-version").textContent = "v" + VERSION;
   }

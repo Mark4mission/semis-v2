@@ -40,7 +40,14 @@
       <span class="brand-text">SeMIS <b>v2</b></span>
       <span class="brand-sub">보안종합정보시스템</span>
     </a>
+    <div id="hdr-search-wrap" class="hdr-search">
+      <span class="hdr-search-ico">🔍</span>
+      <input id="hdr-search" type="search" placeholder="통합 검색 — 메뉴 · 문서 · 기록 · 링크 (Ctrl+K)"
+        autocomplete="off" aria-label="통합 검색">
+      <div id="hdr-search-pop" class="search-pop hidden"></div>
+    </div>
     <div class="header-right">
+      <button id="hdr-search-btn" class="icon-btn search-btn-m" aria-label="검색" title="통합 검색">🔍</button>
       <button id="sync-status" class="sync-dot" title="동기화 상태"></button>
       <span id="sec-level-badge" class="sec-badge" title="현재 국가 항공보안등급"></span>
       <span id="user-chip" class="user-chip"></span>
@@ -90,9 +97,11 @@
 <script src="js/billing.js"></script>
 <script src="js/vault.js"></script>
 <script src="js/cares.js"></script>
+<script src="js/search.js"></script>
 <script src="js/sync.js"></script>
 <script>
   SeMIS.boot();
+  if (window.SemisSearch) SemisSearch.init();
   if (window.SemisSync) SemisSync.init();
   if (window.SemisCalendar) SemisCalendar.startReminders();
 </script>

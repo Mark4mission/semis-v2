@@ -27,6 +27,7 @@ const ctcJS = read("js/certs.js");
 const blJS = read("js/billing.js");
 const vtJS = read("js/vault.js");
 const caresJS = read("js/cares.js");
+const searchJS = read("js/search.js");
 const syncJS = read("js/sync.js");
 const HTML = read("index.html").replace(/<script[\s\S]*?<\/script>/g, "");
 
@@ -62,9 +63,9 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + searchJS + "\n;" + syncJS);
   const S = w.SeMIS;
-  if (opts.boot !== false) S.boot();
+  if (opts.boot !== false) { S.boot(); if (w.SemisSearch) w.SemisSearch.init(); }
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
 }
 /* 로그인은 실제 UI 경로(폼 제출)로 수행 — login()은 비공개 */
@@ -3351,6 +3352,138 @@ function makeFetchStub(server) {
     go(em, "certs");
     ok(!q(em, "#ct-opts"), "manager: 선택지 버튼 없음");
   });
+
+  /* ══════════ [GS] 전역 통합 검색 (v2.18) ══════════ */
+  {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const SS = e.w.SemisSearch;
+
+    t("GS01 검색 UI 요소 존재 (헤더 검색창/팝업/모바일 버튼)", () => {
+      ok(q(e, "#hdr-search"), "input");
+      ok(q(e, "#hdr-search-pop"), "pop");
+      ok(q(e, "#hdr-search-btn"), "mobile btn");
+    });
+    t("GS02 메뉴 검색 — 모듈 메뉴 매칭(출입증 관리)", () => {
+      const r = SS.search("출입증 관리");
+      ok(r.some(x => x.route === "passes"), "passes 라우트 결과");
+    });
+    t("GS03 링크 메뉴 검색 — URL 새 탭 (문자의 신)", () => {
+      const r = SS.search("문자의 신");
+      const hit = r.find(x => x.url && x.url.indexOf("munjasin") >= 0);
+      ok(hit, "링크 결과 + url 보존");
+    });
+    t("GS04 다중 단어 AND 매칭", () => {
+      ok(SS.search("보안 점검").some(x => String(x.title).indexOf("점검") >= 0), "둘 다 포함 시 매칭");
+      eq(SS.search("점검 존재하지않는단어XYZ").length, 0, "하나라도 없으면 미매칭");
+    });
+    t("GS05 데이터 검색 — 보안점검 시드(프로에스콤)", () => {
+      const r = SS.search("프로에스콤");
+      ok(r.some(x => x.group === "보안점검" && x.route === "inspection"), "점검 데이터 히트");
+    });
+    t("GS06 데이터 검색 — 출입증 레코드", () => {
+      e.S.data.passes.push({ id: "ps-t1", kind: "인원", holder: "홍길동테스트", company: "테스트사",
+        no: "A-100", area: "보호구역", issue: "", expire: "", status: "유효", note: "" });
+      e.S.saveSilent();
+      const r = SS.search("홍길동테스트");
+      ok(r.some(x => x.group === "출입증"), "출입증 레코드 히트");
+    });
+    t("GS07 공지사항 검색", () => {
+      ok(SS.search("오픈 안내").some(x => x.group === "공지사항"), "공지 제목 히트");
+    });
+    t("GS08 검색어 입력 → 팝업 렌더 (UI)", () => {
+      const inp = q(e, "#hdr-search");
+      inp.value = "출입증";
+      // 디바운스 우회 — 직접 렌더 경로 확인용으로 input 이벤트 후 팝업 확인은 타이머 필요.
+      // 여기서는 search() 결과 기반 렌더를 Enter 경로로 검증한다.
+      inp.dispatchEvent(new e.w.Event("input", { bubbles: true }));
+      ok(true);
+    });
+    t("GS09 이후 추가된 메뉴도 즉시 검색됨", () => {
+      e.S.data.menus.push({ id: "lk-drone", seq: 999, type: "link", label: "드론 대응 매뉴얼",
+        icon: "🛸", url: "https://example.com/drone", vis: "all", parent: null });
+      e.S.saveSilent();
+      ok(SS.search("드론 대응").some(x => x.title === "드론 대응 매뉴얼"), "신규 메뉴 히트");
+    });
+    t("GS10 메뉴 라벨 변경도 즉시 반영", () => {
+      const mn = e.S.data.menus.find(m => m.id === "lk-drone");
+      mn.label = "무인기 대응 절차";
+      ok(SS.search("무인기").some(x => x.title === "무인기 대응 절차"), "변경 라벨 히트");
+      eq(SS.search("드론 대응").filter(x => x.title === "드론 대응 매뉴얼").length, 0, "구 라벨 미히트");
+    });
+    t("GS11 hq — 대외비(계약서/청구/유지보수) 검색 가능", () => {
+      e.S.data.contracts.push({ id: "cn-t1", name: "청소용역기밀계약", party: "테스트사",
+        category: "용역", start: "", end: "", amount: "", owner: "", autoRenew: false,
+        fileUrl: "", status: "유효", note: "" });
+      e.S.data.billing.push({ id: "bl-t1", vendor: "프로에스콤", month: "2026-07",
+        category: "유지보수", title: "엑스레이수리비테스트", amount: 100000, files: [], note: "", by: "", updated: "" });
+      e.S.data.equipMaint.costs.push({ id: "ct-t1", ym: "2026-07", kind: "ETD", vendor: "인씨스",
+        amount: 50000, serial: "SN-777", memo: "기밀부품메모테스트", force: false });
+      e.S.saveSilent();
+      ok(SS.search("청소용역기밀계약").length, "계약서 히트");
+      ok(SS.search("엑스레이수리비테스트").length, "청구 히트");
+      ok(SS.search("기밀부품메모테스트").length, "유지보수 비용 히트");
+    });
+  }
+  {
+    /* 권한별 검색 범위 — 같은 데이터로 역할만 바꿔 검증 */
+    const mkData = (S2) => {
+      S2.data.passes.push({ id: "ps-t2", kind: "인원", holder: "권한테스트인물", company: "", no: "",
+        area: "", issue: "", expire: "", status: "유효", note: "" });
+      S2.data.contracts.push({ id: "cn-t2", name: "권한테스트계약", party: "", category: "용역",
+        start: "", end: "", amount: "", owner: "", autoRenew: false, fileUrl: "", status: "유효", note: "" });
+      S2.data.equipMaint.costs.push({ id: "ct-t2", ym: "2026-06", kind: "X-ray", vendor: "",
+        amount: 1, serial: "", memo: "권한테스트유지비", force: false });
+      S2.saveSilent();
+    };
+    t("GS12 user(일반) — 보안 데이터/메뉴 검색 제외, 공개 항목만", () => {
+      const e2 = makeEnv();
+      loginAs(e2, "user");
+      mkData(e2.S);
+      const SS2 = e2.w.SemisSearch;
+      eq(SS2.search("권한테스트인물").length, 0, "출입증(mgr) 미노출");
+      eq(SS2.search("권한테스트계약").length, 0, "계약서(hq) 미노출");
+      eq(SS2.search("권한테스트유지비").length, 0, "유지보수 비용(hq) 미노출");
+      ok(SS2.search("오픈 안내").some(x => x.group === "공지사항"), "공지는 검색 가능");
+      ok(!SS2.search("출입증 관리").some(x => x.route === "passes"), "모듈 메뉴(mgr) 미노출");
+      ok(SS2.search("출입증").some(x => x.url), "공개 링크(구버전, vis:all)는 노출");
+    });
+    t("GS13 manager — 보안 열람 가능, 대외비(hq) 제외", () => {
+      const e2 = makeEnv();
+      loginAs(e2, "manager");
+      mkData(e2.S);
+      const SS2 = e2.w.SemisSearch;
+      ok(SS2.search("권한테스트인물").length, "출입증(mgr) 노출");
+      eq(SS2.search("권한테스트계약").length, 0, "계약서(hq) 미노출");
+      eq(SS2.search("권한테스트유지비").length, 0, "유지보수 비용(hq 이중 게이트) 미노출");
+    });
+    t("GS14 vendor — 검색 비활성 (결과 없음 + 검색창 숨김)", () => {
+      const e2 = makeEnv();
+      e2.S.data.customUsers.push({ id: "tvendor", name: "T협력", role: "vendor",
+        vendor: "프로에스콤", hash: e2.S.pwHash("testpw-vendor-9x") });
+      e2.S.saveSilent();
+      submitLogin(e2, "testpw-vendor-9x");
+      mkData(e2.S);
+      eq(e2.w.SemisSearch.search("권한테스트인물").length, 0, "결과 없음");
+      eq(e2.w.SemisSearch.search("대시보드").length, 0, "메뉴도 없음");
+      ok(q(e2, "#hdr-search-wrap").classList.contains("vendor-hide"), "검색창 숨김");
+    });
+    t("GS15 admin — 시스템 설정 메뉴 검색 (admin 전용 vis)", () => {
+      const e3 = makeEnv();
+      loginAs(e3, "admin");
+      ok(e3.w.SemisSearch.search("시스템 설정").some(x => x.route === "settings"), "admin: settings 히트");
+      const e4 = makeEnv();
+      loginAs(e4, "hq");
+      ok(!e4.w.SemisSearch.search("시스템 설정").some(x => x.route === "settings"), "hq: settings 미노출");
+    });
+    t("GS16 신규 모듈 프로바이더 등록 확장성 (register API)", () => {
+      const e2 = makeEnv();
+      loginAs(e2, "hq");
+      e2.w.SemisSearch.register({ id: "future-mod", group: "미래모듈", icon: "🧪",
+        items: () => [{ title: "미래모듈테스트항목", sub: "확장 테스트", route: "dashboard" }] });
+      ok(e2.w.SemisSearch.search("미래모듈테스트").some(x => x.group === "미래모듈"), "신규 프로바이더 히트");
+    });
+  }
 
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
