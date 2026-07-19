@@ -3756,6 +3756,25 @@ function makeFetchStub(server) {
       go(e, "dashboard"); go(e, "kpi"); // 화면 이탈 후 복귀
       eq(e.S.data.kpis.items[0].actions[0].st, "정상완료", "수정 내용 보존");
     });
+
+    t("K15 인쇄/PDF: 버튼 노출 + printKpi가 인쇄용 iframe 생성", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "kpi");
+      ok(q(e, "#kpi-print"), "인쇄 버튼 표시");
+      // jsdom은 contentWindow.print 미구현 → 예외 없이 통과해야 함(내부 try/catch)
+      let printed = false;
+      const before = e.w.document.querySelectorAll("iframe").length;
+      // print 스텁 주입 대비: iframe 생성 여부로 검증
+      e.w.SemisKpi.printKpi("C6-1");
+      const after = e.w.document.querySelectorAll("iframe").length;
+      ok(after > before, "인쇄용 iframe 추가");
+      // 문서 내용 검증
+      const fr = Array.from(e.w.document.querySelectorAll("iframe")).pop();
+      const html = fr.contentWindow.document.documentElement.innerHTML;
+      ok(/Action Plan/.test(html) && /과제 개요/.test(html), "인쇄 문서 구성");
+      ok(html.indexOf("예방정비") >= 0, "선택 과제(C6-1) 내용 포함");
+    });
   }
 
   /* ══════════ 결과 ══════════ */

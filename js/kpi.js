@@ -287,6 +287,7 @@
             <div class="page-desc">CSI 과제 진도관리 — 기준: ${esc(kpis().updated || "")} (${esc(kpis().src || "xlsx")})</div>
           </div>
           <span class="spacer"></span>
+          <button class="btn btn-ghost btn-sm" id="kpi-print" title="현재 과제를 인쇄하거나 PDF로 저장">🖨 인쇄 / PDF</button>
         </div>
 
         <div class="kpi-pick">
@@ -395,6 +396,7 @@
       // 이벤트
       $$(".kpi-pick-btn", root).forEach(b => b.onclick = () => select(b.dataset.kpi));
       $$("[data-act]", root).forEach(el => el.onclick = () => detailModal(kpi.id, el.dataset.act, canW));
+      if ($("#kpi-print")) $("#kpi-print").onclick = () => printKpi(kpi.id);
     }
   });
 
@@ -474,6 +476,168 @@
     };
   }
 
+  /* ─────────── 인쇄 / PDF 출력 ───────────
+     화면 데이터를 A4 인쇄용 HTML 문서로 구성 → 숨김 iframe에 써서
+     브라우저 인쇄 대화상자(→ PDF로 저장) 호출. 팝업 차단 영향 없음. */
+  const P = (v) => esc(v == null ? "" : String(v)).replace(/\n/g, "<br>");
+  function printKpi(kid) {
+    const kpi = findKpi(kid);
+    if (!kpi) return;
+    const s = stats(kpi);
+    const tp = timePct(kpi);
+    const stCell = (st, added) => {
+      const m = ST_META[st] || {};
+      return `<span class="pst" style="background:${m.color || "#64748b"}">${esc(st)}</span>${added ? '<span class="padd">보완</span>' : ""}`;
+    };
+    // Action Plan 행 (Sub과제 그룹 헤더 포함)
+    let rows = "", lastPhase = null;
+    (kpi.actions || []).forEach((x, i) => {
+      if (x.phase !== lastPhase) {
+        lastPhase = x.phase;
+        const ph = (kpi.actions || []).filter(y => y.phase === x.phase);
+        const phDone = ph.filter(y => grpOf(y.st) === "done").length;
+        rows += `<tr class="pph"><td colspan="6"><b>${esc(x.phase)}</b> <span>(${phDone}/${ph.length} 완료)</span></td></tr>`;
+      }
+      const note = [x.out ? P(x.out) : "", x.risk ? '<span class="prisk">⚠ ' + P(x.risk) + "</span>" : ""].filter(Boolean).join("<br>");
+      const kids = (x.kids && x.kids.length) ? `<div class="pkids">${x.kids.map(t => "· " + esc(t)).join("<br>")}</div>` : "";
+      rows += `<tr>
+        <td class="pc-st">${stCell(x.st, x.added)}</td>
+        <td class="pc-t">${esc(x.title)}${kids}</td>
+        <td class="pc-o">${esc(x.main || "-")}${x.sub ? "<br><i>" + esc(x.sub) + "</i>" : ""}</td>
+        <td class="pc-d">${esc(x.ps || "")}${x.pe ? "<br>~ " + esc(x.pe) : ""}</td>
+        <td class="pc-d">${x.rs ? esc(x.rs) + (x.re ? "<br>~ " + esc(x.re) : "<br>~ 진행") : "-"}</td>
+        <td class="pc-n">${note}</td>
+      </tr>`;
+    });
+    const chips = ST_ORDER.filter(t => s.c[t]).map(t =>
+      `<span class="pchip"><i style="background:${ST_META[t].color}"></i>${esc(t)} <b>${s.c[t]}</b></span>`).join("");
+    const defBlock = (lb, v) => v ? `<tr><th>${esc(lb)}</th><td>${P(v)}</td></tr>` : "";
+
+    const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+<title>KPI 과제정의서 · ${esc(kpi.no)} ${esc(kpi.short || kpi.title)}</title>
+<style>
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  body { font-family: -apple-system, "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif; color: #0f172a; font-size: 10px; line-height: 1.5; margin: 0; }
+  h1 { font-size: 16px; margin: 0 0 2px; }
+  .sub { color: #475569; font-size: 11px; margin-bottom: 10px; }
+  .doc-head { border-bottom: 2px solid #1d4ed8; padding-bottom: 8px; margin-bottom: 12px; }
+  .doc-head .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 10px; color: #334155; margin-top: 6px; }
+  .doc-head .meta b { color: #0f172a; }
+  .st-on { display: inline-block; padding: 1px 8px; border-radius: 10px; background: #16a34a; color: #fff; font-weight: 700; font-size: 9.5px; }
+  .sec { margin: 12px 0; page-break-inside: avoid; }
+  .sec-h { font-size: 11px; font-weight: 800; color: #1d4ed8; border-left: 3px solid #1d4ed8; padding-left: 6px; margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  .stat { display: flex; gap: 6px; margin-bottom: 8px; }
+  .stat > div { flex: 1; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 4px; text-align: center; }
+  .stat b { display: block; font-size: 15px; }
+  .stat span { font-size: 8.5px; color: #475569; }
+  .bars { display: flex; gap: 14px; margin-bottom: 6px; }
+  .bars > div { flex: 1; }
+  .bars .lbl { font-size: 8.5px; color: #475569; font-weight: 700; margin-bottom: 2px; }
+  .bar { height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 9px; }
+  .pchip i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; vertical-align: middle; margin-right: 2px; }
+  .def th { text-align: left; width: 90px; vertical-align: top; padding: 4px 6px; background: #f1f5f9; border: 1px solid #e2e8f0; font-size: 9.5px; color: #334155; }
+  .def td { vertical-align: top; padding: 4px 8px; border: 1px solid #e2e8f0; }
+  ul.kp { margin: 0; padding-left: 16px; }
+  ul.kp li { margin-bottom: 3px; }
+  .badd { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; background: #fef3c7; color: #b45309; font-size: 8px; font-weight: 700; }
+  .two { display: flex; gap: 12px; }
+  .two > div { flex: 1; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; }
+  .ap th { background: #1d4ed8; color: #fff; padding: 5px 6px; text-align: left; font-size: 9px; border: 1px solid #1d4ed8; }
+  .ap td { padding: 4px 6px; border: 1px solid #e2e8f0; vertical-align: top; }
+  .ap tr { page-break-inside: avoid; }
+  .ap .pph td { background: #eef2ff; font-size: 9.5px; padding: 4px 6px; }
+  .ap .pph span { color: #64748b; font-weight: 600; }
+  .pc-st { width: 52px; } .pc-o { width: 66px; font-size: 9px; } .pc-d { width: 62px; font-size: 8.5px; white-space: nowrap; color: #334155; }
+  .pc-n { width: 150px; font-size: 8.5px; color: #334155; }
+  .pc-t { font-size: 9.5px; }
+  .pkids { color: #64748b; font-size: 8px; margin-top: 2px; }
+  .pst { display: inline-block; padding: 1px 5px; border-radius: 8px; color: #fff; font-size: 8px; font-weight: 700; white-space: nowrap; }
+  .padd { display: inline-block; margin-top: 2px; padding: 0 4px; border-radius: 6px; background: #fef3c7; color: #b45309; font-size: 7.5px; font-weight: 700; }
+  .prisk { color: #dc2626; }
+  .foot { margin-top: 14px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 8px; color: #94a3b8; display: flex; justify-content: space-between; }
+</style></head>
+<body>
+  <div class="doc-head">
+    <h1>${esc(kpi.title)}</h1>
+    <div class="sub">CSI 과제정의서 · 진도현황</div>
+    <div class="meta">
+      <span><b>과제 No.</b> ${esc(kpi.no)}</span>
+      <span><b>상태</b> <span class="st-on">${esc(kpi.status)}</span></span>
+      <span><b>과제 리더</b> ${esc(kpi.leader)}</span>
+      <span><b>기간</b> ${esc(period(kpi.start, kpi.end))}</span>
+      <span><b>완료율</b> ${s.pct}% (${s.done}/${s.total})</span>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="stat">
+      <div><b>${s.pct}%</b><span>완료율 (${s.done}/${s.total})</span></div>
+      <div><b style="color:#2563eb">${s.run}</b><span>진행 중</span></div>
+      <div><b style="color:#dc2626">${s.risk}</b><span>주의</span></div>
+      <div><b style="color:#64748b">${s.wait}</b><span>실행 대기</span></div>
+    </div>
+    <div class="bars">
+      <div><div class="lbl">진척률 (완료 ${s.done}/${s.total})</div><div class="bar"><i style="width:${s.pct}%;background:#16a34a"></i></div></div>
+      <div><div class="lbl">기간 경과율</div><div class="bar"><i style="width:${tp}%;background:#94a3b8"></i></div></div>
+    </div>
+    <div class="chips">${chips}</div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-h">과제 개요</div>
+    <table class="def">
+      ${defBlock("개선 목표", kpi.goal)}
+      ${defBlock("예상 효과", kpi.effect)}
+      ${defBlock("추진 배경 · Issue", kpi.bg)}
+      ${defBlock("과제 Scope", kpi.scope)}
+      <tr><th>추진 조직</th><td><b>리더</b> ${esc(kpi.leader)} · ${kpi.team.map(esc).join(" · ")}</td></tr>
+    </table>
+  </div>
+
+  <div class="sec">
+    <div class="two">
+      <div><div class="sec-h">Key Progress &amp; Issues</div>
+        ${(kpi.kp || []).length ? `<ul class="kp">${kpi.kp.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "<i>기록 없음</i>"}</div>
+      <div><div class="sec-h">Next Steps &amp; Make-up Plan${kpi.nextAdded ? '<span class="badd">보완</span>' : ""}</div>
+        ${(kpi.next || []).length ? `<ul class="kp">${kpi.next.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "<i>기록 없음</i>"}</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-h">Action Plan · 진도현황 (총 ${s.total}건)</div>
+    <table class="ap">
+      <thead><tr><th>상태</th><th>Action Plan</th><th>담당</th><th>계획</th><th>실적</th><th>목표·산출물 / 위험</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+
+  <div class="foot">
+    <span>에어제타 보안종합정보시스템(SeMIS v2) · KPI 현황</span>
+    <span>기준 ${esc(kpis().updated || "")} · 출력 ${esc(todayISO())}${SeMIS.user ? " · " + esc(SeMIS.user.name) : ""}</span>
+  </div>
+</body></html>`;
+
+    try {
+      toast("인쇄 문서 준비 중…");
+      const fr = document.createElement("iframe");
+      fr.style.cssText = "position:fixed;right:0;bottom:0;width:2px;height:2px;border:0;visibility:hidden";
+      document.body.appendChild(fr);
+      const doc = fr.contentWindow.document;
+      doc.open(); doc.write(html); doc.close();
+      const fire = () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { /* 무시 */ } };
+      // 폰트/레이아웃 안정화 후 인쇄
+      if (fr.contentWindow.document.readyState === "complete") setTimeout(fire, 300);
+      else fr.onload = () => setTimeout(fire, 300);
+      setTimeout(() => { try { fr.remove(); } catch (e) { /* 무시 */ } }, 60000);
+    } catch (e) {
+      toast("인쇄 대화상자를 열 수 없습니다.", true);
+    }
+  }
+
   /* ─────────── 대시보드 위젯 ─────────── */
   function renderDash(el) {
     const list = kpis().items;
@@ -523,5 +687,5 @@
     });
   }
 
-  window.SemisKpi = { seedKpis, stats, timePct, nextItems, attentionItems, renderDash, ST_META, ST_LIST };
+  window.SemisKpi = { seedKpis, stats, timePct, nextItems, attentionItems, renderDash, printKpi, ST_META, ST_LIST };
 })();
