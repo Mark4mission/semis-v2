@@ -269,6 +269,17 @@
   let fAssignee = ui().calAssignee || "";
   let fHideDone = !!ui().calHideDone;
   let dragCtx = null;
+  let fullscreen = false; // 전체화면(넓게 보기) 모드 — 세션 내 임시 상태
+
+  // 전체화면: Esc 로 해제. 단, 모달(일정 등록/수정 등)이 열려 있으면 모달 닫기가 우선.
+  // 캡처 단계에서 처리하여 app.js 의 모달 Esc 핸들러보다 먼저 판단.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !fullscreen) return;
+    const modal = document.getElementById("modal-overlay");
+    if (modal && !modal.classList.contains("hidden")) return; // 모달 우선
+    fullscreen = false;
+    SeMIS.renderView();
+  }, true);
 
   function setView(v) { if (VIEWS.some(x => x.id === v)) { view = v; setUi({ calView: v }); } }
   function setAnchor(iso) { if (/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) anchor = iso; }
@@ -783,7 +794,7 @@
           ${canWrite ? '<button class="btn btn-primary" id="cal-add">+ 일정 등록</button>' : ""}
           <div class="page-desc">보안점검 · 교육 · 회의 등 항공보안파트 주요 일정${canWrite ? " — 일정을 드래그하여 이동, ⇥ 핸들 드래그로 기간 조정" : ""}</div>
         </div>
-        <div class="card cal-card">
+        <div class="card cal-card${fullscreen ? " cal-fullscreen" : ""}">
           <div class="cal-toolbar">
             <button class="btn btn-ghost btn-sm" id="cal-today">오늘</button>
             <button class="btn btn-ghost btn-sm" id="cal-prev" aria-label="이전">◀</button>
@@ -792,6 +803,8 @@
             <span class="spacer"></span>
             <div class="cal-views">${VIEWS.map(v =>
               `<button class="cal-viewbtn${view === v.id ? " active" : ""}" data-view="${v.id}">${v.label}</button>`).join("")}</div>
+            ${fullscreen && canWrite ? '<button class="btn btn-primary btn-sm" id="cal-add2" title="일정 등록">+ 등록</button>' : ""}
+            <button class="btn btn-ghost btn-sm cal-fsbtn" id="cal-fs" title="${fullscreen ? "전체화면 해제 (Esc)" : "전체화면으로 넓게 보기"}" aria-label="전체화면 전환">${fullscreen ? "⤡ 해제" : "⤢ 전체화면"}</button>
           </div>
           <div class="cal-filters">
             <span class="cal-filter-label">담당자:</span>
@@ -822,9 +835,12 @@
       $("#cal-prev").onclick = () => { moveAnchor(-1); SeMIS.renderView(); };
       $("#cal-next").onclick = () => { moveAnchor(1); SeMIS.renderView(); };
       $$(".cal-viewbtn").forEach(b => b.onclick = () => { setView(b.dataset.view); SeMIS.renderView(); });
+      $("#cal-fs").onclick = () => { fullscreen = !fullscreen; SeMIS.renderView(); };
       if (canWrite) {
         $("#cal-add").onclick = () => eventForm(null, view === "day" ? anchor : todayISO());
         $("#cal-gcal").onclick = gcalForm;
+        const add2 = $("#cal-add2");
+        if (add2) add2.onclick = () => eventForm(null, view === "day" ? anchor : todayISO());
       }
 
       /* ── 필터 ── */

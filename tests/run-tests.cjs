@@ -751,6 +751,24 @@ function makeFetchStub(server) {
       tog.click();
       eq(D.schedules.find(x => x.id === "ev1").done, true);
     });
+    t("C35a 전체화면: 토글로 cal-fullscreen 진입/해제 + 그리드 유지", () => {
+      C.setAnchor("2026-07-15"); C.setView("month"); e.S.renderView();
+      ok(q(e, "#cal-fs"), "전체화면 버튼 존재");
+      ok(!q(e, ".cal-card").className.includes("cal-fullscreen"), "초기엔 일반 모드");
+      q(e, "#cal-fs").click();
+      ok(q(e, ".cal-card").className.includes("cal-fullscreen"), "전체화면 클래스 적용");
+      eq(qa(e, ".cal-cell").length, 42, "전체화면에서도 월 그리드 42셀 정상");
+      ok(q(e, "#cal-add2"), "전체화면 등록 버튼 노출(쓰기권한)");
+      q(e, "#cal-fs").click();
+      ok(!q(e, ".cal-card").className.includes("cal-fullscreen"), "재클릭 시 해제");
+      ok(!q(e, "#cal-add2"), "해제 시 전체화면 등록 버튼 숨김");
+    });
+    t("C35b 전체화면: Esc 로 해제(모달 미개방 시)", () => {
+      q(e, "#cal-fs").click();
+      ok(q(e, ".cal-card").className.includes("cal-fullscreen"), "진입 확인");
+      e.w.document.dispatchEvent(new e.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      ok(!q(e, ".cal-card").className.includes("cal-fullscreen"), "Esc 로 해제됨");
+    });
     t("C36 대시보드: 다가오는 일정 신규 스키마 표시", () => {
       const fut = C.addDays(todayOf(e), 3);
       D.schedules.push({ id: "fut1", title: "미래점검", memo: "", start: fut, end: fut, allDay: false, time: "09:00", timeEnd: "", color: "sky", done: false, assignee: "홍길동" });

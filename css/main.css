@@ -301,6 +301,32 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .cal-views { display: flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px; }
 .cal-viewbtn { border: none; background: none; padding: 5px 12px; font-size: .82rem; font-weight: 600; color: var(--text-2); border-radius: 5px; }
 .cal-viewbtn.active { background: var(--primary); color: #fff; }
+.cal-fsbtn { font-weight: 700; }
+
+/* ── 전체화면(넓게 보기) 모드 — 일정관리 전용, 다른 모듈 무영향 ── */
+.cal-card.cal-fullscreen {
+  position: fixed; inset: 0; z-index: 400;
+  margin: 0; border: none; border-radius: 0; box-shadow: none;
+  padding: 12px 18px 16px;
+  display: flex; flex-direction: column;
+  background: var(--surface); overflow: hidden;
+  animation: fade .15s ease;
+}
+.cal-fullscreen .cal-toolbar,
+.cal-fullscreen .cal-filters { flex: none; }
+.cal-fullscreen #cal-body {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; overflow: auto;
+}
+/* 월·주·2주 그리드를 세로로 꽉 채움 */
+.cal-fullscreen .cal-gridwrap {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column;
+}
+.cal-fullscreen .cal-grid-head { flex: none; }
+.cal-fullscreen .cal-week { flex: 1 1 0; min-height: 0; }
+.cal-fullscreen .cal-week-bg { height: 100%; grid-template-rows: 1fr; }
+.cal-fullscreen .cal-week-bg .cal-cell { min-height: 0; }
 
 .cal-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
 .cal-filters .spacer { flex: 1; }
