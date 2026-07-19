@@ -866,3 +866,56 @@ a.ct-tel:hover { color: var(--primary); }
   .search-btn-m { display: inline-block; }
   .search-pop { top: 100%; left: 0; right: 0; max-height: 60vh; border-radius: 0 0 var(--radius) var(--radius); }
 }
+
+/* ═══ 보안 뉴스 + 항공보안 인사이트 (v2.19, guest 대시보드) ═══ */
+.news-row {
+  display: flex; align-items: center; gap: 7px; padding: 6px 2px;
+  border-bottom: 1px solid var(--border); font-size: .82rem;
+  color: var(--text); text-decoration: none; min-width: 0;
+}
+.news-row:hover { background: var(--primary-soft); }
+.news-row .news-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.news-row .news-meta { flex-shrink: 0; font-size: .7rem; color: var(--text-3); white-space: nowrap; }
+
+.ins-tabs { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+.ins-tab {
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 14px;
+  background: transparent; color: var(--text-2); font-size: .76rem; font-weight: 600; cursor: pointer;
+}
+.ins-tab.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+.ins-lvrow { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: .8rem; }
+.ins-lvbar { flex: 0 0 90px; height: 8px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
+.ins-lvfill { display: block; height: 100%; border-radius: 4px; }
+.ins-lvfill.lv-1 { background: var(--success); }
+.ins-lvfill.lv-2 { background: var(--primary); }
+.ins-lvfill.lv-3 { background: var(--warning); }
+.ins-lvfill.lv-4 { background: #ea580c; }
+.ins-lvfill.lv-5 { background: var(--danger); }
+.ins-lvdesc { flex: 1; min-width: 0; font-size: .76rem; color: var(--text-2); }
+
+.ins-itemgrid { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.ins-item {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+  border: 1px solid var(--border); border-radius: 8px; font-size: .78rem;
+}
+.ins-item-ico { flex-shrink: 0; font-size: 1rem; }
+.ins-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ins-item-tags { display: flex; gap: 4px; flex-shrink: 0; }
+
+.ins-step { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; font-size: .8rem; }
+.ins-step-no {
+  flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--primary); color: #fff; font-size: .68rem; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.ins-step-ico { flex-shrink: 0; }
+.ins-step-arrow { text-align: center; color: var(--text-3); font-size: .6rem; padding: 1px 0; }
+
+.ins-liqgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ins-liq {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 12px 6px; border: 1px solid var(--border); border-radius: 10px; text-align: center;
+}
+.ins-liq b { font-size: 1.05rem; color: var(--primary); }
+.ins-liq span { font-size: .7rem; color: var(--text-2); line-height: 1.35; }

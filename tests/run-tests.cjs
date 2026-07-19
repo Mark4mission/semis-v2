@@ -27,6 +27,7 @@ const ctcJS = read("js/certs.js");
 const blJS = read("js/billing.js");
 const vtJS = read("js/vault.js");
 const caresJS = read("js/cares.js");
+const newsJS = read("js/news.js");
 const searchJS = read("js/search.js");
 const syncJS = read("js/sync.js");
 const HTML = read("index.html").replace(/<script[\s\S]*?<\/script>/g, "");
@@ -63,7 +64,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + searchJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + searchJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) { S.boot(); if (w.SemisSearch) w.SemisSearch.init(); }
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -3482,6 +3483,107 @@ function makeFetchStub(server) {
       e2.w.SemisSearch.register({ id: "future-mod", group: "미래모듈", icon: "🧪",
         items: () => [{ title: "미래모듈테스트항목", sub: "확장 테스트", route: "dashboard" }] });
       ok(e2.w.SemisSearch.search("미래모듈테스트").some(x => x.group === "미래모듈"), "신규 프로바이더 히트");
+    });
+  }
+
+  /* ══════════ [DB] v2.19 대시보드 재배치 + guest 경량 레이아웃 ══════════ */
+  {
+    const colTitles = (env, i) => {
+      const cols = qa(env, ".dash-col");
+      return cols[i] ? Array.from(cols[i].querySelectorAll(".card-title")).map(x => x.textContent.trim()) : [];
+    };
+    const assertOrder = (list, subs, msg) => {
+      eq(list.length, subs.length, msg + ": 카드 수");
+      let idx = -1;
+      subs.forEach(s => {
+        const i = list.findIndex((x, j) => j > idx && x.includes(s));
+        ok(i > idx, msg + ": '" + s + "' 순서 (" + list.join(" | ") + ")");
+        idx = i;
+      });
+    };
+
+    t("DB01 카드 순서(mgr+): 좌 공지→환경센서→고장신고 / 우 등급→바로가기→일정→점검→만료→이수증", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "dashboard");
+      assertOrder(colTitles(e, 0), ["공지사항", "CARES 환경센서", "보안장비 · 고장신고"], "좌측");
+      assertOrder(colTitles(e, 1),
+        ["보안등급", "바로가기", "다가오는 일정", "보안점검 실적", "만료 · 점검 도래", "교육 이수증"], "우측");
+      ok(!q(e, "#news-box") && !q(e, "#insight-box"), "mgr+에는 뉴스/인사이트 카드 없음");
+    });
+
+    t("DB02 guest 경량 레이아웃: 좌 공지→뉴스→인사이트 / 우 바로가기→환경센서→만료", () => {
+      const e = makeEnv();
+      loginAs(e, "user");
+      go(e, "dashboard");
+      assertOrder(colTitles(e, 0), ["공지사항", "보안 뉴스", "항공보안 인사이트"], "guest 좌측");
+      assertOrder(colTitles(e, 1), ["바로가기", "CARES 환경센서", "만료 · 점검 도래"], "guest 우측");
+      ok(q(e, "#news-box") && q(e, "#insight-box"), "뉴스/인사이트 박스 존재");
+      ok(!q(e, "#level-box") && !q(e, "#insp-box") && !q(e, "#upcoming-box") && !q(e, "#equip-box") && !q(e, "#certs-box"),
+        "보안 카드(민감) 숨김 유지");
+    });
+
+    t("DB03 인사이트 탭 전환: 기본 보안등급 → 액체류 패널", () => {
+      const e = makeEnv();
+      loginAs(e, "user");
+      go(e, "dashboard");
+      ok(q(e, "#ins-panel").textContent.includes("평시"), "기본 탭 = 보안등급 5단계");
+      const tab = qa(e, "[data-ins-tab]").find(b => b.dataset.insTab === "liquid");
+      tab.click();
+      ok(q(e, "#ins-panel").textContent.includes("100㎖"), "액체류 패널 전환");
+      ok(tab.classList.contains("on"), "탭 활성 표시");
+      const tab2 = qa(e, "[data-ins-tab]").find(b => b.dataset.insTab === "steps");
+      tab2.click();
+      ok(q(e, "#ins-panel").textContent.includes("문형금속탐지기"), "검색절차 패널 전환");
+    });
+
+    await ta("DB04 뉴스 카드: Edge Function 응답 렌더 + 분류 배지 (fetch 스텁)", async () => {
+      const newsFetch = (url) => {
+        if (String(url).includes("semis-news")) return Promise.resolve({
+          ok: true, status: 200,
+          json: () => Promise.resolve({ updated: "2026-07-19T00:00:00Z", items: [
+            { title: "인천공항 화물터미널 보안 강화", link: "https://news.example/1", date: "2026-07-19T01:00:00Z", src: "보안뉴스", cat: "aviation" },
+            { title: "신종 랜섬웨어 주의보", link: "https://news.example/2", date: "2026-07-18T01:00:00Z", src: "보안뉴스", cat: "cyber" }
+          ] })
+        });
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      };
+      const e = makeEnv({ fetch: newsFetch });
+      loginAs(e, "user");
+      go(e, "dashboard");
+      await new Promise(r => setTimeout(r, 20));
+      const box = q(e, "#news-box");
+      ok(box.textContent.includes("인천공항 화물터미널 보안 강화"), "항공 기사 표시");
+      ok(box.textContent.includes("항공") && box.textContent.includes("사이버"), "분류 배지");
+      const a = box.querySelector(".news-row");
+      eq(a.getAttribute("target"), "_blank", "새 창 링크");
+      ok(e.w.localStorage.getItem("semis2:news"), "로컬 캐시 저장");
+    });
+
+    await ta("DB05 뉴스 카드: 네트워크 실패 시 만료 캐시 폴백", async () => {
+      const cached = JSON.stringify({ ts: Date.now() - 3600000, items: [
+        { title: "캐시된 항공보안 기사", link: "https://news.example/9", date: "2026-07-10T00:00:00Z", src: "보안뉴스", cat: "aviation" }
+      ] });
+      const failFetch = (url) => String(url).includes("semis-news")
+        ? Promise.reject(new Error("network down"))
+        : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      const e = makeEnv({ fetch: failFetch, preLS: { "semis2:news": cached } });
+      loginAs(e, "user");
+      go(e, "dashboard");
+      await new Promise(r => setTimeout(r, 20));
+      const box = q(e, "#news-box");
+      ok(box.textContent.includes("캐시된 항공보안 기사"), "캐시 기사 표시");
+      ok(box.textContent.includes("갱신 실패"), "실패 안내 문구");
+    });
+
+    t("DB06 DASH_CARDS 등록: news/insight vis=all + guest 전용 렌더 규약", () => {
+      const e = makeEnv();
+      const DC = e.w.SemisDash.DASH_CARDS;
+      eq(DC.news, "all", "news 등록");
+      eq(DC.insight, "all", "insight 등록");
+      loginAs(e, "manager"); // rank 2 — guest 아님
+      go(e, "dashboard");
+      ok(!q(e, "#news-box"), "manager: 뉴스 카드 미표시(경량 전용)");
     });
   }
 

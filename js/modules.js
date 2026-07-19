@@ -23,7 +23,9 @@
     expiry:   "all",  // ⏳ 만료 · 점검 도래 (계약은 내부에서 hq 필터)
     certs:    "mgr",  // 🎖 교육 이수증 — 보안사항: 보안관리자 이상 열람 (v2.15)
     quick:    "all",  // ⚡ 바로가기
-    upcoming: "mgr"   // 📅 다가오는 일정
+    upcoming: "mgr",  // 📅 다가오는 일정
+    news:     "all",  // 🗞 보안 뉴스 (v2.19 — guest 경량 레이아웃 전용 표시)
+    insight:  "all"   // 📊 항공보안 인사이트 (v2.19 — guest 경량 레이아웃 전용 표시)
   };
   const cardVis = (id) => {
     const v = DASH_CARDS[id] || "all";
@@ -53,56 +55,50 @@
 
       const cur = SeMIS.secCurrent();
       const nxt = SeMIS.secNext();
-      root.innerHTML = `
-        <div class="page-head">
-          <div class="page-title">🏠 대시보드</div>
-          <div class="page-desc">에어제타 보안종합정보시스템 — ${esc(fmtDate(new Date().toISOString()))}</div>
-        </div>
-        <div class="dash-grid">
-          <div class="dash-col">
-            ${cardVis("notice") ? `<div class="card">
+      // v2.19: guest(일반 사용자)는 카드 수가 적어 뉴스·인사이트 중심의 경량 레이아웃 표시
+      const guest = SeMIS.roleRank() < 2;
+      const C = {
+        notice: cardVis("notice") ? `<div class="card">
               <div class="card-title">📢 공지사항 <span class="spacer"></span>
                 ${canWrite ? '<button class="btn btn-primary btn-sm" id="btn-add-notice">+ 새 공지</button>' : ""}
               </div>
               <div id="notice-list"></div>
-            </div>` : ""}
-            ${cardVis("equip") && window.SemisEquipment && SemisEquipment.renderDash ? `<div class="card">
+            </div>` : "",
+        equip: cardVis("equip") && window.SemisEquipment && SemisEquipment.renderDash ? `<div class="card">
               <div class="card-title">🔧 보안장비 · 고장신고 <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-equip">전체보기</button>
                 <a class="btn btn-ghost btn-sm" href="https://airzeta-security-system.web.app" target="_blank" rel="noopener">CARES ↗</a>
               </div>
               <div id="equip-box"></div>
-            </div>` : ""}
-            ${cardVis("cares") && window.SemisCares ? `<div class="card">
+            </div>` : "",
+        cares: cardVis("cares") && window.SemisCares ? `<div class="card">
               <div class="card-title">🌡 CARES 환경센서 <span class="spacer"></span>
                 ${canWrite ? '<button class="btn btn-ghost btn-sm" id="btn-cares-cfg" title="연동 설정">⚙</button>' : ""}
                 <a class="btn btn-ghost btn-sm" href="https://airzeta-security-system.web.app" target="_blank" rel="noopener">CARES ↗</a>
               </div>
               <div id="cares-box"></div>
-            </div>` : ""}
-          </div>
-          <div class="dash-col">
-            ${cardVis("level") ? `<div class="card">
+            </div>` : "",
+        level: cardVis("level") ? `<div class="card">
               <div class="card-title">🚨 보안등급 <span class="spacer"></span>
                 ${canWrite ? '<button class="btn btn-ghost btn-sm" id="btn-edit-level">변경</button>' : ""}
               </div>
               <div id="level-box"></div>
-            </div>` : ""}
-            ${cardVis("insp") ? `<div class="card">
+            </div>` : "",
+        insp: cardVis("insp") ? `<div class="card">
               <div class="card-title">🕵️ 보안점검 실적 <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-insp">전체보기</button></div>
               <div id="insp-box"></div>
-            </div>` : ""}
-            ${cardVis("expiry") ? `<div class="card">
+            </div>` : "",
+        expiry: cardVis("expiry") ? `<div class="card">
               <div class="card-title">⏳ 만료 · 점검 도래</div>
               <div id="expiry-box"></div>
-            </div>` : ""}
-            ${cardVis("certs") && window.SemisCerts ? `<div class="card">
+            </div>` : "",
+        certs: cardVis("certs") && window.SemisCerts ? `<div class="card">
               <div class="card-title">🎖 교육 이수증 <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-certs">전체보기</button></div>
               <div id="certs-box"></div>
-            </div>` : ""}
-            ${cardVis("quick") ? `<div class="card">
+            </div>` : "",
+        quick: cardVis("quick") ? `<div class="card">
               <div class="card-title">⚡ 바로가기</div>
               <div class="quick-links">
                 ${quicks.map(m => m.type === "module"
@@ -115,13 +111,37 @@
                   <span>${esc(m.icon || "🔗")}</span><span>${esc(m.label)}</span></a>`).join("") ||
                   '<div class="empty">등록된 바로가기가 없습니다.</div>'}
               </div>
-            </div>` : ""}
-            ${cardVis("upcoming") ? `<div class="card">
+            </div>` : "",
+        upcoming: cardVis("upcoming") ? `<div class="card">
               <div class="card-title">📅 다가오는 일정 <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-schedule">전체보기</button></div>
               <div id="upcoming-box"></div>
-            </div>` : ""}
-          </div>
+            </div>` : "",
+        news: guest && cardVis("news") && window.SemisNews ? `<div class="card">
+              <div class="card-title">🗞 항공 · 사이버 보안 뉴스 <span class="spacer"></span>
+                <a class="btn btn-ghost btn-sm" href="https://www.boannews.com/" target="_blank" rel="noopener">보안뉴스 ↗</a>
+              </div>
+              <div id="news-box"></div>
+            </div>` : "",
+        insight: guest && cardVis("insight") && window.SemisNews ? `<div class="card">
+              <div class="card-title">📊 항공보안 인사이트</div>
+              <div id="insight-box"></div>
+            </div>` : ""
+      };
+      const colL = guest
+        ? C.notice + C.news + C.insight                                // guest 좌측: 공지 → 뉴스 → 인사이트
+        : C.notice + C.cares + C.equip;                                // 좌측: 공지 → CARES 환경센서 → 고장신고
+      const colR = guest
+        ? C.quick + C.cares + C.expiry                                 // guest 우측: 바로가기 → 환경센서 → 만료
+        : C.level + C.quick + C.upcoming + C.insp + C.expiry + C.certs; // 우측: 등급→바로가기→일정→점검→만료→이수증
+      root.innerHTML = `
+        <div class="page-head">
+          <div class="page-title">🏠 대시보드</div>
+          <div class="page-desc">에어제타 보안종합정보시스템 — ${esc(fmtDate(new Date().toISOString()))}</div>
+        </div>
+        <div class="dash-grid">
+          <div class="dash-col">${colL}</div>
+          <div class="dash-col">${colR}</div>
         </div>`;
 
       // 보안등급 (5단계: 평시-관심-주의-경계-심각)
@@ -269,6 +289,12 @@
       if (window.SemisCerts && $("#certs-box")) {
         SemisCerts.renderDash($("#certs-box"));
         if ($("#btn-go-certs")) $("#btn-go-certs").onclick = () => SeMIS.navigate("certs");
+      }
+
+      // 보안 뉴스 + 항공보안 인사이트 (v2.19, guest 경량 레이아웃)
+      if (window.SemisNews) {
+        if ($("#news-box")) SemisNews.renderNews($("#news-box"));
+        if ($("#insight-box")) SemisNews.renderInsight($("#insight-box"));
       }
 
       // CARES 환경센서 위젯
