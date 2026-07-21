@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.26.0";
+  const VERSION = "2.27.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -550,12 +550,18 @@ const SeMIS = (() => {
     sessionStorage.setItem(SS_SESSION, JSON.stringify({ uid: user.id, ts: Date.now() }));
     return user;
   }
-  /* v2.26: 서명 세션 — 암호가 협의회 회의일(YYYYMMDD)이면 해당 회의 서명 화면만 접근 */
+  /* v2.26: 서명 세션 — 회의별 6자리 숫자 코드(회의 id 기반 결정적 파생, 동기화 충돌 없음).
+     v2.26.1: 회의일(추측 가능) → 랜덤 숫자 코드로 변경. 코드는 조직자 상세 화면에 안내됨. */
+  function signCodeFor(m) {
+    const id = String((m && m.id) || "");
+    let h = 5381;
+    for (let i = 0; i < id.length; i++) h = ((h * 33) ^ id.charCodeAt(i)) >>> 0;
+    return String(100000 + (h % 900000)); // 6자리 (100000~999999)
+  }
   function signMeetingFor(pw) {
     const code = String(pw || "").trim();
-    if (!/^\d{8}$/.test(code)) return null;
-    const iso = code.slice(0, 4) + "-" + code.slice(4, 6) + "-" + code.slice(6, 8);
-    const list = (DATA.council || []).filter(c => c && c.date === iso);
+    if (!/^\d{6}$/.test(code)) return null;
+    const list = (DATA.council || []).filter(c => c && signCodeFor(c) === code);
     if (!list.length) return null;
     return list.sort((a, b) => (Number(b.round) || 0) - (Number(a.round) || 0))[0];
   }
@@ -939,7 +945,7 @@ const SeMIS = (() => {
     save, load, onSave, saveSilent, normalizeData,
     get user() { return currentUser; },
     allUsers, isAdmin, roleRank, canEdit, canSee,
-    pwHash, sha256,
+    pwHash, sha256, signCodeFor,
     renderNav, renderHeader, renderSecBadge, renderView,
     openModal, closeModal, confirmModal, toast,
     $, $$, esc, fmtDate, sortedMenus,

@@ -4206,7 +4206,9 @@ function makeFetchStub(server) {
     e.S.data.council = [{ id: "cm1", round: 7, date: "2026-07-29", place: "인천화물터미널 B동",
       attendees: [{ cat: "제조사", org: "뉴원S&T", name: "홍길동", role: "차장" }, { cat: "본사", org: "항공화물", name: "김철수" }],
       cases: [], actions: [], files: [] }];
-    submitLogin(e, "20260729");
+    const code13 = e.S.signCodeFor(e.S.data.council[0]);
+    ok(/^\d{6}$/.test(code13), "코드는 6자리 숫자");
+    submitLogin(e, code13);
     ok(e.S.user && e.S.user.role === "signer", "서명 세션 진입");
     eq(e.S.user.signMeetingId, "cm1", "대상 회의 지정");
     const view = q(e, "#view");
@@ -4222,12 +4224,65 @@ function makeFetchStub(server) {
     ok(q(e, "#view").innerHTML.indexOf("ex.com/h.png") >= 0, "서명 후 완료 상태 반영");
   });
 
-  t("CN14 매칭 없는 회의일 코드 → 로그인 실패", () => {
+  t("CN14 매칭 없는 코드 → 로그인 실패 / signCodeFor 결정적", () => {
     const e = makeEnv();
     e.S.data.council = [{ id: "cm1", round: 1, date: "2026-07-29", attendees: [], cases: [], actions: [], files: [] }];
-    submitLogin(e, "20250101");
+    const real = e.S.signCodeFor(e.S.data.council[0]);
+    eq(real, e.S.signCodeFor({ id: "cm1" }), "같은 id → 같은 코드(결정적)");
+    const bad = real === "111111" ? "222222" : "111111";
+    submitLogin(e, bad);
     ok(!e.S.user, "세션 없음(로그인 실패)");
     ok(q(e, "#login-error").textContent.indexOf("올바르지") >= 0, "오류 메시지 표시");
+  });
+
+  t("CN16 사례 발생일 필드 저장 + 상세·인쇄 렌더", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, "#cn-add").click();
+    q(e, "#cn-round").value = "11";
+    q(e, "#cn-date").value = "2026-06-18";
+    q(e, "#cn-case-add").click();
+    const crow = q(e, "#cn-cases .cn-case-row");
+    crow.querySelector(".cn-c-date").value = "5/14";
+    crow.querySelector(".cn-c-equip").value = "Xray 2호기";
+    crow.querySelector(".cn-c-cause").value = "그래픽카드 파손";
+    q(e, "#cn-save").click();
+    const c = e.S.data.council.find(x => x.round === 11);
+    eq(c.cases[0].date, "5/14", "발생일 저장");
+    eq(c.cases[0].equip, "Xray 2호기", "장비 저장");
+    // 상세: 발생일 헤더 + 값
+    go(e, "council");
+    q(e, `[data-cn-row="${c.id}"]`).click();
+    const html = q(e, "#modal-box").innerHTML;
+    ok(html.indexOf("발생일") >= 0, "상세 발생일 헤더");
+    ok(html.indexOf("5/14") >= 0, "상세 발생일 값");
+    // 인쇄
+    e.w.SemisCouncil.printMinutes(c.id);
+    const fr = Array.from(e.w.document.querySelectorAll("iframe")).pop();
+    const phtml = fr.contentWindow.document.documentElement.innerHTML;
+    ok(phtml.indexOf("발생일") >= 0 && phtml.indexOf("5/14") >= 0, "인쇄 발생일 포함");
+  });
+
+  t("CN17 본문 링크 제목 + 복사 버튼(decorateLinks)", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "c1", round: 5, date: "2026-07-01", place: "B동",
+      attendees: [], cases: [], actions: [], files: [],
+      agenda: "발표자료", agendaHtml: '<a href="https://docs.example.com/very/long/link/1234567890">발표자료</a>',
+      env: "", envHtml: "", proposals: "", proposalsHtml: "" }];
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, "[data-cn-row]").click();
+    const box = q(e, "#modal-box");
+    ok(box.innerHTML.indexOf(">발표자료<") >= 0, "링크 제목 텍스트 표시");
+    ok(box.querySelector(".cn-link-copy"), "링크 뒤 복사 버튼 삽입");
+    eq(box.querySelector(".cn-link-copy").dataset.copy, "https://docs.example.com/very/long/link/1234567890", "복사 대상은 원본 URL");
+  });
+
+  t("CN18 로그아웃 버튼 아이콘이 SVG(⏻ 문자 아님)", () => {
+    const e = makeEnv();
+    ok(q(e, "#logout-btn svg"), "로그아웃 버튼에 SVG 아이콘");
+    ok(q(e, "#logout-btn").textContent.indexOf("⏻") < 0, "구 문자 아이콘 제거");
   });
 
   t("CN15 조직자 상세에 서명 코드 안내 노출(hq) / 일반 미노출", () => {
@@ -4238,7 +4293,9 @@ function makeFetchStub(server) {
     go(e, "council");
     q(e, "[data-cn-row]").click();
     ok(q(e, "#modal-box .cn-signcode"), "hq 상세에 코드 안내");
-    ok(q(e, "#modal-box").innerHTML.indexOf("20260729") >= 0, "회의일 코드 표시");
+    const code15 = e.S.signCodeFor(e.S.data.council[0]);
+    ok(q(e, "#modal-box").innerHTML.indexOf(code15) >= 0, "서명 코드(6자리) 표시");
+    ok(q(e, "#modal-box .cn-signcode-copy"), "코드 복사 버튼");
     e.S.closeModal();
     // manager(열람 전용)는 코드 안내 미노출
     const e2 = makeEnv();

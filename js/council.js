@@ -82,12 +82,15 @@
     });
     const linkBtn = $(`[data-rich-link="${key}"]`);
     if (linkBtn) linkBtn.onclick = () => {
-      let url = ""; try { url = window.prompt("링크 주소(URL)를 입력하세요", "https://") || ""; } catch (e) {}
-      if (!/^https?:\/\/.+/.test(url)) return;
+      let url = ""; try { url = window.prompt("링크 주소(URL)", "https://") || ""; } catch (e) {}
+      url = url.trim();
+      if (!/^https?:\/\/.+/.test(url)) { if (url) toast("http:// 또는 https:// 로 시작하는 주소를 입력하세요.", true); return; }
+      let label = ""; try { label = window.prompt("링크에 표시할 제목 (비우면 주소가 그대로 표시됩니다)", "") || ""; } catch (e) {}
+      label = label.trim();
       ed.focus();
-      const a = `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`;
-      try { if (!document.execCommand("createLink", false, url) && rich) rich.insert(a); }
-      catch (e) { if (rich) rich.insert(a); }
+      const a = `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(label || url)}</a>&nbsp;`;
+      if (rich) rich.insert(a);
+      else { try { document.execCommand("insertHTML", false, a); } catch (e) { ed.innerHTML += a; } }
     };
     const imgBtn = $(`[data-rich-img="${key}"]`), imgFile = $("#cn-" + key + "-img");
     if (imgBtn) imgBtn.onclick = () => imgFile.click();
@@ -104,6 +107,38 @@
     const tmp = document.createElement("div"); tmp.innerHTML = html;
     const text = (tmp.textContent || "").trim();
     return { html: hasRich(html, text) ? html : "", text };
+  }
+
+  /* 클립보드 복사 (구형 브라우저 폴백 포함) */
+  function copyText(t) {
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t); return; } } catch (e) {}
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+    } catch (e) {}
+  }
+  /* scope 내 [data-copy] 요소를 복사 버튼으로 배선 */
+  function wireCopies(scope) {
+    $$((scope || "") + " [data-copy]").forEach(el => el.onclick = (ev) => {
+      ev.preventDefault();
+      copyText(el.dataset.copy);
+      toast("복사되었습니다: " + (el.dataset.copyLabel || el.dataset.copy));
+    });
+  }
+  /* 본문 링크 뒤에 📋 복사 버튼 삽입 (긴 URL도 제목만 보이고 주소는 복사) */
+  function decorateLinks(scope) {
+    $$((scope || "") + " .cn-rich a[href]").forEach(a => {
+      const nx = a.nextSibling;
+      if (nx && nx.classList && nx.classList.contains("cn-link-copy")) return;
+      const href = a.getAttribute("href") || "";
+      if (!href) return;
+      a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener");
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "cn-link-copy"; b.title = "링크 주소 복사";
+      b.textContent = "📋"; b.dataset.copy = href; b.dataset.copyLabel = "링크 주소";
+      if (a.parentNode) a.parentNode.insertBefore(b, a.nextSibling);
+    });
   }
 
   function stats() {
@@ -163,9 +198,10 @@
       </tbody></table>` : "";
 
     const caseHTML = cases.length ? `<table class="tbl cn-case-tbl"><thead><tr>
-        <th style="width:15%">장비</th><th style="width:18%">증상</th>
-        <th style="width:34%">근본원인</th><th style="width:33%">조치</th></tr></thead><tbody>
+        <th style="width:12%">발생일</th><th style="width:15%">장비</th><th style="width:16%">증상</th>
+        <th style="width:29%">근본원인</th><th style="width:28%">조치</th></tr></thead><tbody>
       ${cases.map(c => `<tr>
+        <td>${c.date ? esc(c.date) : '<span style="color:var(--text-3)">-</span>'}</td>
         <td><b>${esc(c.equip || "-")}</b></td><td>${nl2br(c.symptom)}</td>
         <td>${nl2br(c.cause)}</td><td>${nl2br(c.action)}</td></tr>`).join("")}
       </tbody></table>` : "";
@@ -187,9 +223,9 @@
         ${x.scribe ? `<span>✍️ 작성 ${esc(x.scribe)}</span>` : ""}
         <span>👥 참석 ${att.length}명</span>
       </div>
-      ${canWrite() && /^\d{4}-\d{2}-\d{2}$/.test(x.date || "") ? `<div class="cn-signcode">
+      ${canWrite() ? `<div class="cn-signcode">
         <span class="cn-signcode-ic">📱</span>
-        <div>참석자 서명 안내 — 모바일에서 <b>${esc(location.host || "semis.pe.kr")}</b> 접속 후 암호 <b class="cn-signcode-code">${esc((x.date || "").replace(/-/g, ""))}</b> 입력 → 이 회의 서명 화면에서 본인 서명을 그려 넣습니다.</div>
+        <div>참석자 서명 안내 — 모바일에서 <b>semis.pe.kr</b> 접속 후 암호 <b class="cn-signcode-code">${esc(SeMIS.signCodeFor(x))}</b> 입력 → 이 회의 서명 화면에서 본인 서명을 그려 넣습니다. <span class="cn-signcode-copy" data-copy="${esc(SeMIS.signCodeFor(x))}" title="코드 복사">📋 복사</span></div>
       </div>` : ""}
       ${sec("참석자", attHTML)}
       ${sec("안건", richView(x.agendaHtml, x.agenda))}
@@ -212,6 +248,8 @@
 
     $("#cn-close").onclick = closeModal;
     $("#cn-print").onclick = () => printMinutes(x.id);
+    decorateLinks("#modal-box");  // 본문 링크 뒤 📋 복사 버튼 삽입
+    wireCopies("#modal-box");     // 서명 코드 복사 + 본문 링크 복사 버튼 배선
     if (canWrite()) {
       $("#cn-edit").onclick = () => form(x.id);
       $("#cn-del").onclick = () => confirmModal(`"${meetTitle(x)}" 회의록을 삭제하시겠습니까?`, () => {
@@ -328,6 +366,7 @@
     /* ─ 사례 동적행 ─ */
     function caseCollect() {
       $$("#cn-cases .cn-case-row").forEach((row, i) => {
+        cases[i].date = row.querySelector(".cn-c-date").value;
         cases[i].equip = row.querySelector(".cn-c-equip").value;
         cases[i].symptom = row.querySelector(".cn-c-symptom").value;
         cases[i].cause = row.querySelector(".cn-c-cause").value;
@@ -338,6 +377,7 @@
       $("#cn-cases").innerHTML = cases.map((c, i) => `
         <div class="cn-case-row">
           <div class="cn-case-top">
+            <input class="cn-c-date" value="${esc(c.date || "")}" maxlength="20" placeholder="발생일 (예: 5/14)">
             <input class="cn-c-equip" value="${esc(c.equip || "")}" maxlength="40" placeholder="장비 (예: ETD 3호기)">
             <button type="button" class="mt-btn danger" data-case-del="${i}" title="사례 삭제">✕</button>
           </div>
@@ -350,7 +390,7 @@
       });
     }
     casePaint();
-    $("#cn-case-add").onclick = () => { caseCollect(); cases.push({ equip: "", symptom: "", cause: "", action: "" }); casePaint(); };
+    $("#cn-case-add").onclick = () => { caseCollect(); cases.push({ date: "", equip: "", symptom: "", cause: "", action: "" }); casePaint(); };
 
     /* ─ 결정/액션 동적행 ─ */
     function actCollect() {
@@ -440,8 +480,8 @@
           cat: a.cat || "기타", org: (a.org || "").trim(), name: (a.name || "").trim(),
           role: (a.role || "").trim(), note: (a.note || "").trim(), sign: a.sign || "" })),
         agenda: ag.text, agendaHtml: ag.html,
-        cases: clean(cases, ["equip", "symptom", "cause", "action"]).map(c => ({
-          equip: (c.equip || "").trim(), symptom: (c.symptom || "").trim(),
+        cases: clean(cases, ["date", "equip", "symptom", "cause", "action"]).map(c => ({
+          date: (c.date || "").trim(), equip: (c.equip || "").trim(), symptom: (c.symptom || "").trim(),
           cause: (c.cause || "").trim(), action: (c.action || "").trim() })),
         env: en.text, envHtml: en.html,
         proposals: pr.text, proposalsHtml: pr.html,
@@ -474,9 +514,9 @@
         <td>${esc(a.note || "")}</td></tr>`).join("")
       : '<tr><td colspan="7" class="pc-empty">기록 없음</td></tr>';
     const caseRows = cases.length ? cases.map(c => `<tr>
-        <td><b>${esc(c.equip || "-")}</b></td><td>${P(c.symptom)}</td>
+        <td>${esc(c.date || "")}</td><td><b>${esc(c.equip || "-")}</b></td><td>${P(c.symptom)}</td>
         <td>${P(c.cause)}</td><td>${P(c.action)}</td></tr>`).join("")
-      : '<tr><td colspan="4" class="pc-empty">기록 없음</td></tr>';
+      : '<tr><td colspan="5" class="pc-empty">기록 없음</td></tr>';
     const actRows = acts.length ? acts.map(a => `<tr>
         <td style="text-align:center">${a.done ? "✔" : "□"}</td><td>${P(a.task)}</td>
         <td>${esc(a.owner || "-")}</td><td>${esc(a.due || "-")}</td></tr>`).join("")
@@ -533,8 +573,8 @@
       <tbody>${attRows}</tbody></table></div>
   ${textSec("안건", x.agendaHtml, x.agenda)}
   <div class="sec"><div class="sec-h">① 고장·수리·유지보수 사례 근본원인</div>
-    <table class="cases"><thead><tr><th style="width:15%">장비</th><th style="width:18%">증상</th>
-      <th style="width:34%">근본원인</th><th style="width:33%">조치</th></tr></thead>
+    <table class="cases"><thead><tr><th style="width:12%">발생일</th><th style="width:15%">장비</th><th style="width:16%">증상</th>
+      <th style="width:29%">근본원인</th><th style="width:28%">조치</th></tr></thead>
       <tbody>${caseRows}</tbody></table></div>
   ${textSec("② 장비 사용환경 개선 방안", x.envHtml, x.env)}
   ${textSec("③ 분야별 제안 및 토의", x.proposalsHtml, x.proposals)}

@@ -89,6 +89,7 @@ input, select, textarea { font-family: inherit; font-size: .95rem; }
   padding: 6px 10px; border-radius: var(--radius-sm); line-height: 1;
 }
 .icon-btn:hover { background: rgba(255,255,255,.12); }
+.icon-btn svg { display: block; vertical-align: middle; }
 .brand { display: flex; align-items: baseline; gap: 8px; color: #fff; }
 .brand-logo { font-size: 1.2rem; align-self: center; display: flex; align-items: center; }
 .brand-logo img { height: 30px; display: block; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
@@ -1215,6 +1216,7 @@ a.ct-tel:hover { color: var(--primary); }
   border-radius: 8px; padding: 10px 11px; margin-bottom: 9px; background: var(--surface);
   display: flex; flex-direction: column; gap: 7px; }
 .cn-case-top { display: flex; gap: 6px; align-items: center; }
+.cn-case-top .cn-c-date { flex: 0 0 130px; min-width: 0; }
 .cn-case-top .cn-c-equip { flex: 1; min-width: 0; font-weight: 600; }
 /* 결정/액션 동적행 */
 .cn-act-row { display: grid; grid-template-columns: 30px 1fr 96px 146px 30px; gap: 6px; margin-bottom: 7px; align-items: center; }
@@ -1233,6 +1235,12 @@ a.ct-tel:hover { color: var(--primary); }
 .cn-signcode-ic { font-size: 1.05rem; flex-shrink: 0; }
 .cn-signcode-code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: .95rem;
   color: var(--accent); background: #fff; border: 1px solid var(--accent); border-radius: 6px; padding: 0 7px; letter-spacing: 1px; }
+.cn-signcode-copy { cursor: pointer; color: var(--accent); font-weight: 700; margin-left: 6px; white-space: nowrap; user-select: none; }
+.cn-signcode-copy:hover { text-decoration: underline; }
+/* 본문 링크 뒤 복사 버튼 */
+.cn-link-copy { cursor: pointer; border: none; background: none; padding: 0 3px; font-size: .82em;
+  line-height: 1; vertical-align: baseline; opacity: .7; }
+.cn-link-copy:hover { opacity: 1; }
 
 /* 서명 화면(모바일 참석자) */
 .cn-sign-page { max-width: 640px; margin: 0 auto; }
