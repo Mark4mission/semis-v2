@@ -28,9 +28,11 @@
   const uid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
   /* 참석자 구분 (거버넌스 이해관계자) */
-  const CATS = ["제조사", "유지보수", "운영사", "본사", "기타"];
-  const CAT_BADGE = { "제조사": "badge-blue", "유지보수": "badge-green", "운영사": "badge-orange", "본사": "badge-red", "기타": "badge-gray" };
-  const CAT_HINT = "제조사=뉴원S&T·인씨스 등 / 유지보수=프로에스콤 등 / 운영사=화물터미널 / 본사=항공화물·항공보안파트";
+  const CATS = ["제조사", "유지보수", "운영자", "본사", "기타"];
+  // 운영사(구값)는 운영자로 취급 — 기존 데이터 하위호환
+  const CAT_BADGE = { "제조사": "badge-blue", "유지보수": "badge-green", "운영자": "badge-orange", "운영사": "badge-orange", "본사": "badge-red", "기타": "badge-gray" };
+  const catNorm = (c) => (c === "운영사" ? "운영자" : (c || ""));
+  const CAT_HINT = "제조사=뉴원S&T·인씨스 등 / 유지보수=프로에스콤 등 / 운영자=화물터미널 / 본사=항공화물·항공보안파트";
 
   const DEFAULT_PLACE = "인천화물터미널 B동";
 
@@ -141,6 +143,69 @@
     });
   }
 
+  /* ══════════ CARES 고장·수리 이력 동기화 ══════════ */
+  const CAUSE_SHORT = { environmental: "환경", mechanical: "기계", human: "인적", other: "기타" };
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const CASE_KEYS = ["date", "equip", "symptom", "cause", "action"];
+  function msToDate(ms) {
+    if (!ms) return "";
+    const d = new Date(Number(ms));
+    return isNaN(d.getTime()) ? "" : d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+  /* CARES repairLog → 사례 필드(발생일·장비·증상·근본원인·조치) */
+  function repairToCase(r) {
+    const date = msToDate(r.reportedAtMs) || (r.reportedAt ? String(r.reportedAt).slice(0, 10) : "");
+    const equip = String(r.equipmentName || r.equipmentSerial || "").trim();
+    const symptom = String(r.symptom || "").trim();
+    const cat = CAUSE_SHORT[r.causeCategory] || "";
+    const base = String(r.rootCause || r.cause || "").trim();
+    const cause = base + (cat ? (base ? " " : "") + "[" + cat + "]" : "");
+    const parts = (Array.isArray(r.parts) ? r.parts : []).map(p => {
+      const nm = String((p && p.part) || "").trim(); const q = (p && Number(p.qty)) || 0;
+      return nm ? nm + (q > 1 ? "×" + q : "") : "";
+    }).filter(Boolean).join(", ");
+    const stLabel = r.resolvedAtMs ? "수리완료"
+      : (r.status === "in_repair" ? "수리중" : (r.status === "accepted" ? "접수됨" : "접수대기"));
+    const action = [r.resolvedBy ? "처리: " + r.resolvedBy : "", stLabel, parts ? "부품: " + parts : ""].filter(Boolean).join(" · ");
+    return { date, equip, symptom, cause, action };
+  }
+  const caseUnedited = (c) => {
+    const s = c.caresSnap || {};
+    return CASE_KEYS.every(k => String(c[k] || "").trim() === String(s[k] || "").trim());
+  };
+  /* 병합: caresId로 연동 — 미편집분만 CARES 최신값으로 갱신, 사용자 수정분 보존, 신규 추가 */
+  function mergeCaresIntoCases(cases, repairs) {
+    let added = 0, updated = 0, kept = 0;
+    repairs.forEach(r => {
+      if (!r || !r.id) return;
+      const derived = repairToCase(r);
+      const ex = cases.find(c => c && c.caresId === r.id);
+      if (ex) {
+        if (caseUnedited(ex)) { Object.assign(ex, derived); ex.caresSnap = Object.assign({}, derived); updated++; }
+        else kept++;
+      } else {
+        cases.push(Object.assign({}, derived, { caresId: r.id, caresSnap: Object.assign({}, derived) }));
+        added++;
+      }
+    });
+    return { added, updated, kept };
+  }
+  /* 이번 회의 직전 회의의 회의일(없으면 null) */
+  function prevMeetingDate(thisDate, excludeId) {
+    const ds = all().filter(c => c && c.id !== excludeId && c.date && c.date < thisDate)
+      .map(c => c.date).sort();
+    return ds.length ? ds[ds.length - 1] : null;
+  }
+  /* 기간(이전 회의일 초과 ~ 이번 회의일 이하)에 발생한 고장 필터 */
+  function repairsInPeriod(repairs, prevDate, thisDate) {
+    return (repairs || []).filter(r => {
+      const d = msToDate(r.reportedAtMs) || (r.reportedAt ? String(r.reportedAt).slice(0, 10) : "");
+      if (!d || d > thisDate) return false;
+      if (prevDate && d <= prevDate) return false;
+      return true;
+    });
+  }
+
   function stats() {
     const items = all();
     const yr = new Date().getFullYear();
@@ -202,7 +267,7 @@
         <th style="width:29%">근본원인</th><th style="width:28%">조치</th></tr></thead><tbody>
       ${cases.map(c => `<tr>
         <td>${c.date ? esc(c.date) : '<span style="color:var(--text-3)">-</span>'}</td>
-        <td><b>${esc(c.equip || "-")}</b></td><td>${nl2br(c.symptom)}</td>
+        <td><b>${esc(c.equip || "-")}</b>${c.caresId ? ' <span class="cn-cares-tag" title="CARES 고장이력 연동">🔗</span>' : ""}</td><td>${nl2br(c.symptom)}</td>
         <td>${nl2br(c.cause)}</td><td>${nl2br(c.action)}</td></tr>`).join("")}
       </tbody></table>` : "";
 
@@ -262,7 +327,7 @@
   /* ══════════ 등록/수정 폼 (hq+) ══════════ */
   function form(id) {
     const x = id ? all().find(c => c.id === id) : null;
-    let attendees = x ? (x.attendees || []).map(a => Object.assign({}, a)) : [];
+    let attendees = x ? (x.attendees || []).map(a => Object.assign({}, a, { cat: catNorm(a.cat) })) : [];
     let cases = x ? (x.cases || []).map(c => Object.assign({}, c)) : [];
     let actions = x ? (x.actions || []).map(a => Object.assign({}, a)) : [];
     let files = x ? (x.files || []).map(f => Object.assign({}, f)) : [];
@@ -302,6 +367,10 @@
         <div class="form-hint" style="margin:0 0 8px">본문에는 링크·이미지를 붙여넣거나 드래그앤드롭으로 넣을 수 있습니다.</div>
         ${richFieldHTML("agenda", "안건 (선택)", "이번 회의 안건 (한 줄에 하나씩)")}
         <div class="form-row"><label class="cn-flabel">① 고장·수리·유지보수 사례 근본원인</label>
+          <div class="cn-cares-bar">
+            <button type="button" class="btn btn-ghost btn-sm" id="cn-cares-sync">🔄 CARES 고장이력 불러오기</button>
+            <span class="form-hint" id="cn-cares-hint" style="display:inline"></span>
+          </div>
           <div id="cn-cases"></div>
           <button type="button" class="btn btn-ghost btn-sm" id="cn-case-add" style="margin-top:6px">+ 사례 추가</button></div>
         ${richFieldHTML("env", "② 장비 사용환경 개선 방안", "온·습도·먼지 등 사용환경 개선 논의 및 방안", "cn-flabel")}
@@ -392,6 +461,45 @@
     casePaint();
     $("#cn-case-add").onclick = () => { caseCollect(); cases.push({ date: "", equip: "", symptom: "", cause: "", action: "" }); casePaint(); };
 
+    /* CARES 고장이력 불러오기 (기간: 이전 회의일 초과 ~ 이번 회의일 이하) */
+    function updateCaresHint() {
+      const d = $("#cn-date").value;
+      const hint = $("#cn-cares-hint");
+      if (!hint) return;
+      if (!d) { hint.textContent = "회의일 입력 후 사용"; return; }
+      const prev = prevMeetingDate(d, x ? x.id : null);
+      hint.textContent = "기간: " + (prev ? prev + " 이후" : "처음") + " ~ " + d;
+    }
+    updateCaresHint();
+    if ($("#cn-date")) $("#cn-date").addEventListener("change", updateCaresHint);
+    $("#cn-cares-sync").onclick = async () => {
+      const thisDate = $("#cn-date").value;
+      if (!thisDate) { toast("먼저 회의일을 입력하세요.", true); return; }
+      if (!window.SemisEquipment || !SemisEquipment.loadCares) { toast("CARES 연동을 사용할 수 없습니다.", true); return; }
+      const btn = $("#cn-cares-sync");
+      const orig = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = "불러오는 중…"; }
+      try {
+        const c = await SemisEquipment.loadCares(true);
+        if (c && c.err) { toast("CARES 조회 실패: " + c.err, true); return; }
+        const prev = prevMeetingDate(thisDate, x ? x.id : null);
+        const reps = repairsInPeriod((c && c.repairs) || [], prev, thisDate);
+        caseCollect();
+        if (!reps.length) { toast("해당 기간에 CARES 고장이력이 없습니다 (" + (prev ? prev + " 이후" : "처음") + " ~ " + thisDate + ")."); return; }
+        const res = mergeCaresIntoCases(cases, reps);
+        casePaint();
+        const parts2 = [];
+        if (res.added) parts2.push(res.added + "건 추가");
+        if (res.updated) parts2.push(res.updated + "건 갱신");
+        if (res.kept) parts2.push(res.kept + "건 수정 보존");
+        toast("CARES 고장이력: " + (parts2.join(" · ") || "변경 없음"));
+      } catch (e) {
+        toast("CARES 동기화 오류: " + ((e && e.message) || "네트워크 확인"), true);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = orig; }
+      }
+    };
+
     /* ─ 결정/액션 동적행 ─ */
     function actCollect() {
       $$("#cn-acts .cn-act-row").forEach((row, i) => {
@@ -480,9 +588,12 @@
           cat: a.cat || "기타", org: (a.org || "").trim(), name: (a.name || "").trim(),
           role: (a.role || "").trim(), note: (a.note || "").trim(), sign: a.sign || "" })),
         agenda: ag.text, agendaHtml: ag.html,
-        cases: clean(cases, ["date", "equip", "symptom", "cause", "action"]).map(c => ({
-          date: (c.date || "").trim(), equip: (c.equip || "").trim(), symptom: (c.symptom || "").trim(),
-          cause: (c.cause || "").trim(), action: (c.action || "").trim() })),
+        cases: clean(cases, ["date", "equip", "symptom", "cause", "action"]).map(c => {
+          const o = { date: (c.date || "").trim(), equip: (c.equip || "").trim(), symptom: (c.symptom || "").trim(),
+            cause: (c.cause || "").trim(), action: (c.action || "").trim() };
+          if (c.caresId) { o.caresId = c.caresId; o.caresSnap = c.caresSnap || {}; }
+          return o;
+        }),
         env: en.text, envHtml: en.html,
         proposals: pr.text, proposalsHtml: pr.html,
         actions: clean(actions, ["task"]).map(a => ({
@@ -749,5 +860,6 @@
   });
 
   /* ══════════ 테스트/외부 노출 ══════════ */
-  window.SemisCouncil = { CATS, stats, all, sorted, nextRound, printMinutes, setSign, renderSigning };
+  window.SemisCouncil = { CATS, stats, all, sorted, nextRound, printMinutes, setSign, renderSigning,
+    repairToCase, mergeCaresIntoCases, repairsInPeriod, prevMeetingDate, catNorm };
 })();

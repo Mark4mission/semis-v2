@@ -1218,6 +1218,10 @@ a.ct-tel:hover { color: var(--primary); }
 .cn-case-top { display: flex; gap: 6px; align-items: center; }
 .cn-case-top .cn-c-date { flex: 0 0 130px; min-width: 0; }
 .cn-case-top .cn-c-equip { flex: 1; min-width: 0; font-weight: 600; }
+/* CARES 동기화 바 + 연동 표시 */
+.cn-cares-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.cn-cares-bar .btn { border-color: var(--accent); color: var(--accent); }
+.cn-cares-tag { font-size: .78em; }
 /* 결정/액션 동적행 */
 .cn-act-row { display: grid; grid-template-columns: 30px 1fr 96px 146px 30px; gap: 6px; margin-bottom: 7px; align-items: center; }
 .cn-act-row input:not([type="checkbox"]) { min-width: 0; }

@@ -4307,6 +4307,76 @@ function makeFetchStub(server) {
     ok(!q(e2, "#modal-box .cn-signcode"), "manager 상세에는 코드 안내 없음");
   });
 
+  t("CN19 운영사→운영자 rename + catNorm 하위호환", () => {
+    const e = makeEnv();
+    const C = e.w.SemisCouncil;
+    ok(C.CATS.indexOf("운영자") >= 0, "운영자 옵션 존재");
+    ok(C.CATS.indexOf("운영사") < 0, "운영사 옵션 제거");
+    eq(C.catNorm("운영사"), "운영자", "구값 정규화");
+    eq(C.catNorm("제조사"), "제조사", "타값 유지");
+  });
+
+  t("CN20 repairToCase: CARES 고장 → 사례 필드 매핑", () => {
+    const e = makeEnv();
+    const cs = e.w.SemisCouncil.repairToCase({
+      id: "r1", equipmentName: "X-Ray 2호기", symptom: "꺼짐현상 반복",
+      reportedAtMs: Date.UTC(2026, 4, 14, 6, 0, 0),
+      rootCause: "그래픽카드 발열 파손", causeCategory: "mechanical",
+      resolvedAtMs: Date.UTC(2026, 4, 15), resolvedBy: "홍진의",
+      parts: [{ part: "그래픽카드", qty: 1 }]
+    });
+    ok(cs.date.indexOf("2026-05") === 0, "발생일 연월");
+    eq(cs.equip, "X-Ray 2호기", "장비");
+    eq(cs.symptom, "꺼짐현상 반복", "증상");
+    ok(cs.cause.indexOf("그래픽카드 발열 파손") >= 0 && cs.cause.indexOf("[기계]") >= 0, "근본원인+원인분류");
+    ok(cs.action.indexOf("홍진의") >= 0 && cs.action.indexOf("수리완료") >= 0 && cs.action.indexOf("그래픽카드") >= 0, "조치(처리자·상태·부품)");
+  });
+
+  t("CN21 mergeCaresIntoCases: 추가 / 미편집 갱신 / 편집 보존", () => {
+    const e = makeEnv();
+    const M = e.w.SemisCouncil.mergeCaresIntoCases;
+    const cases = [];
+    const r1 = { id: "r1", equipmentName: "ETD 1호기", symptom: "알람", reportedAtMs: Date.UTC(2026, 3, 10), rootCause: "오염" };
+    let res = M(cases, [r1]);
+    eq(res.added, 1, "신규 추가"); eq(cases.length, 1);
+    ok(cases[0].caresId === "r1" && cases[0].caresSnap, "caresId/snap 기록");
+    // 미편집 상태 → CARES 변경 반영
+    res = M(cases, [Object.assign({}, r1, { symptom: "알람 빈발", rootCause: "노즐 오염" })]);
+    eq(res.updated, 1, "미편집분 갱신");
+    eq(cases[0].symptom, "알람 빈발", "CARES 최신 반영");
+    // 사용자 편집 후 → 보존
+    cases[0].cause = "사용자 직접 수정";
+    res = M(cases, [Object.assign({}, r1, { symptom: "덮어쓰면안됨" })]);
+    eq(res.kept, 1, "편집분 보존 카운트");
+    eq(cases[0].cause, "사용자 직접 수정", "편집 내용 유지");
+    ok(cases[0].symptom !== "덮어쓰면안됨", "편집분은 CARES로 덮지 않음");
+  });
+
+  await ta("CN22 편집폼 CARES 동기화 버튼 → 기간 내 사례 채움 + caresId 저장", async () => {
+    const e = makeEnv();
+    e.S.data.council = [
+      { id: "m1", round: 1, date: "2026-03-19", attendees: [], cases: [], actions: [], files: [] },
+      { id: "m2", round: 2, date: "2026-04-17", attendees: [], cases: [], actions: [], files: [] }
+    ];
+    e.w.SemisEquipment.loadCares = async () => ({ err: null, repairs: [
+      { id: "rp1", equipmentName: "ETD 1호기", symptom: "알람", reportedAtMs: Date.UTC(2026, 3, 5), rootCause: "오염", resolvedBy: "홍진의", resolvedAtMs: Date.UTC(2026, 3, 6) },
+      { id: "rp0", equipmentName: "ETD 2호기", symptom: "기간밖", reportedAtMs: Date.UTC(2026, 2, 1) }
+    ]});
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, '[data-cn-row="m2"]').click();
+    q(e, "#cn-edit").click();
+    ok(q(e, "#cn-cares-sync"), "동기화 버튼 존재");
+    q(e, "#cn-cares-sync").click();
+    await new Promise(r => setTimeout(r, 30));
+    q(e, "#cn-save").click();
+    const m2 = e.S.data.council.find(c => c.id === "m2");
+    eq(m2.cases.length, 1, "기간(3/19~4/17) 내 1건만");
+    eq(m2.cases[0].equip, "ETD 1호기", "장비 매핑");
+    eq(m2.cases[0].caresId, "rp1", "caresId 저장");
+    ok(m2.cases[0].caresSnap && m2.cases[0].caresSnap.symptom === "알람", "snapshot 저장");
+  });
+
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
   console.log(`  SeMIS v2.9 테스트: ${passed + failed}건 실행`);
