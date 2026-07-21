@@ -1664,6 +1664,99 @@ function makeFetchStub(server) {
       ok(q(e, "#b-save"), "모달 유지 (저장 안 됨)");
       eq(e.S.data.branches.length, 0, "데이터 미추가");
     });
+
+    /* ── v2.8: 지점별 교육 현황(b.trainings) + 첨부 ── */
+    t("BR08 교육 현황 섹션 렌더 + 권한별 추가 버튼", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      seed(e);
+      go(e, "branches");
+      q(e, '[data-br-row="br1"]').click();
+      const mb = q(e, "#modal-box");
+      ok(mb.textContent.includes("교육 현황"), "교육 현황 섹션 표시");
+      ok(q(e, "#br-train-add"), "hq 교육 추가 버튼");
+      ok(q(e, "#br-train-list").textContent.includes("등록된 교육 기록이 없습니다"), "빈 상태 문구");
+      // 일반 사용자는 추가 버튼 없음
+      const e2 = makeEnv();
+      loginAs(e2, "manager");
+      e2.S.data.branches.push({ id: "brm", region: "아시아", code: "TESTA", iata: "BKK",
+        manager: "", security: "", staff: "", catering: false, layover: false, hotel: "",
+        mechanic: "", lat: "", lng: "", note: "", extras: [] });
+      e2.S.saveSilent();
+      go(e2, "branches");
+      q(e2, '[data-br-row="brm"]').click();
+      ok(q(e2, "#modal-box").textContent.includes("교육 현황"), "일반 사용자도 섹션 표시");
+      ok(!q(e2, "#br-train-add"), "일반 사용자 추가 버튼 없음");
+    });
+
+    t("BR09 교육 기록 등록/수정/삭제 CRUD", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      seed(e);
+      go(e, "branches");
+      q(e, '[data-br-row="br1"]').click();
+      q(e, "#br-train-add").click();
+      q(e, "#tr-date").value = "2026-07-20";
+      q(e, "#tr-instructor").value = "김교관";
+      q(e, "#tr-content").value = "액체류 반입금지 교육";
+      q(e, "#tr-done").value = "14";
+      q(e, "#tr-note").value = "전원 이수";
+      q(e, "#tr-save").click();
+      const b = e.S.data.branches.find(x => x.id === "br1");
+      eq(b.trainings.length, 1, "교육 기록 1건 저장");
+      eq(b.trainings[0].date, "2026-07-20", "교육일");
+      eq(b.trainings[0].instructor, "김교관", "교관");
+      eq(b.trainings[0].content, "액체류 반입금지 교육", "교육내용");
+      eq(b.trainings[0].doneCount, 14, "완료 인원(숫자)");
+      eq(b.trainings[0].note, "전원 이수", "비고");
+      ok(Array.isArray(b.trainings[0].files), "files 배열");
+      // 저장 후 상세 모달 복귀 + 목록에 표시
+      const mb = q(e, "#modal-box");
+      ok(mb.textContent.includes("김교관"), "상세 모달에 교관 표시");
+      ok(mb.textContent.includes("액체류 반입금지 교육"), "교육내용 표시");
+      ok(mb.textContent.includes("완료 14명"), "완료 인원 배지");
+      // 수정
+      const tid = b.trainings[0].id;
+      q(e, `[data-tr-edit="${tid}"]`).click();
+      eq(q(e, "#tr-content").value, "액체류 반입금지 교육", "수정 폼에 기존값 로드");
+      q(e, "#tr-content").value = "휴대물품 검색 교육";
+      q(e, "#tr-save").click();
+      eq(e.S.data.branches.find(x => x.id === "br1").trainings[0].content, "휴대물품 검색 교육", "수정 반영");
+      eq(e.S.data.branches.find(x => x.id === "br1").trainings.length, 1, "수정은 건수 유지");
+      // 삭제
+      q(e, `[data-tr-del="${tid}"]`).click();
+      q(e, "#modal-box [data-act=ok]").click();
+      eq(e.S.data.branches.find(x => x.id === "br1").trainings.length, 0, "삭제 반영");
+    });
+
+    t("BR10 교육일·내용 모두 공란이면 저장 거부 + 첨부 링크 렌더", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      seed(e);
+      go(e, "branches");
+      q(e, '[data-br-row="br1"]').click();
+      q(e, "#br-train-add").click();
+      q(e, "#tr-save").click();
+      ok(q(e, "#tr-save"), "폼 유지 (저장 안 됨)");
+      eq(e.S.data.branches.find(x => x.id === "br1").trainings.length, 0, "데이터 미추가");
+      // 드롭존 + 파일 input 존재
+      ok(q(e, "#tr-dropzone"), "드래그앤드롭 영역");
+      ok(q(e, "#tr-file"), "파일 선택 input");
+      ok(q(e, "#tr-file").multiple, "다중 선택 허용");
+      // 첨부가 있는 기존 기록 → 상세 모달에 링크 렌더
+      const b = e.S.data.branches.find(x => x.id === "br1");
+      b.trainings = [{ id: "trnX", date: "2026-06-01", instructor: "박강사", content: "정기교육",
+        doneCount: 10, note: "", files: [{ url: "https://files.example/edu.pdf", name: "교육자료.pdf", size: 2048 }] }];
+      e.S.saveSilent();
+      go(e, "branches");
+      q(e, '[data-br-row="br1"]').click();
+      const link = q(e, "#br-train-list a.nb-file");
+      ok(link, "첨부 링크 표시");
+      eq(link.getAttribute("href"), "https://files.example/edu.pdf", "첨부 URL");
+      ok(q(e, "#br-train-list").textContent.includes("교육자료.pdf"), "첨부 파일명");
+      // 오프라인(fetch 없음) 상태에서 addFiles 호출은 데이터 변화 없음(안전)
+      ok(e.w.SemisBranches.MAX_TRAIN_FILES === 20, "첨부 최대 20개");
+    });
   }
 
   await ta("S14 구버전 서버 데이터 pull 후에도 신규 모듈 메뉴/시드 유지", async () => {

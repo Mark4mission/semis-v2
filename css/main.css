@@ -613,6 +613,25 @@ tr.insp-cancel td { opacity: .5; text-decoration: line-through; }
 }
 a.nb-file:hover { border-color: var(--primary); color: var(--primary); }
 
+/* ═══════ 지점 교육 현황 (상세 모달) ═══════ */
+.br-train-sec { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
+.br-train-sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
+.br-train-sec-head b { font-size: .95rem; }
+.br-train-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--surface-2); }
+.br-train-item:last-child { margin-bottom: 0; }
+.br-train-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.br-train-head b { font-size: .88rem; font-variant-numeric: tabular-nums; }
+.br-train-content { margin-top: 6px; font-size: .86rem; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.br-train-note { margin-top: 4px; font-size: .82rem; color: var(--text-2); }
+.br-dropzone {
+  border: 2px dashed var(--border); border-radius: 10px; padding: 16px 12px;
+  text-align: center; color: var(--text-3); font-size: .84rem; cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.br-dropzone:hover { border-color: var(--primary); color: var(--text-2); }
+.br-dropzone.drag { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.br-dropzone u { text-underline-offset: 2px; }
+
 /* ═══════ 반응형 ═══════ */
 @media (max-width: 960px) {
   .dash-grid { grid-template-columns: 1fr; }

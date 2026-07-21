@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   SeMIS v2 — 지점 관리 모듈 (v2.7)
+   SeMIS v2 — 지점 관리 모듈 (v2.8)
    해외지점을 줌 가능한 세계지도(Leaflet, CDN) 위에 표시.
    마커 hover → 퀵 오버뷰 툴팁 / 클릭 → 상세 모달 / manager+ 등록·수정.
    Leaflet(CDN) 미로드·오프라인 시 목록 뷰로 자동 폴백.
@@ -7,7 +7,9 @@
    데이터: DATA.branches = [{ id, region(미주/유럽/중국/일본/아시아),
      code(지점코드), iata, manager(지점장), security(보안담당자),
      staff(총원), catering(기내식), layover(L/O호텔), hotel,
-     mechanic(주재 정비사), lat, lng, note, extras:[{label,value}] }]
+     mechanic(주재 정비사), lat, lng, note, extras:[{label,value}],
+     trainings:[{ id, date(교육일), instructor(교관/강사), content(교육내용),
+       doneCount(완료 인원), note(비고), files:[{url,name,size}](최대 20) }] (v2.8) }]
    ═══════════════════════════════════════════════════════ */
 "use strict";
 
@@ -19,6 +21,10 @@
   const REGIONS = ["미주", "유럽", "중국", "일본", "아시아"];
   const REGION_COLOR = { "미주": "#2563eb", "유럽": "#7c3aed", "중국": "#dc2626", "일본": "#db2777", "아시아": "#0d9488" };
   const REGION_BADGE = { "미주": "badge-blue", "유럽": "badge-gray", "중국": "badge-red", "일본": "badge-orange", "아시아": "badge-green" };
+
+  /* 교육 현황(지점별 b.trainings) 첨부 제약 (v2.8) */
+  const MAX_TRAIN_FILES = 20;                // 교육 기록당 첨부 최대 개수
+  const TRAIN_FILE_MAX = 20 * 1024 * 1024;   // 파일당 최대 용량 (20MB)
 
   /* ─────── 주요 공항 IATA → [위도, 경도] (마커 자동 배치용) ─────── */
   const IATA = {
@@ -97,6 +103,28 @@
     </div>`;
   }
 
+  /* ─────── 교육 현황 목록 HTML (상세 모달 내부) ─────── */
+  function trainListHTML(b) {
+    const items = (b.trainings || []).slice().sort((a, z) =>
+      String(z.date || "").localeCompare(String(a.date || "")) ||
+      String(z.id || "").localeCompare(String(a.id || "")));
+    if (!items.length) return '<div class="form-hint" style="margin:2px 0 4px">등록된 교육 기록이 없습니다.</div>';
+    return items.map(t => `
+      <div class="br-train-item" data-tr-item="${esc(t.id)}">
+        <div class="br-train-head">
+          <b>📅 ${esc(t.date || "-")}</b>
+          ${t.instructor ? `<span class="badge badge-gray">👤 ${esc(t.instructor)}</span>` : ""}
+          ${t.doneCount !== "" && t.doneCount != null ? `<span class="badge badge-green">완료 ${esc(String(t.doneCount))}명</span>` : ""}
+          ${canWrite() ? `<button class="mt-btn" data-tr-edit="${esc(t.id)}" title="수정" style="margin-left:auto">✎</button>
+            <button class="mt-btn danger" data-tr-del="${esc(t.id)}" title="삭제">🗑</button>` : ""}
+        </div>
+        ${t.content ? `<div class="br-train-content">${esc(t.content)}</div>` : ""}
+        ${t.note ? `<div class="br-train-note">📝 ${esc(t.note)}</div>` : ""}
+        ${(t.files || []).length ? `<div class="nb-files-view">${(t.files || []).map(f =>
+          `<a class="nb-file" href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>`).join("")}</div>` : ""}
+      </div>`).join("");
+  }
+
   /* ─────── 상세 모달 ─────── */
   function detail(id) {
     const b = list().find(x => x.id === id);
@@ -118,6 +146,13 @@
         ${tr("비고", b.note)}
         ${coordOf(b) ? `<tr><td class="br-d-label">좌표</td><td style="font-variant-numeric:tabular-nums">${coordOf(b)[0].toFixed(2)}, ${coordOf(b)[1].toFixed(2)}${!b.lat && iataCoord(b.iata) ? ' <span class="form-hint" style="display:inline">(IATA 자동)</span>' : ""}</td></tr>` : ""}
       </table>
+      <div class="br-train-sec">
+        <div class="br-train-sec-head">
+          <b>📚 교육 현황 <span class="form-hint" style="display:inline;font-weight:400">${(b.trainings || []).length}건</span></b>
+          ${canWrite() ? '<button class="btn btn-ghost btn-sm" id="br-train-add">+ 교육 추가</button>' : ""}
+        </div>
+        <div id="br-train-list">${trainListHTML(b)}</div>
+      </div>
       <div class="modal-actions">
         ${canWrite() ? '<button class="btn btn-danger" id="br-del" style="margin-right:auto">삭제</button><button class="btn btn-ghost" id="br-edit">✎ 수정</button>' : ""}
         <button class="btn btn-primary" id="br-close">닫기</button>
@@ -129,7 +164,110 @@
         D().branches = list().filter(x => x.id !== b.id);
         SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
       });
+      const addBtn = $("#br-train-add");
+      if (addBtn) addBtn.onclick = () => trainForm(b.id, null);
+      $$("#br-train-list [data-tr-edit]").forEach(btn => btn.onclick = () => trainForm(b.id, btn.dataset.trEdit));
+      $$("#br-train-list [data-tr-del]").forEach(btn => btn.onclick = () => {
+        const t = (b.trainings || []).find(x => x.id === btn.dataset.trDel);
+        confirmModal(`교육 기록 "${t && t.date ? t.date : ""}"을(를) 삭제하시겠습니까?`, () => {
+          b.trainings = (b.trainings || []).filter(x => x.id !== btn.dataset.trDel);
+          SeMIS.save(); toast("교육 기록이 삭제되었습니다.");
+          detail(b.id);
+        });
+      });
     }
+  }
+
+  /* ─────── 교육 기록 등록/수정 폼 (첨부: 드래그앤드롭/파일선택) ─────── */
+  function trainForm(branchId, trainId) {
+    const b = list().find(x => x.id === branchId);
+    if (!b) return;
+    if (!Array.isArray(b.trainings)) b.trainings = [];
+    const t = trainId ? b.trainings.find(x => x.id === trainId) : null;
+    let files = t ? (t.files || []).map(f => Object.assign({}, f)) : [];
+
+    openModal(`
+      <h3>${t ? "교육 기록 수정" : "교육 기록 추가"} <span class="badge badge-gray">${esc(b.code || "지점")}</span></h3>
+      <div class="form-grid">
+        <div class="form-row"><label>교육일</label>
+          <input id="tr-date" type="date" value="${esc(t ? t.date || "" : "")}"></div>
+        <div class="form-row"><label>완료 인원</label>
+          <input id="tr-done" type="number" min="0" max="99999" value="${esc(t && t.doneCount != null ? t.doneCount : "")}" placeholder="명"></div>
+      </div>
+      <div class="form-row"><label>교관(강사)</label>
+        <input id="tr-instructor" value="${esc(t ? t.instructor || "" : "")}" maxlength="60" placeholder="예: 김보안 교관"></div>
+      <div class="form-row"><label>교육내용</label>
+        <textarea id="tr-content" maxlength="1000" placeholder="교육 주제·과목·주요 내용">${esc(t ? t.content || "" : "")}</textarea></div>
+      <div class="form-row"><label>비고</label>
+        <input id="tr-note" value="${esc(t ? t.note || "" : "")}" maxlength="200" placeholder="특이사항 (선택)"></div>
+      <div class="form-row"><label>첨부파일 <span class="form-hint" style="display:inline;font-weight:400">(최대 ${MAX_TRAIN_FILES}개 · 각 20MB 이하)</span></label>
+        <div id="tr-dropzone" class="br-dropzone">📎 파일을 이곳에 끌어다 놓거나 <u>클릭하여 선택</u>하세요
+          <input type="file" id="tr-file" multiple style="display:none"></div>
+        <div id="tr-file-box" class="nb-files-view"></div></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="tr-cancel">취소</button>
+        <button class="btn btn-primary" id="tr-save">저장</button>
+      </div>`, { wide: true });
+
+    function renderFiles() {
+      $("#tr-file-box").innerHTML = files.length
+        ? files.map((f, i) => `<span class="nb-file"><a href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>
+            <button type="button" class="mt-btn danger" data-tr-frm="${i}" title="첨부 제거">✕</button></span>`).join("")
+          + `<span class="form-hint" style="align-self:center">${files.length}/${MAX_TRAIN_FILES}</span>`
+        : '<span class="form-hint">첨부된 파일이 없습니다.</span>';
+      $$("#tr-file-box [data-tr-frm]").forEach(btn => btn.onclick = () => {
+        files.splice(Number(btn.dataset.trFrm), 1); renderFiles();
+      });
+    }
+    renderFiles();
+
+    async function addFiles(picked) {
+      if (!picked || !picked.length) return;
+      if (!window.SemisSync || typeof fetch === "undefined") { toast("오프라인에서는 파일을 첨부할 수 없습니다.", true); return; }
+      for (const f of picked) {
+        if (files.length >= MAX_TRAIN_FILES) { toast("첨부는 최대 " + MAX_TRAIN_FILES + "개까지 가능합니다.", true); break; }
+        if ((f.size || 0) > TRAIN_FILE_MAX) { toast(f.name + ": 20MB를 초과합니다.", true); continue; }
+        toast("업로드 중: " + f.name);
+        try {
+          const up = await SemisSync.uploadFile(f, "branch-train");
+          files.push({ url: up.url, name: f.name, size: f.size || 0 }); renderFiles();
+          toast("업로드되었습니다: " + f.name);
+        } catch (err) { toast(f.name + ": 업로드 실패 — 네트워크를 확인하세요.", true); }
+      }
+    }
+
+    const dz = $("#tr-dropzone"), fi = $("#tr-file");
+    dz.onclick = () => fi.click();
+    dz.ondragover = (e) => { e.preventDefault(); dz.classList.add("drag"); };
+    dz.ondragleave = () => dz.classList.remove("drag");
+    dz.ondrop = (e) => {
+      e.preventDefault(); dz.classList.remove("drag");
+      addFiles(Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []));
+    };
+    fi.onchange = (e) => {
+      const picked = Array.prototype.slice.call(e.target.files || []);
+      e.target.value = ""; addFiles(picked);
+    };
+
+    $("#tr-cancel").onclick = () => detail(branchId);
+    $("#tr-save").onclick = () => {
+      const date = $("#tr-date").value;
+      const content = $("#tr-content").value.trim();
+      if (!date && !content) { toast("교육일 또는 교육내용을 입력하세요.", true); return; }
+      const doneV = $("#tr-done").value.trim();
+      const rec = {
+        date,
+        instructor: $("#tr-instructor").value.trim(),
+        content,
+        doneCount: doneV === "" ? "" : Math.max(0, Number(doneV) || 0),
+        note: $("#tr-note").value.trim(),
+        files: files.slice(0, MAX_TRAIN_FILES)
+      };
+      if (t) Object.assign(t, rec);
+      else b.trainings.push(Object.assign({ id: uid("trn") }, rec));
+      SeMIS.save(); toast("교육 기록이 저장되었습니다. (실시간 공유)");
+      detail(branchId);
+    };
   }
 
   /* ─────── 등록/수정 폼 ─────── */
@@ -380,7 +518,7 @@
   /* ─────── 테스트/외부 노출 ─────── */
   window.SemisBranches = {
     REGIONS, REGION_COLOR, iataCoord, coordOf, quickHTML,
-    detail, branchForm, list, filtered,
+    detail, branchForm, trainForm, trainListHTML, MAX_TRAIN_FILES, list, filtered,
     setViewMode: (m) => { if (m === "map" || m === "list") viewMode = m; },
     setRegionFilter: (r) => { regionFilter = REGIONS.includes(r) ? r : ""; },
     setQuery: (q) => { query = String(q || ""); }
