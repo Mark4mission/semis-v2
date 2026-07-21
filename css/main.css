@@ -623,6 +623,23 @@ a.nb-file:hover { border-color: var(--primary); color: var(--primary); }
 .br-train-head b { font-size: .88rem; font-variant-numeric: tabular-nums; }
 .br-train-content { margin-top: 6px; font-size: .86rem; color: var(--text); white-space: pre-wrap; word-break: break-word; }
 .br-train-note { margin-top: 4px; font-size: .82rem; color: var(--text-2); }
+/* 첨부 접이식(disclosure) — 기본 접힘, 개수만 노출해 모달 세로 길이 절약 */
+.br-train-files { margin-top: 7px; }
+.br-train-files > summary {
+  cursor: pointer; list-style: none; user-select: none;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .78rem; font-weight: 600; color: var(--text-2);
+  padding: 3px 11px; border: 1px solid var(--border); border-radius: 14px;
+  background: var(--surface); transition: border-color .15s, color .15s, background .15s;
+}
+.br-train-files > summary::-webkit-details-marker { display: none; }
+.br-train-files > summary::before { content: "▸"; font-size: .68rem; line-height: 1; transition: transform .15s; }
+.br-train-files[open] > summary::before { transform: rotate(90deg); }
+.br-train-files > summary:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+.br-train-files[open] > summary { margin-bottom: 7px; }
+.br-train-files b { font-variant-numeric: tabular-nums; }
+/* 많은 첨부 시 목록 자체 높이 제한 + 스크롤 (상세·편집 폼 공용) */
+.br-files-scroll { max-height: 176px; overflow-y: auto; padding-right: 2px; }
 .br-dropzone {
   border: 2px dashed var(--border); border-radius: 10px; padding: 16px 12px;
   text-align: center; color: var(--text-3); font-size: .84rem; cursor: pointer;

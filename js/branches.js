@@ -120,8 +120,11 @@
         </div>
         ${t.content ? `<div class="br-train-content">${esc(t.content)}</div>` : ""}
         ${t.note ? `<div class="br-train-note">📝 ${esc(t.note)}</div>` : ""}
-        ${(t.files || []).length ? `<div class="nb-files-view">${(t.files || []).map(f =>
-          `<a class="nb-file" href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>`).join("")}</div>` : ""}
+        ${(t.files || []).length ? `<details class="br-train-files">
+          <summary>📎 첨부파일 <b>${(t.files || []).length}</b>개</summary>
+          <div class="nb-files-view br-files-scroll">${(t.files || []).map(f =>
+            `<a class="nb-file" href="${esc(f.url)}" target="_blank" rel="noopener">📄 ${esc(f.name)}</a>`).join("")}</div>
+        </details>` : ""}
       </div>`).join("");
   }
 
@@ -203,7 +206,7 @@
       <div class="form-row"><label>첨부파일 <span class="form-hint" style="display:inline;font-weight:400">(최대 ${MAX_TRAIN_FILES}개 · 각 20MB 이하)</span></label>
         <div id="tr-dropzone" class="br-dropzone">📎 파일을 이곳에 끌어다 놓거나 <u>클릭하여 선택</u>하세요
           <input type="file" id="tr-file" multiple style="display:none"></div>
-        <div id="tr-file-box" class="nb-files-view"></div></div>
+        <div id="tr-file-box" class="nb-files-view br-files-scroll"></div></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="tr-cancel">취소</button>
         <button class="btn btn-primary" id="tr-save">저장</button>

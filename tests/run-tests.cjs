@@ -1750,8 +1750,11 @@ function makeFetchStub(server) {
       e.S.saveSilent();
       go(e, "branches");
       q(e, '[data-br-row="br1"]').click();
-      const link = q(e, "#br-train-list a.nb-file");
-      ok(link, "첨부 링크 표시");
+      const det = q(e, "#br-train-list details.br-train-files");
+      ok(det, "첨부는 접이식 details로 렌더");
+      ok(det.querySelector("summary").textContent.includes("1"), "summary에 첨부 개수 표시");
+      const link = det.querySelector("a.nb-file");
+      ok(link, "펼치면 첨부 링크 존재(DOM)");
       eq(link.getAttribute("href"), "https://files.example/edu.pdf", "첨부 URL");
       ok(q(e, "#br-train-list").textContent.includes("교육자료.pdf"), "첨부 파일명");
       // 오프라인(fetch 없음) 상태에서 addFiles 호출은 데이터 변화 없음(안전)
