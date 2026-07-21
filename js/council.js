@@ -95,10 +95,13 @@
     const sec = (title, body) => body ? `<div class="cn-sec"><div class="cn-sec-h">${title}</div>${body}</div>` : "";
 
     const attHTML = att.length ? `<table class="tbl cn-att-tbl"><thead><tr>
-        <th style="width:78px">구분</th><th>소속</th><th style="width:96px">성명</th><th style="width:96px">직책</th></tr></thead><tbody>
-      ${att.map(a => `<tr>
+        <th style="width:34px">No</th><th style="width:96px">구분</th><th style="width:88px">성명</th>
+        <th style="width:88px">직책</th><th>소속</th><th>비고</th></tr></thead><tbody>
+      ${att.map((a, i) => `<tr>
+        <td style="text-align:center;color:var(--text-3)">${i + 1}</td>
         <td>${a.cat ? `<span class="badge ${CAT_BADGE[a.cat] || "badge-gray"}">${esc(a.cat)}</span>` : "-"}</td>
-        <td>${esc(a.org || "-")}</td><td>${esc(a.name || "-")}</td><td>${esc(a.role || "-")}</td></tr>`).join("")}
+        <td>${esc(a.name || "-")}</td><td>${esc(a.role || "-")}</td>
+        <td>${esc(a.org || "-")}</td><td>${a.note ? esc(a.note) : "-"}</td></tr>`).join("")}
       </tbody></table>` : "";
 
     const caseHTML = cases.length ? `<table class="tbl cn-case-tbl"><thead><tr>
@@ -235,15 +238,18 @@
         attendees[i].org = row.querySelector(".cn-a-org").value;
         attendees[i].name = row.querySelector(".cn-a-name").value;
         attendees[i].role = row.querySelector(".cn-a-role").value;
+        attendees[i].note = row.querySelector(".cn-a-note").value;
       });
     }
     function attPaint() {
       $("#cn-att").innerHTML = attendees.map((a, i) => `
         <div class="cn-att-row">
+          <span class="cn-a-no">${i + 1}</span>
           <select class="cn-a-cat">${CATS.map(c => `<option ${(a.cat || "제조사") === c ? "selected" : ""}>${c}</option>`).join("")}</select>
           <input class="cn-a-org" value="${esc(a.org || "")}" maxlength="40" placeholder="소속">
           <input class="cn-a-name" value="${esc(a.name || "")}" maxlength="24" placeholder="성명">
           <input class="cn-a-role" value="${esc(a.role || "")}" maxlength="24" placeholder="직책">
+          <input class="cn-a-note" value="${esc(a.note || "")}" maxlength="40" placeholder="비고 (선택)">
           <button type="button" class="mt-btn danger" data-att-del="${i}" title="삭제">✕</button>
         </div>`).join("") || '<span class="form-hint">참석자를 추가하세요.</span>';
       $$("#cn-att [data-att-del]").forEach(btn => btn.onclick = () => {
@@ -251,7 +257,7 @@
       });
     }
     attPaint();
-    $("#cn-att-add").onclick = () => { attCollect(); attendees.push({ cat: "제조사", org: "", name: "", role: "" }); attPaint(); };
+    $("#cn-att-add").onclick = () => { attCollect(); attendees.push({ cat: "제조사", org: "", name: "", role: "", note: "" }); attPaint(); };
 
     /* ─ 사례 동적행 ─ */
     function caseCollect() {
@@ -364,7 +370,8 @@
         chair: $("#cn-chair").value.trim(),
         scribe: $("#cn-scribe").value.trim(),
         attendees: clean(attendees, ["org", "name"]).map(a => ({
-          cat: a.cat || "기타", org: (a.org || "").trim(), name: (a.name || "").trim(), role: (a.role || "").trim() })),
+          cat: a.cat || "기타", org: (a.org || "").trim(), name: (a.name || "").trim(),
+          role: (a.role || "").trim(), note: (a.note || "").trim() })),
         agenda: $("#cn-agenda").value.trim(),
         cases: clean(cases, ["equip", "symptom", "cause", "action"]).map(c => ({
           equip: (c.equip || "").trim(), symptom: (c.symptom || "").trim(),
@@ -392,10 +399,11 @@
     const att = (x.attendees || []), cases = (x.cases || []), acts = (x.actions || []);
     const today = new Date().toISOString().slice(0, 10);
 
-    const attRows = att.length ? att.map(a => `<tr>
-        <td>${esc(a.cat || "-")}</td><td>${esc(a.org || "-")}</td>
-        <td>${esc(a.name || "-")}</td><td>${esc(a.role || "-")}</td></tr>`).join("")
-      : '<tr><td colspan="4" class="pc-empty">기록 없음</td></tr>';
+    const attRows = att.length ? att.map((a, i) => `<tr>
+        <td style="text-align:center">${i + 1}</td><td>${esc(a.cat || "-")}</td>
+        <td>${esc(a.name || "-")}</td><td>${esc(a.role || "-")}</td>
+        <td>${esc(a.org || "-")}</td><td>${esc(a.note || "")}</td></tr>`).join("")
+      : '<tr><td colspan="6" class="pc-empty">기록 없음</td></tr>';
     const caseRows = cases.length ? cases.map(c => `<tr>
         <td><b>${esc(c.equip || "-")}</b></td><td>${P(c.symptom)}</td>
         <td>${P(c.cause)}</td><td>${P(c.action)}</td></tr>`).join("")
@@ -423,6 +431,8 @@
   table { width: 100%; border-collapse: collapse; }
   th, td { border: 1px solid #94a3b8; padding: 4px 6px; text-align: left; vertical-align: top; font-size: 9.5px; }
   th { background: #eff6ff; color: #1e3a8a; font-weight: 700; border-bottom: 1.5px solid #64748b; }
+  table.att { table-layout: fixed; }
+  table.att td { word-break: break-word; }
   .ptext { border: 1px solid #94a3b8; border-left: 3px solid #1d4ed8; border-radius: 6px; padding: 8px 10px; background: #fff; white-space: normal; }
   .pc-empty { color: #94a3b8; text-align: center; }
   .foot { margin-top: 16px; padding-top: 8px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 8.5px; color: #64748b; }
@@ -439,7 +449,8 @@
     </div>
   </div>
   <div class="sec"><div class="sec-h">참석자</div>
-    <table><thead><tr><th style="width:70px">구분</th><th>소속</th><th style="width:80px">성명</th><th style="width:80px">직책</th></tr></thead>
+    <table class="att"><thead><tr><th style="width:26px">No</th><th style="width:64px">구분</th>
+      <th style="width:72px">성명</th><th style="width:74px">직책</th><th style="width:34%">소속</th><th>비고</th></tr></thead>
       <tbody>${attRows}</tbody></table></div>
   ${textSec("안건", x.agenda)}
   <div class="sec"><div class="sec-h">① 고장·수리·유지보수 사례 근본원인</div>

@@ -4020,6 +4020,7 @@ function makeFetchStub(server) {
     arow.querySelector(".cn-a-org").value = "뉴원S&T";
     arow.querySelector(".cn-a-name").value = "홍길동";
     arow.querySelector(".cn-a-role").value = "차장";
+    arow.querySelector(".cn-a-note").value = "기술지원";
     q(e, "#cn-case-add").click();
     const crow = q(e, "#cn-cases .cn-case-row");
     crow.querySelector(".cn-c-equip").value = "ETD 3호기";
@@ -4041,6 +4042,7 @@ function makeFetchStub(server) {
     eq(c.attendees.length, 1, "참석자 1명");
     eq(c.attendees[0].org, "뉴원S&T", "소속");
     eq(c.attendees[0].cat, "제조사", "구분 기본값");
+    eq(c.attendees[0].note, "기술지원", "참석자 비고");
     eq(c.cases.length, 1, "사례 1건");
     eq(c.cases[0].equip, "ETD 3호기", "장비");
     eq(c.cases[0].cause, "멤브레인 노즐 오염", "근본원인");
