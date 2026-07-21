@@ -65,10 +65,10 @@
     const items = sorted();
     if (!items.length) return '<div class="empty">등록된 회의록이 없습니다.' +
       (canWrite() ? ' 우측 상단 <b>+ 회의록 작성</b>으로 첫 회의를 기록하세요.' : '') + '</div>';
-    return `<div class="table-wrap"><table class="tbl"><thead><tr>
-        <th style="width:64px">회차</th><th style="width:112px">회의일</th>
-        <th>회의명 / 장소</th><th style="width:150px">참석</th>
-        <th style="width:130px">사례·결정</th><th style="width:64px">첨부</th></tr></thead><tbody>
+    return `<div class="table-wrap"><table class="tbl cn-list-tbl"><thead><tr>
+        <th style="width:60px">회차</th><th style="width:104px">회의일</th>
+        <th>회의명 / 장소</th><th style="width:210px">참석</th>
+        <th style="width:190px">사례·결정</th><th style="width:56px">첨부</th></tr></thead><tbody>
       ${items.map(x => {
         const att = (x.attendees || []).length;
         const cats = Array.from(new Set((x.attendees || []).map(a => a.cat).filter(Boolean)));

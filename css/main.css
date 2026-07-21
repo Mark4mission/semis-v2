@@ -1149,6 +1149,10 @@ a.ct-tel:hover { color: var(--primary); }
 .council-banner .cb-body i { color: var(--primary); font-style: normal; font-weight: 600; }
 .council-banner .btn { flex-shrink: 0; align-self: center; white-space: nowrap; }
 
+/* 목록 표: 고정 레이아웃 — 회의명이 폭을 독점하지 않도록, 참석·사례결정에 넉넉한 폭 배분 */
+.cn-list-tbl { table-layout: fixed; min-width: 760px; }
+.cn-list-tbl td { word-break: break-word; }
+
 /* ── 상세 모달(읽기) — 섹션 구분선·헤더 강조·표 격자선 ── */
 .cn-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .84rem; color: var(--text-2);
   padding: 4px 0 12px; border-bottom: 2px solid var(--border-strong); margin-bottom: 4px; }
