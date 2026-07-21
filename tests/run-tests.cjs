@@ -25,6 +25,7 @@ const rgJS = read("js/regulations.js");
 const plJS = read("js/policy.js");
 const ctcJS = read("js/certs.js");
 const blJS = read("js/billing.js");
+const cnclJS = read("js/council.js");
 const vtJS = read("js/vault.js");
 const caresJS = read("js/cares.js");
 const newsJS = read("js/news.js");
@@ -65,7 +66,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) { S.boot(); if (w.SemisSearch) w.SemisSearch.init(); }
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -2004,7 +2005,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "billing,branches,certOpts,certs,contacts,contracts,customUsers,equipMaint,equipment,gcal,inspections,kpis,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
+    eq(keys, "billing,branches,certOpts,certs,contacts,contracts,council,customUsers,equipMaint,equipment,gcal,inspections,kpis,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -3969,6 +3970,146 @@ function makeFetchStub(server) {
       ok(html.indexOf("예방정비") >= 0, "선택 과제(C6-1) 내용 포함");
     });
   }
+
+  /* ══════════ [CN*] 보안장비 협의회 회의록 (v2.24) ══════════ */
+  t("CN01 normalize: council 배열/메뉴 자동 삽입 + 구링크 (구버전) 구분", () => {
+    const e = makeEnv();
+    const d = e.S.data;
+    // 구버전 상태 시뮬레이션
+    d.menus = d.menus.filter(m => !(m.type === "module" && m.module === "council"));
+    delete d.council;
+    const lk = d.menus.find(m => m.id === "equip-council");
+    if (lk) lk.label = "보안장비 협의체";
+    const changed = e.S.normalizeData();
+    eq(changed, true, "변경 감지");
+    ok(Array.isArray(d.council), "council 배열 보정");
+    const mn = d.menus.find(m => m.type === "module" && m.module === "council");
+    ok(mn, "council 모듈 메뉴 삽입");
+    eq(mn.vis, "mgr", "vis=mgr (일반 사용자 제외)");
+    eq(mn.parent, "grp-equip", "보안장비 그룹 소속");
+    const eqp = d.menus.find(m => m.type === "module" && m.module === "equipment");
+    ok(mn.seq > eqp.seq, "보안장비 유지관리 다음 위치");
+    eq(d.menus.find(m => m.id === "equip-council").label, "보안장비 협의체 (구버전)", "구링크 라벨 구분");
+    eq(e.S.normalizeData(), false, "idempotent");
+  });
+
+  t("CN02 렌더(hq): C6-1 배너 + 통계 + 작성/ KPI 버튼", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "council");
+    ok(q(e, ".page-title").textContent.includes("협의회"), "제목");
+    ok(q(e, ".council-banner"), "C6-1 배너 표시");
+    ok(q(e, ".council-banner").textContent.includes("C6-1"), "C6-1 근거 언급");
+    ok(q(e, "#cn-add"), "작성 버튼(hq)");
+    ok(q(e, "#cn-kpi"), "KPI C6-1 링크(hq)");
+    ok(q(e, ".empty"), "빈 상태 안내");
+  });
+
+  t("CN03 회의록 작성 저장 + 참석자/사례/액션 + 목록 반영", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, "#cn-add").click();
+    eq(q(e, "#cn-round").value, "1", "빈 상태 회차 기본 1");
+    q(e, "#cn-round").value = "3";
+    q(e, "#cn-date").value = "2026-07-15";
+    q(e, "#cn-place").value = "인천화물터미널 B동 회의실";
+    q(e, "#cn-chair").value = "최상일 파트장";
+    q(e, "#cn-att-add").click();
+    const arow = q(e, "#cn-att .cn-att-row");
+    arow.querySelector(".cn-a-org").value = "뉴원S&T";
+    arow.querySelector(".cn-a-name").value = "홍길동";
+    arow.querySelector(".cn-a-role").value = "차장";
+    q(e, "#cn-case-add").click();
+    const crow = q(e, "#cn-cases .cn-case-row");
+    crow.querySelector(".cn-c-equip").value = "ETD 3호기";
+    crow.querySelector(".cn-c-symptom").value = "잦은 알람 오류";
+    crow.querySelector(".cn-c-cause").value = "멤브레인 노즐 오염";
+    crow.querySelector(".cn-c-action").value = "노즐 교체 및 청소";
+    q(e, "#cn-env").value = "항온항습 시설 개선 논의";
+    q(e, "#cn-proposals").value = "검색요원 정기 교육 제안";
+    q(e, "#cn-act-add").click();
+    const trow = q(e, "#cn-acts .cn-act-row");
+    trow.querySelector(".cn-t-task").value = "부품 교체주기 데이터 검토";
+    trow.querySelector(".cn-t-owner").value = "최상일";
+    trow.querySelector(".cn-t-due").value = "2026-08-10";
+    q(e, "#cn-save").click();
+    eq(e.S.data.council.length, 1, "회의록 1건 저장");
+    const c = e.S.data.council[0];
+    eq(c.round, 3, "회차");
+    eq(c.date, "2026-07-15", "회의일");
+    eq(c.attendees.length, 1, "참석자 1명");
+    eq(c.attendees[0].org, "뉴원S&T", "소속");
+    eq(c.attendees[0].cat, "제조사", "구분 기본값");
+    eq(c.cases.length, 1, "사례 1건");
+    eq(c.cases[0].equip, "ETD 3호기", "장비");
+    eq(c.cases[0].cause, "멤브레인 노즐 오염", "근본원인");
+    eq(c.env, "항온항습 시설 개선 논의", "사용환경 개선");
+    eq(c.proposals, "검색요원 정기 교육 제안", "제안·토의");
+    eq(c.actions.length, 1, "액션 1건");
+    eq(c.actions[0].done, false, "미완료");
+    ok(q(e, "#cn-body").textContent.includes("제3차"), "목록에 표시");
+  });
+
+  t("CN04 권한: manager 읽기전용(인쇄 가능) + user 접근 차단", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "c1", round: 1, date: "2026-06-10", place: "B동",
+      attendees: [{ cat: "제조사", org: "뉴원", name: "김보안" }], cases: [], actions: [], files: [] }];
+    loginAs(e, "manager");
+    go(e, "council");
+    ok(!q(e, "#cn-add"), "manager 작성 버튼 없음");
+    ok(!q(e, "#cn-kpi"), "manager KPI 링크 없음(hq 전용)");
+    q(e, "[data-cn-row]").click();
+    ok(q(e, "#modal-box").textContent.includes("제1차"), "상세 열람 가능");
+    ok(!q(e, "#cn-edit") && !q(e, "#cn-del"), "수정/삭제 버튼 없음");
+    ok(q(e, "#cn-print"), "인쇄는 가능");
+    e.S.closeModal();
+    // user 차단: 협의회 화면 미표시(대시보드로 리다이렉트)
+    const e2 = makeEnv();
+    loginAs(e2, "user");
+    go(e2, "council");
+    ok(!q(e2, ".council-banner"), "user는 협의회 화면 접근 차단");
+  });
+
+  t("CN05 인쇄: printMinutes가 회의록 iframe 생성 + 내용 포함", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "c1", round: 2, date: "2026-06-10", place: "B동 회의실",
+      chair: "최상일", attendees: [{ cat: "제조사", org: "뉴원S&T", name: "홍길동", role: "차장" }],
+      cases: [{ equip: "ETD 1호기", symptom: "알람", cause: "오염", action: "청소" }],
+      env: "항온항습", proposals: "교육 제안",
+      actions: [{ task: "데이터 검토", owner: "최상일", due: "2026-07-01", done: false }], files: [] }];
+    loginAs(e, "hq");
+    go(e, "council");
+    const before = e.w.document.querySelectorAll("iframe").length;
+    e.w.SemisCouncil.printMinutes("c1");
+    const after = e.w.document.querySelectorAll("iframe").length;
+    ok(after > before, "인쇄용 iframe 추가");
+    const fr = Array.from(e.w.document.querySelectorAll("iframe")).pop();
+    const html = fr.contentWindow.document.documentElement.innerHTML;
+    ok(/보안장비 협의회 회의록/.test(html), "회의록 제목");
+    ok(html.indexOf("홍길동") >= 0 && html.indexOf("ETD 1호기") >= 0, "참석자·사례 포함");
+    ok(html.indexOf("C6-1") >= 0, "C6-1 근거 표기");
+  });
+
+  t("CN06 stats: 총/올해/누적 사례/미완료 액션 집계", () => {
+    const e = makeEnv();
+    const yr = new Date().getFullYear();
+    e.S.data.council = [
+      { id: "a", round: 1, date: yr + "-03-01", attendees: [], cases: [{}, {}], actions: [{ done: true }, { done: false }], files: [] },
+      { id: "b", round: 2, date: "2025-01-01", attendees: [], cases: [{}], actions: [{ done: false }], files: [] }
+    ];
+    const s = e.w.SemisCouncil.stats();
+    eq(s.total, 2, "총 2회");
+    eq(s.thisYear, 1, "올해 1회");
+    eq(s.cases, 3, "누적 사례 3건");
+    eq(s.openAct, 2, "미완료 액션 2건");
+    eq(e.w.SemisCouncil.nextRound(), 3, "다음 회차 = 최대+1");
+  });
+
+  t("CN07 council이 SYNC_KEYS에 포함(공용 DB 동기화)", () => {
+    const e = makeEnv();
+    ok(e.Sync.SYNC_KEYS.includes("council"), "동기화 대상 포함");
+  });
 
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");

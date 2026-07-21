@@ -1135,3 +1135,52 @@ a.ct-tel:hover { color: var(--primary); }
   .kpi-2bars { grid-template-columns: 1fr; gap: 8px; }
   .kpi-pick-btn { max-width: none; }
 }
+
+/* ═══════ 보안장비 협의회 회의록 (v2.24) ═══════ */
+.council-banner {
+  display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px;
+  padding: 13px 15px; border: 1px solid var(--border); border-left: 4px solid var(--primary);
+  border-radius: 10px; background: var(--primary-soft);
+}
+.council-banner .cb-ico { font-size: 1.3rem; line-height: 1.4; flex-shrink: 0; }
+.council-banner .cb-body { flex: 1; min-width: 0; font-size: .82rem; color: var(--text-2); line-height: 1.5; }
+.council-banner .cb-body b { display: block; color: var(--text); font-size: .9rem; margin-bottom: 2px; }
+.council-banner .cb-body i { color: var(--primary); font-style: normal; font-weight: 600; }
+.council-banner .btn { flex-shrink: 0; align-self: center; white-space: nowrap; }
+
+/* 상세 모달 */
+.cn-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .84rem; color: var(--text-2);
+  padding: 10px 0 4px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.cn-meta b { color: var(--text); }
+.cn-sec { margin-top: 14px; }
+.cn-sec-h { font-size: .84rem; font-weight: 700; color: var(--primary);
+  border-left: 3px solid var(--primary); padding-left: 7px; margin-bottom: 7px; }
+.cn-text { font-size: .86rem; color: var(--text); white-space: pre-wrap; word-break: break-word;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; }
+.cn-att-tbl td, .cn-case-tbl td, .cn-act-tbl td { font-size: .82rem; }
+.cn-case-tbl td { white-space: pre-wrap; word-break: break-word; }
+.cn-act-done td { color: var(--text-3); text-decoration: line-through; }
+.cn-act-done td:first-child { text-decoration: none; }
+
+/* 편집 폼 — 참석자 동적행 */
+.cn-att-row { display: grid; grid-template-columns: 92px 1fr 1fr 1fr 30px; gap: 6px; margin-bottom: 6px; align-items: center; }
+.cn-att-row select, .cn-att-row input { min-width: 0; }
+/* 사례 동적행 */
+.cn-case-row { border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px;
+  margin-bottom: 8px; background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; }
+.cn-case-top { display: flex; gap: 6px; align-items: center; }
+.cn-case-top .cn-c-equip { flex: 1; min-width: 0; font-weight: 600; }
+/* 결정/액션 동적행 */
+.cn-act-row { display: grid; grid-template-columns: 30px 1fr 96px 146px 30px; gap: 6px; margin-bottom: 6px; align-items: center; }
+.cn-act-row input:not([type="checkbox"]) { min-width: 0; }
+.cn-t-donebox { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.cn-t-donebox input { width: auto; }
+
+@media (max-width: 768px) {
+  .council-banner { flex-wrap: wrap; }
+  .cn-att-row { grid-template-columns: 1fr 1fr; }
+  .cn-att-row .cn-a-cat { grid-column: 1 / 2; }
+  .cn-att-row [data-att-del] { grid-column: 2 / 3; justify-self: end; }
+  .cn-act-row { grid-template-columns: 30px 1fr 30px; }
+  .cn-act-row .cn-t-owner, .cn-act-row .cn-t-due { grid-column: 2 / 3; }
+}

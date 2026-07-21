@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.22.0";
+  const VERSION = "2.24.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -140,9 +140,10 @@ const SeMIS = (() => {
 
       g("grp-equip", "보안장비"),
       m("equipment", "보안장비 유지관리", "🔧", "equipment", "mgr", "grp-equip"),
+      m("council", "보안장비 협의회", "🤝", "council", "mgr", "grp-equip"),
       m("billing", "대금 청구 관리", "🧾", "billing", "hq", "grp-equip"),
       lk("equip-mgmt", "보안장비 관리 (구버전)", "🔧", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%EA%B4%80%EB%A6%AC", "grp-equip"),
-      lk("equip-council", "보안장비 협의체", "🤝", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%ED%98%91%EC%9D%98%EC%B2%B4", "grp-equip"),
+      lk("equip-council", "보안장비 협의체 (구버전)", "🤝", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%ED%98%91%EC%9D%98%EC%B2%B4", "grp-equip"),
 
       g("grp-edu", "보안 증진"),
       m("training", "보안교육 관리", "🎓", "training", "mgr", "grp-edu"),
@@ -195,6 +196,7 @@ const SeMIS = (() => {
       trainings: [],                  // v2.8: 보안교육 관리
       contracts: [],                  // v2.8: 계약서 관리
       equipMaint: { contracts: [], costs: [] }, // v2.10: 장비 유지보수 계약/월별 비용 (SeMIS 고유)
+      council: [],                    // v2.24: 보안장비 협의회 회의록 (KPI C6-1 기반)
       regulations: [],                // v2.12: 규정 관리 (국제/국가 + 자체, PDF/링크 + 개정 아이디어 노트)
       policy: { ko: null, en: null }, // v2.14: 에어제타 보안정책 (국문/영문 PDF)
       certs: [],                      // v2.15: 교육 이수증 관리 (외부기관 보안책임자/감독자 등)
@@ -476,6 +478,18 @@ const SeMIS = (() => {
         : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
       DATA.menus.push({ id: "kpi", seq, type: "module", label: "KPI 현황",
         icon: "📈", module: "kpi", vis: "hq", parent: null });
+    }
+    // v2.24: 보안장비 협의회 회의록 — 데이터 보정 + 메뉴 자동 삽입(보안장비 유지관리 다음, mgr 열람) + 구링크 구분
+    if (!Array.isArray(DATA.council)) DATA.council = [];
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "council")) {
+      const eq = DATA.menus.find(m => m && m.type === "module" && m.module === "equipment");
+      if (eq) DATA.menus.push({ id: "council", seq: (eq.seq || 0) + 0.1, type: "module",
+        label: "보안장비 협의회", icon: "🤝", module: "council", vis: "mgr", parent: "grp-equip" });
+      else ensureModuleMenu("council", "grp-equip", "보안장비 협의회", "🤝", "council", "mgr");
+    }
+    {
+      const mn = DATA.menus.find(m => m && m.id === "equip-council" && m.type === "link");
+      if (mn && mn.label === "보안장비 협의체") mn.label = "보안장비 협의체 (구버전)";
     }
     return JSON.stringify(DATA) !== before;
   }
