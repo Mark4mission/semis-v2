@@ -4027,8 +4027,10 @@ function makeFetchStub(server) {
     crow.querySelector(".cn-c-symptom").value = "잦은 알람 오류";
     crow.querySelector(".cn-c-cause").value = "멤브레인 노즐 오염";
     crow.querySelector(".cn-c-action").value = "노즐 교체 및 청소";
-    q(e, "#cn-env").value = "항온항습 시설 개선 논의";
-    q(e, "#cn-proposals").value = "검색요원 정기 교육 제안";
+    // 본문은 리치 에디터(contenteditable) — innerHTML로 입력
+    q(e, "#cn-agenda").innerHTML = '<a href="https://ex.com/manual" target="_blank" rel="noopener">정비 매뉴얼</a>';
+    q(e, "#cn-env").innerHTML = "항온항습 시설 개선 논의";
+    q(e, "#cn-proposals").innerHTML = "검색요원 정기 교육 제안";
     q(e, "#cn-act-add").click();
     const trow = q(e, "#cn-acts .cn-act-row");
     trow.querySelector(".cn-t-task").value = "부품 교체주기 데이터 검토";
@@ -4046,8 +4048,10 @@ function makeFetchStub(server) {
     eq(c.cases.length, 1, "사례 1건");
     eq(c.cases[0].equip, "ETD 3호기", "장비");
     eq(c.cases[0].cause, "멤브레인 노즐 오염", "근본원인");
-    eq(c.env, "항온항습 시설 개선 논의", "사용환경 개선");
-    eq(c.proposals, "검색요원 정기 교육 제안", "제안·토의");
+    eq(c.env, "항온항습 시설 개선 논의", "사용환경 개선(텍스트)");
+    eq(c.proposals, "검색요원 정기 교육 제안", "제안·토의(텍스트)");
+    ok(c.agendaHtml.indexOf('href="https://ex.com/manual"') >= 0, "안건 링크 HTML 보존");
+    eq(c.agenda, "정비 매뉴얼", "안건 텍스트 추출");
     eq(c.actions.length, 1, "액션 1건");
     eq(c.actions[0].done, false, "미완료");
     ok(q(e, "#cn-body").textContent.includes("제3차"), "목록에 표시");
@@ -4111,6 +4115,43 @@ function makeFetchStub(server) {
   t("CN07 council이 SYNC_KEYS에 포함(공용 DB 동기화)", () => {
     const e = makeEnv();
     ok(e.Sync.SYNC_KEYS.includes("council"), "동기화 대상 포함");
+  });
+
+  t("CN08 본문 리치: 상세·인쇄에 링크/이미지 HTML 렌더 + 구버전 텍스트 폴백", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "c1", round: 5, date: "2026-07-01", place: "B동",
+      attendees: [], cases: [], actions: [], files: [],
+      agenda: "매뉴얼", agendaHtml: '<a href="https://ex.com/a" target="_blank" rel="noopener">매뉴얼</a>',
+      env: "사진", envHtml: '<p>개선 <img src="https://ex.com/i.jpg" alt="현장"></p>',
+      proposals: "구버전 텍스트만", proposalsHtml: "" }];
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, "[data-cn-row]").click();
+    const html = q(e, "#modal-box").innerHTML;
+    ok(html.indexOf('href="https://ex.com/a"') >= 0, "상세에 링크 렌더");
+    ok(html.indexOf('src="https://ex.com/i.jpg"') >= 0, "상세에 이미지 렌더");
+    ok(q(e, "#modal-box .notice-html"), "notice-html 서식 컨테이너 사용");
+    ok(html.indexOf("구버전 텍스트만") >= 0, "Html 없는 필드는 텍스트 폴백");
+    // 인쇄에도 반영
+    e.w.SemisCouncil.printMinutes("c1");
+    const fr = Array.from(e.w.document.querySelectorAll("iframe")).pop();
+    const phtml = fr.contentWindow.document.documentElement.innerHTML;
+    ok(phtml.indexOf("ex.com/a") >= 0 && phtml.indexOf("ex.com/i.jpg") >= 0, "인쇄에 링크·이미지 포함");
+  });
+
+  t("CN09 sanitize: 본문의 script/onerror 등 위험요소 제거", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, "#cn-add").click();
+    q(e, "#cn-round").value = "9";
+    q(e, "#cn-date").value = "2026-07-20";
+    q(e, "#cn-env").innerHTML = '안전 <script>alert(1)<\/script><img src=x onerror="alert(2)">';
+    q(e, "#cn-save").click();
+    const c = e.S.data.council.find(x => x.round === 9);
+    ok(c, "저장됨");
+    ok(c.envHtml.indexOf("<script") < 0, "script 제거");
+    ok(c.envHtml.toLowerCase().indexOf("onerror") < 0, "onerror 속성 제거");
   });
 
   /* ══════════ 결과 ══════════ */

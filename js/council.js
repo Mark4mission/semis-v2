@@ -50,6 +50,62 @@
   const nl2br = (s) => esc(String(s || "")).replace(/\n/g, "<br>");
   const meetTitle = (x) => (x.round ? "제" + x.round + "차 " : "") + "보안장비 협의회";
 
+  /* ─── 리치 텍스트(링크·이미지 붙여넣기) 공용 — 공지 에디터 인프라 재사용 ─── */
+  const sanitize = (h) => (window.SemisNotice ? window.SemisNotice.sanitizeHtml(h) : esc(h));
+  const hasRich = (html, text) => !!(text && text.trim()) || /<(img|table|a|ul|ol|li)\b/i.test(html || "");
+  /* 읽기: html 있으면 살균 렌더(.notice-html), 없으면 텍스트 줄바꿈 */
+  const richView = (html, text) => html
+    ? `<div class="cn-text cn-rich notice-html">${sanitize(html)}</div>`
+    : (text ? `<div class="cn-text">${nl2br(text)}</div>` : "");
+  /* 편집 폼: 미니 툴바 + contenteditable 에디터 HTML */
+  const richFieldHTML = (key, labelHTML, ph, labelCls) => `
+        <div class="form-row"><label class="${labelCls || ""}">${labelHTML}</label>
+          <div class="nb-toolbar nb-mini" data-rich-tb="${key}">
+            <button type="button" data-cmd="bold" title="굵게"><b>B</b></button>
+            <button type="button" data-cmd="insertUnorderedList" title="글머리 목록">•—</button>
+            <button type="button" data-rich-link="${key}" title="링크">🔗 링크</button>
+            <button type="button" data-rich-img="${key}" title="이미지">🖼 이미지</button>
+            <button type="button" data-rich-file="${key}" title="파일">📎 파일</button>
+          </div>
+          <div id="cn-${key}" class="nb-editor nb-rich" contenteditable="true" data-ph="${esc(ph || "")}"></div>
+          <input type="file" id="cn-${key}-img" accept="image/*" style="display:none">
+          <input type="file" id="cn-${key}-file" style="display:none" multiple></div>`;
+  /* 에디터에 초기값 주입 + 툴바/붙여넣기 배선 */
+  function wireRich(key, html, text) {
+    const ed = $("#cn-" + key);
+    if (!ed) return;
+    ed.innerHTML = html || (text ? esc(text).replace(/\n/g, "<br>") : "");
+    const rich = window.SemisNotice ? window.SemisNotice.wireRichMedia(ed, "council") : null;
+    $$(`[data-rich-tb="${key}"] [data-cmd]`).forEach(b => {
+      b.onmousedown = (ev) => ev.preventDefault();
+      b.onclick = () => { ed.focus(); try { document.execCommand(b.dataset.cmd); } catch (e) {} };
+    });
+    const linkBtn = $(`[data-rich-link="${key}"]`);
+    if (linkBtn) linkBtn.onclick = () => {
+      let url = ""; try { url = window.prompt("링크 주소(URL)를 입력하세요", "https://") || ""; } catch (e) {}
+      if (!/^https?:\/\/.+/.test(url)) return;
+      ed.focus();
+      const a = `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`;
+      try { if (!document.execCommand("createLink", false, url) && rich) rich.insert(a); }
+      catch (e) { if (rich) rich.insert(a); }
+    };
+    const imgBtn = $(`[data-rich-img="${key}"]`), imgFile = $("#cn-" + key + "-img");
+    if (imgBtn) imgBtn.onclick = () => imgFile.click();
+    if (imgFile) imgFile.onchange = (ev) => { if (rich) rich.addFiles(ev.target.files); ev.target.value = ""; };
+    const fileBtn = $(`[data-rich-file="${key}"]`), anyFile = $("#cn-" + key + "-file");
+    if (fileBtn) fileBtn.onclick = () => anyFile.click();
+    if (anyFile) anyFile.onchange = (ev) => { if (rich) rich.addFiles(ev.target.files); ev.target.value = ""; };
+  }
+  /* 저장: 에디터 → { html(살균·내용없으면 빈문자), text } */
+  function richOut(key) {
+    const ed = $("#cn-" + key);
+    if (!ed) return { html: "", text: "" };
+    const html = sanitize(ed.innerHTML);
+    const tmp = document.createElement("div"); tmp.innerHTML = html;
+    const text = (tmp.textContent || "").trim();
+    return { html: hasRich(html, text) ? html : "", text };
+  }
+
   function stats() {
     const items = all();
     const yr = new Date().getFullYear();
@@ -129,10 +185,10 @@
         <span>👥 참석 ${att.length}명</span>
       </div>
       ${sec("참석자", attHTML)}
-      ${sec("안건", x.agenda ? `<div class="cn-text">${nl2br(x.agenda)}</div>` : "")}
+      ${sec("안건", richView(x.agendaHtml, x.agenda))}
       ${sec("① 고장·수리·유지보수 사례 근본원인", caseHTML)}
-      ${sec("② 장비 사용환경 개선 방안", x.env ? `<div class="cn-text">${nl2br(x.env)}</div>` : "")}
-      ${sec("③ 분야별 제안 및 토의", x.proposals ? `<div class="cn-text">${nl2br(x.proposals)}</div>` : "")}
+      ${sec("② 장비 사용환경 개선 방안", richView(x.envHtml, x.env))}
+      ${sec("③ 분야별 제안 및 토의", richView(x.proposalsHtml, x.proposals))}
       ${sec("결정사항 / 액션 아이템", actHTML)}
       ${sec("차기 회의", x.nextPlan ? `<div class="cn-text">${nl2br(x.nextPlan)}</div>` : "")}
       ${(x.files || []).length ? `<div class="cn-sec"><div class="cn-sec-h">첨부파일 (${(x.files || []).length})</div>
@@ -198,15 +254,13 @@
       </fieldset>
 
       <fieldset class="cn-fs"><legend>🗣 협의 안건</legend>
-        <div class="form-row"><label>안건 (선택)</label>
-          <textarea id="cn-agenda" maxlength="800" placeholder="이번 회의 안건 (한 줄에 하나씩)">${esc(x ? x.agenda || "" : "")}</textarea></div>
+        <div class="form-hint" style="margin:0 0 8px">본문에는 링크·이미지를 붙여넣거나 드래그앤드롭으로 넣을 수 있습니다.</div>
+        ${richFieldHTML("agenda", "안건 (선택)", "이번 회의 안건 (한 줄에 하나씩)")}
         <div class="form-row"><label class="cn-flabel">① 고장·수리·유지보수 사례 근본원인</label>
           <div id="cn-cases"></div>
           <button type="button" class="btn btn-ghost btn-sm" id="cn-case-add" style="margin-top:6px">+ 사례 추가</button></div>
-        <div class="form-row"><label class="cn-flabel">② 장비 사용환경 개선 방안</label>
-          <textarea id="cn-env" maxlength="2000" placeholder="온·습도·먼지 등 사용환경 개선 논의 및 방안">${esc(x ? x.env || "" : "")}</textarea></div>
-        <div class="form-row"><label class="cn-flabel">③ 분야별 제안 및 토의</label>
-          <textarea id="cn-proposals" maxlength="2000" placeholder="제조사·유지보수·운영사·본사 각 분야 제안 및 토의 내용">${esc(x ? x.proposals || "" : "")}</textarea></div>
+        ${richFieldHTML("env", "② 장비 사용환경 개선 방안", "온·습도·먼지 등 사용환경 개선 논의 및 방안", "cn-flabel")}
+        ${richFieldHTML("proposals", "③ 분야별 제안 및 토의", "제조사·유지보수·운영사·본사 각 분야 제안 및 토의 내용", "cn-flabel")}
       </fieldset>
 
       <fieldset class="cn-fs"><legend>✅ 결정 및 차기</legend>
@@ -230,6 +284,11 @@
         <button class="btn btn-primary" id="cn-save">저장</button>
       </div>
      </div>`, { wide: true });
+
+    /* ─ 본문 리치 에디터(안건·②·③) 초기값 주입 + 배선 ─ */
+    wireRich("agenda", x ? x.agendaHtml : "", x ? x.agenda : "");
+    wireRich("env", x ? x.envHtml : "", x ? x.env : "");
+    wireRich("proposals", x ? x.proposalsHtml : "", x ? x.proposals : "");
 
     /* ─ 참석자 동적행 ─ */
     function attCollect() {
@@ -363,6 +422,7 @@
       if (!round) { toast("회차를 입력하세요.", true); return; }
       if (!date) { toast("회의일을 입력하세요.", true); return; }
       const clean = (arr, keys) => arr.filter(o => keys.some(k => String(o[k] || "").trim() !== ""));
+      const ag = richOut("agenda"), en = richOut("env"), pr = richOut("proposals");
       const rec = {
         round, date,
         time: $("#cn-time").value.trim(),
@@ -372,12 +432,12 @@
         attendees: clean(attendees, ["org", "name"]).map(a => ({
           cat: a.cat || "기타", org: (a.org || "").trim(), name: (a.name || "").trim(),
           role: (a.role || "").trim(), note: (a.note || "").trim() })),
-        agenda: $("#cn-agenda").value.trim(),
+        agenda: ag.text, agendaHtml: ag.html,
         cases: clean(cases, ["equip", "symptom", "cause", "action"]).map(c => ({
           equip: (c.equip || "").trim(), symptom: (c.symptom || "").trim(),
           cause: (c.cause || "").trim(), action: (c.action || "").trim() })),
-        env: $("#cn-env").value.trim(),
-        proposals: $("#cn-proposals").value.trim(),
+        env: en.text, envHtml: en.html,
+        proposals: pr.text, proposalsHtml: pr.html,
         actions: clean(actions, ["task"]).map(a => ({
           task: (a.task || "").trim(), owner: (a.owner || "").trim(), due: a.due || "", done: !!a.done })),
         nextPlan: $("#cn-next").value.trim(),
@@ -412,7 +472,10 @@
         <td style="text-align:center">${a.done ? "✔" : "□"}</td><td>${P(a.task)}</td>
         <td>${esc(a.owner || "-")}</td><td>${esc(a.due || "-")}</td></tr>`).join("")
       : '<tr><td colspan="4" class="pc-empty">기록 없음</td></tr>';
-    const textSec = (title, body) => body ? `<div class="sec"><div class="sec-h">${title}</div><div class="ptext">${P(body)}</div></div>` : "";
+    const textSec = (title, html, text) => {
+      const inner = html ? sanitize(html) : (text ? P(text) : "");
+      return inner ? `<div class="sec"><div class="sec-h">${title}</div><div class="ptext">${inner}</div></div>` : "";
+    };
 
     const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
 <title>보안장비 협의회 회의록 · 제${esc(String(x.round || ""))}차</title>
@@ -434,6 +497,11 @@
   table.att { table-layout: fixed; }
   table.att td { word-break: break-word; }
   .ptext { border: 1px solid #94a3b8; border-left: 3px solid #1d4ed8; border-radius: 6px; padding: 8px 10px; background: #fff; white-space: normal; }
+  .ptext img { max-width: 100%; height: auto; border-radius: 4px; margin: 4px 0; }
+  .ptext a { color: #1d4ed8; word-break: break-all; }
+  .ptext ul, .ptext ol { margin: 4px 0; padding-left: 18px; }
+  .ptext table { border-collapse: collapse; margin: 4px 0; }
+  .ptext td, .ptext th { border: 1px solid #cbd5e1; padding: 3px 5px; }
   .pc-empty { color: #94a3b8; text-align: center; }
   .foot { margin-top: 16px; padding-top: 8px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 8.5px; color: #64748b; }
 </style></head><body>
@@ -452,12 +520,12 @@
     <table class="att"><thead><tr><th style="width:26px">No</th><th style="width:64px">구분</th>
       <th style="width:72px">성명</th><th style="width:74px">직책</th><th style="width:34%">소속</th><th>비고</th></tr></thead>
       <tbody>${attRows}</tbody></table></div>
-  ${textSec("안건", x.agenda)}
+  ${textSec("안건", x.agendaHtml, x.agenda)}
   <div class="sec"><div class="sec-h">① 고장·수리·유지보수 사례 근본원인</div>
     <table><thead><tr><th style="width:90px">장비</th><th>증상</th><th>근본원인</th><th>조치</th></tr></thead>
       <tbody>${caseRows}</tbody></table></div>
-  ${textSec("② 장비 사용환경 개선 방안", x.env)}
-  ${textSec("③ 분야별 제안 및 토의", x.proposals)}
+  ${textSec("② 장비 사용환경 개선 방안", x.envHtml, x.env)}
+  ${textSec("③ 분야별 제안 및 토의", x.proposalsHtml, x.proposals)}
   <div class="sec"><div class="sec-h">결정사항 / 액션 아이템</div>
     <table><thead><tr><th style="width:34px">완료</th><th>결정·조치 사항</th><th style="width:80px">담당</th><th style="width:84px">기한</th></tr></thead>
       <tbody>${actRows}</tbody></table></div>

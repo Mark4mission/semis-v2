@@ -1198,6 +1198,13 @@ a.ct-tel:hover { color: var(--primary); }
 /* 입력 테두리 진하게(연한 회색 → slate-300) — 필드 경계 뚜렷 */
 .cn-form input, .cn-form select, .cn-form textarea { border-color: var(--border-strong) !important; }
 .cn-form input:focus, .cn-form select:focus, .cn-form textarea:focus { border-color: var(--primary) !important; }
+/* 본문 리치 에디터 — 세 필드가 쌓이므로 높이 축소 + 자리표시 + 진한 테두리 */
+.cn-form .nb-rich { min-height: 76px; max-height: 34vh; border-color: var(--border-strong); }
+.cn-form .nb-rich:empty::before { content: attr(data-ph); color: var(--text-3); pointer-events: none; }
+.cn-form .nb-toolbar { border-color: var(--border-strong); }
+.cn-text.cn-rich { white-space: normal; }  /* 리치 렌더는 pre-wrap 해제(notice-html 서식 사용) */
+.cn-text.cn-rich > :first-child { margin-top: 0; }
+.cn-text.cn-rich > :last-child { margin-bottom: 0; }
 
 /* 참석자 동적행 — No·구분·소속·성명·직책·비고·삭제 */
 .cn-att-row { display: grid; grid-template-columns: 22px 88px 1.3fr 1fr 1fr 1.1fr 30px; gap: 6px; margin-bottom: 7px; align-items: center; }
