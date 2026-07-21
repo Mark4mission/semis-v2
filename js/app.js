@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.25.1";
+  const VERSION = "2.26.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -68,7 +68,7 @@ const SeMIS = (() => {
     { id: "hq",       name: "항공보안HQ",   role: "hq",
       hash: "baf18bfc212cf8a7ca80cd468495ef952b27e32f1c615f1737dc81a901b5a20a" }
   ];
-  const ROLE_LABEL = { admin: "시스템관리자", hq: "항공보안HQ", manager: "보안관리자", user: "일반사용자", vendor: "협력업체" };
+  const ROLE_LABEL = { admin: "시스템관리자", hq: "항공보안HQ", manager: "보안관리자", user: "일반사용자", vendor: "협력업체", signer: "서명 참석자" };
   /* 권한 서열 (v2.11): admin(4) > hq(3) > manager(2) > user(1)
      - admin:   모든 기능 + 시스템 설정
      - hq:      항공보안파트원 — 시스템 설정 외 모든 기능(편집 포함)
@@ -76,7 +76,8 @@ const SeMIS = (() => {
                 대외비(유지보수 비용·계약·암호 등)는 열람 불가
      - user:    일반 직원 — 일반사항·홍보사항 수준만 열람 */
   /* vendor(협력업체, v2.16): 대금 청구 입력 화면(billing)만 접근 — 자기 업체 내역 한정 */
-  const ROLE_RANK  = { admin: 4, hq: 3, manager: 2, user: 1, vendor: 1 };
+  /* signer(서명 참석자, v2.26): 회의일(YYYYMMDD) 코드 로그인 — 해당 협의회 서명 화면만 접근 */
+  const ROLE_RANK  = { admin: 4, hq: 3, manager: 2, user: 1, vendor: 1, signer: 0 };
   const VIS_LABEL  = { all: "전체", mgr: "보안관리자 이상", hq: "항공보안HQ 이상", admin: "시스템관리자" };
 
   /* ─────────── 국가 항공보안등급 (5단계) ─────────── */
@@ -549,10 +550,32 @@ const SeMIS = (() => {
     sessionStorage.setItem(SS_SESSION, JSON.stringify({ uid: user.id, ts: Date.now() }));
     return user;
   }
+  /* v2.26: 서명 세션 — 암호가 협의회 회의일(YYYYMMDD)이면 해당 회의 서명 화면만 접근 */
+  function signMeetingFor(pw) {
+    const code = String(pw || "").trim();
+    if (!/^\d{8}$/.test(code)) return null;
+    const iso = code.slice(0, 4) + "-" + code.slice(4, 6) + "-" + code.slice(6, 8);
+    const list = (DATA.council || []).filter(c => c && c.date === iso);
+    if (!list.length) return null;
+    return list.sort((a, b) => (Number(b.round) || 0) - (Number(a.round) || 0))[0];
+  }
+  function signLogin(pw) {
+    const m = signMeetingFor(pw);
+    if (!m) return null;
+    currentUser = { id: "__signer__", name: "보안장비 협의회", role: "signer", signMeetingId: m.id };
+    sessionStorage.setItem(SS_SESSION, JSON.stringify({ uid: "__signer__", signMeetingId: m.id, ts: Date.now() }));
+    return currentUser;
+  }
   function restoreSession() {
     try {
       const s = JSON.parse(sessionStorage.getItem(SS_SESSION));
       if (!s) return false;
+      if (s.uid === "__signer__") {
+        const m = (DATA.council || []).find(c => c && c.id === s.signMeetingId);
+        if (!m) return false;
+        currentUser = { id: "__signer__", name: "보안장비 협의회", role: "signer", signMeetingId: m.id };
+        return true;
+      }
       const user = allUsers().find(u => u.id === s.uid);
       if (!user) return false;
       currentUser = user;
@@ -655,6 +678,17 @@ const SeMIS = (() => {
       window.scrollTo(0, 0);
       return;
     }
+    if (currentUser && currentUser.role === "signer") {
+      // v2.26: 서명 참석자 — 보안장비 협의회 서명 화면만 접근 (다른 모든 라우트 차단)
+      const def = modules.council || modules.dashboard;
+      def.render(view);
+      highlightNav("council");
+      $("#sidebar").classList.remove("open");
+      $("#sidebar-backdrop").classList.remove("show");
+      $("#main").scrollTop = 0;
+      window.scrollTo(0, 0);
+      return;
+    }
     if (route.indexOf("embed/") === 0) {
       // v2.13: 링크 메뉴 내부 프레임 열기 (open: "frame")
       renderEmbedView(view, route.slice(6));
@@ -714,6 +748,16 @@ const SeMIS = (() => {
       b.onclick = () => navigate("billing");
       box.appendChild(b);
       highlightNav("billing");
+      return;
+    }
+    if (currentUser && currentUser.role === "signer") {
+      // v2.26: 서명 참석자 — 보안장비 협의회 서명 메뉴만 표시
+      const b = document.createElement("button");
+      b.className = "nav-item active";
+      b.dataset.route = "council";
+      b.innerHTML = '<span class="nav-ico">🤝</span><span>보안장비 협의회 · 서명</span>';
+      b.onclick = () => renderView();
+      box.appendChild(b);
       return;
     }
     const menus = sortedMenus();
@@ -813,11 +857,11 @@ const SeMIS = (() => {
   /* ─────────── 헤더 위젯 ─────────── */
   function renderHeader() {
     $("#user-chip").textContent = currentUser.name + " · " + (ROLE_LABEL[currentUser.role] || currentUser.role);
-    // v2.18: 전역 검색 — vendor(협력업체) 계정은 검색 미노출
-    const isVendor = currentUser.role === "vendor";
+    // v2.18: 전역 검색 — vendor(협력업체)·signer(서명) 계정은 검색 미노출
+    const lite = currentUser.role === "vendor" || currentUser.role === "signer";
     const sw = $("#hdr-search-wrap"), sb = $("#hdr-search-btn");
-    if (sw) sw.classList.toggle("vendor-hide", isVendor);
-    if (sb) sb.classList.toggle("vendor-hide", isVendor);
+    if (sw) sw.classList.toggle("vendor-hide", lite);
+    if (sb) sb.classList.toggle("vendor-hide", lite);
     renderSecBadge();
     $("#app-version").textContent = "v" + VERSION;
   }
@@ -850,11 +894,11 @@ const SeMIS = (() => {
       e.preventDefault();
       const pw = $("#login-pw").value;
       if (!pw) return;
-      const user = login(pw);
+      const user = login(pw) || signLogin(pw);
       if (user) {
         $("#login-error").textContent = "";
         enterApp();
-        toast(user.name + "님, 환영합니다.");
+        toast(user.role === "signer" ? "서명 화면입니다. 본인 이름을 찾아 서명해 주세요." : user.name + "님, 환영합니다.");
       } else {
         $("#login-error").textContent = "암호가 올바르지 않습니다.";
         $("#login-pw").value = "";

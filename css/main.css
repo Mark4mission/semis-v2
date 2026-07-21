@@ -1223,6 +1223,43 @@ a.ct-tel:hover { color: var(--primary); }
   border: 1.5px solid var(--border-strong); border-radius: 6px; height: 100%; }
 .cn-t-donebox input { width: auto; }
 
+/* 서명 이미지(상세 참석자 표) */
+.cn-sign-img { height: 26px; max-width: 92px; object-fit: contain; vertical-align: middle; }
+
+/* 조직자용 — 참석자 서명 코드 안내 */
+.cn-signcode { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 2px; padding: 9px 12px;
+  border: 1px solid var(--border-strong); border-left: 4px solid var(--accent); border-radius: 8px;
+  background: #f0f9ff; font-size: .82rem; color: var(--text-2); line-height: 1.5; }
+.cn-signcode-ic { font-size: 1.05rem; flex-shrink: 0; }
+.cn-signcode-code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: .95rem;
+  color: var(--accent); background: #fff; border: 1px solid var(--accent); border-radius: 6px; padding: 0 7px; letter-spacing: 1px; }
+
+/* 서명 화면(모바일 참석자) */
+.cn-sign-page { max-width: 640px; margin: 0 auto; }
+.cn-sign-head { text-align: center; padding: 6px 0 12px; border-bottom: 2px solid var(--border-strong); margin-bottom: 12px; }
+.cn-sign-title { font-size: 1.15rem; font-weight: 800; color: var(--text); }
+.cn-sign-meta { font-size: .85rem; color: var(--text-2); margin-top: 4px; }
+.cn-sign-guide { text-align: center; font-size: .9rem; color: var(--text); background: var(--primary-soft);
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+.cn-sign-count { display: inline-block; margin-left: 6px; font-weight: 700; color: var(--primary); }
+.cn-sign-list { display: flex; flex-direction: column; gap: 8px; }
+.cn-sign-item { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  border: 1.5px solid var(--border-strong); border-radius: 10px; background: var(--surface); }
+.cn-sign-item.done { border-color: var(--success); background: #f0fdf4; }
+.cn-sign-who { flex: 1; min-width: 0; }
+.cn-sign-who b { font-size: 1rem; }
+.cn-sign-sub { display: block; font-size: .78rem; color: var(--text-2); margin-top: 3px; }
+.cn-sign-act { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.cn-sign-act .btn { min-height: 38px; }
+.cn-sign-thumb { height: 34px; max-width: 96px; object-fit: contain; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.cn-sign-ok { font-size: .8rem; color: var(--success); font-weight: 700; }
+.cn-sign-foot { text-align: center; font-size: .78rem; color: var(--text-3); margin-top: 16px; }
+
+/* 서명 패드(캔버스) */
+.sign-pad-wrap { display: flex; justify-content: center; margin: 4px 0 8px; }
+.sign-pad { border: 2px dashed var(--border-strong); border-radius: 10px; background: #fff;
+  touch-action: none; cursor: crosshair; max-width: 100%; }
+
 @media (max-width: 768px) {
   .council-banner { flex-wrap: wrap; }
   .cn-att-row { grid-template-columns: 1fr 1fr; }
@@ -1231,4 +1268,6 @@ a.ct-tel:hover { color: var(--primary); }
   .cn-att-row [data-att-del] { grid-column: 2 / 3; justify-self: end; }
   .cn-act-row { grid-template-columns: 30px 1fr 30px; }
   .cn-act-row .cn-t-owner, .cn-act-row .cn-t-due { grid-column: 2 / 3; }
+  .cn-sign-item { flex-wrap: wrap; }
+  .cn-sign-act { width: 100%; justify-content: flex-end; }
 }

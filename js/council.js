@@ -151,13 +151,15 @@
     const sec = (title, body) => body ? `<div class="cn-sec"><div class="cn-sec-h">${title}</div>${body}</div>` : "";
 
     const attHTML = att.length ? `<table class="tbl cn-att-tbl"><thead><tr>
-        <th style="width:34px">No</th><th style="width:96px">구분</th><th style="width:88px">성명</th>
-        <th style="width:88px">직책</th><th>소속</th><th>비고</th></tr></thead><tbody>
+        <th style="width:34px">No</th><th style="width:92px">구분</th><th style="width:82px">성명</th>
+        <th style="width:82px">직책</th><th>소속</th><th style="width:104px">서명</th><th>비고</th></tr></thead><tbody>
       ${att.map((a, i) => `<tr>
         <td style="text-align:center;color:var(--text-3)">${i + 1}</td>
         <td>${a.cat ? `<span class="badge ${CAT_BADGE[a.cat] || "badge-gray"}">${esc(a.cat)}</span>` : "-"}</td>
         <td>${esc(a.name || "-")}</td><td>${esc(a.role || "-")}</td>
-        <td>${esc(a.org || "-")}</td><td>${a.note ? esc(a.note) : "-"}</td></tr>`).join("")}
+        <td>${esc(a.org || "-")}</td>
+        <td style="text-align:center">${a.sign ? `<img class="cn-sign-img" src="${esc(a.sign)}" alt="서명">` : '<span style="color:var(--text-3)">-</span>'}</td>
+        <td>${a.note ? esc(a.note) : "-"}</td></tr>`).join("")}
       </tbody></table>` : "";
 
     const caseHTML = cases.length ? `<table class="tbl cn-case-tbl"><thead><tr>
@@ -185,6 +187,10 @@
         ${x.scribe ? `<span>✍️ 작성 ${esc(x.scribe)}</span>` : ""}
         <span>👥 참석 ${att.length}명</span>
       </div>
+      ${canWrite() && /^\d{4}-\d{2}-\d{2}$/.test(x.date || "") ? `<div class="cn-signcode">
+        <span class="cn-signcode-ic">📱</span>
+        <div>참석자 서명 안내 — 모바일에서 <b>${esc(location.host || "semis.pe.kr")}</b> 접속 후 암호 <b class="cn-signcode-code">${esc((x.date || "").replace(/-/g, ""))}</b> 입력 → 이 회의 서명 화면에서 본인 서명을 그려 넣습니다.</div>
+      </div>` : ""}
       ${sec("참석자", attHTML)}
       ${sec("안건", richView(x.agendaHtml, x.agenda))}
       ${sec("① 고장·수리·유지보수 사례 근본원인", caseHTML)}
@@ -317,7 +323,7 @@
       });
     }
     attPaint();
-    $("#cn-att-add").onclick = () => { attCollect(); attendees.push({ cat: "제조사", org: "", name: "", role: "", note: "" }); attPaint(); };
+    $("#cn-att-add").onclick = () => { attCollect(); attendees.push({ cat: "제조사", org: "", name: "", role: "", note: "", sign: "" }); attPaint(); };
 
     /* ─ 사례 동적행 ─ */
     function caseCollect() {
@@ -432,7 +438,7 @@
         scribe: $("#cn-scribe").value.trim(),
         attendees: clean(attendees, ["org", "name"]).map(a => ({
           cat: a.cat || "기타", org: (a.org || "").trim(), name: (a.name || "").trim(),
-          role: (a.role || "").trim(), note: (a.note || "").trim() })),
+          role: (a.role || "").trim(), note: (a.note || "").trim(), sign: a.sign || "" })),
         agenda: ag.text, agendaHtml: ag.html,
         cases: clean(cases, ["equip", "symptom", "cause", "action"]).map(c => ({
           equip: (c.equip || "").trim(), symptom: (c.symptom || "").trim(),
@@ -463,8 +469,10 @@
     const attRows = att.length ? att.map((a, i) => `<tr>
         <td style="text-align:center">${i + 1}</td><td>${esc(a.cat || "-")}</td>
         <td>${esc(a.name || "-")}</td><td>${esc(a.role || "-")}</td>
-        <td>${esc(a.org || "-")}</td><td>${esc(a.note || "")}</td></tr>`).join("")
-      : '<tr><td colspan="6" class="pc-empty">기록 없음</td></tr>';
+        <td>${esc(a.org || "-")}</td>
+        <td style="text-align:center">${a.sign ? `<img src="${esc(a.sign)}" style="height:26px;max-width:100%">` : ""}</td>
+        <td>${esc(a.note || "")}</td></tr>`).join("")
+      : '<tr><td colspan="7" class="pc-empty">기록 없음</td></tr>';
     const caseRows = cases.length ? cases.map(c => `<tr>
         <td><b>${esc(c.equip || "-")}</b></td><td>${P(c.symptom)}</td>
         <td>${P(c.cause)}</td><td>${P(c.action)}</td></tr>`).join("")
@@ -494,9 +502,10 @@
     padding: 0 0 3px 6px; margin-bottom: 6px; border-bottom: 1px solid #94a3b8; }
   table { width: 100%; border-collapse: collapse; }
   th, td { border: 1px solid #94a3b8; padding: 4px 6px; text-align: left; vertical-align: top; font-size: 9.5px; }
-  th { background: #eff6ff; color: #1e3a8a; font-weight: 700; border-bottom: 1.5px solid #64748b; }
+  th { background: #eff6ff; color: #1e3a8a; font-weight: 700; border-bottom: 1.5px solid #64748b; text-align: center; }
   table.att, table.cases { table-layout: fixed; }
   table.att td, table.cases td { word-break: break-word; }
+  table.att td img { display: block; margin: 0 auto; }
   .ptext { border: 1px solid #94a3b8; border-left: 3px solid #1d4ed8; border-radius: 6px; padding: 8px 10px; background: #fff; white-space: normal; }
   .ptext img { max-width: 100%; height: auto; border-radius: 4px; margin: 4px 0; }
   .ptext a { color: #1d4ed8; word-break: break-all; }
@@ -518,8 +527,9 @@
     </div>
   </div>
   <div class="sec"><div class="sec-h">참석자</div>
-    <table class="att"><thead><tr><th style="width:26px">No</th><th style="width:64px">구분</th>
-      <th style="width:72px">성명</th><th style="width:74px">직책</th><th style="width:34%">소속</th><th>비고</th></tr></thead>
+    <table class="att"><thead><tr><th style="width:24px">No</th><th style="width:52px">구분</th>
+      <th style="width:60px">성명</th><th style="width:62px">직책</th><th style="width:26%">소속</th>
+      <th style="width:74px">서명</th><th>비고</th></tr></thead>
       <tbody>${attRows}</tbody></table></div>
   ${textSec("안건", x.agendaHtml, x.agenda)}
   <div class="sec"><div class="sec-h">① 고장·수리·유지보수 사례 근본원인</div>
@@ -552,10 +562,122 @@
     } catch (e) { toast("인쇄 대화상자를 열 수 없습니다.", true); }
   }
 
+  /* ══════════ 서명 모드 (모바일 참석자) ══════════ */
+  /* 특정 협의회 회의일(YYYYMMDD) 코드로 로그인한 참석자에게 보이는 서명 전용 화면 */
+  function renderSigning(root, meetingId) {
+    const m = all().find(c => c.id === meetingId);
+    if (!m) { root.innerHTML = '<div class="empty">회의 정보를 찾을 수 없습니다. 진행자에게 문의하세요.</div>'; return; }
+    const atts = m.attendees || [];
+    const signed = atts.filter(a => a.sign).length;
+    root.innerHTML = `
+      <div class="cn-sign-page">
+        <div class="cn-sign-head">
+          <div class="cn-sign-title">🤝 ${esc(meetTitle(m))} · 참석 서명</div>
+          <div class="cn-sign-meta">📅 ${esc(m.date || "")}${m.time ? " " + esc(m.time) : ""} · 📍 ${esc(m.place || "")}</div>
+        </div>
+        <div class="cn-sign-guide">아래에서 <b>본인 이름</b>을 찾아 <b>[서명하기]</b>를 누르고 화면에 서명해 주세요. <span class="cn-sign-count">${signed}/${atts.length}명 완료</span></div>
+        <div class="cn-sign-list">
+          ${atts.length ? atts.map((a, i) => `
+            <div class="cn-sign-item${a.sign ? " done" : ""}">
+              <div class="cn-sign-who">
+                <b>${esc(a.name || "(이름 미입력)")}</b>
+                <span class="cn-sign-sub">${a.cat ? `<span class="badge ${CAT_BADGE[a.cat] || "badge-gray"}">${esc(a.cat)}</span> ` : ""}${esc(a.org || "")}${a.role ? " · " + esc(a.role) : ""}</span>
+              </div>
+              <div class="cn-sign-act">
+                ${a.sign
+                  ? `<img class="cn-sign-thumb" src="${esc(a.sign)}" alt="서명"><span class="cn-sign-ok">✅ 완료</span><button class="btn btn-ghost btn-sm" data-sign="${i}">다시</button>`
+                  : `<button class="btn btn-primary btn-sm" data-sign="${i}">✍️ 서명하기</button>`}
+              </div>
+            </div>`).join("") : '<div class="empty">등록된 참석자가 없습니다. 진행자에게 문의하세요.</div>'}
+        </div>
+        <div class="cn-sign-foot">서명은 저장 즉시 반영됩니다. 완료 후 창을 닫으셔도 됩니다.</div>
+      </div>`;
+    $$(".cn-sign-list [data-sign]").forEach(btn => btn.onclick = () => openSignPad(meetingId, Number(btn.dataset.sign)));
+  }
+
+  /* 서명 저장 — 최신 상태(실시간 병합분 포함) 재조회 후 해당 참석자에만 기록 */
+  function setSign(meetingId, idx, val) {
+    const m = all().find(c => c.id === meetingId);
+    if (!m || !Array.isArray(m.attendees) || !m.attendees[idx]) return false;
+    m.attendees[idx].sign = val || "";
+    SeMIS.save();
+    return true;
+  }
+
+  /* 서명 패드 — 캔버스에 손가락/마우스로 그린 뒤 Storage 업로드(실패 시 dataURL) */
+  function openSignPad(meetingId, idx) {
+    const m = all().find(c => c.id === meetingId);
+    if (!m || !Array.isArray(m.attendees) || !m.attendees[idx]) return;
+    const a = m.attendees[idx];
+    openModal(`
+      <h3>✍️ ${esc(a.name || "참석자")} 서명</h3>
+      <div class="form-hint" style="margin-bottom:8px">${a.org ? esc(a.org) : ""}${a.role ? " · " + esc(a.role) : ""} — 아래 칸에 손가락 또는 마우스로 서명해 주세요.</div>
+      <div class="sign-pad-wrap"><canvas id="cn-sign-cv" class="sign-pad"></canvas></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="cn-sign-clear" style="margin-right:auto">지우기</button>
+        <button class="btn btn-ghost" id="cn-sign-cancel">취소</button>
+        <button class="btn btn-primary" id="cn-sign-ok">저장</button>
+      </div>`);
+    const cv = $("#cn-sign-cv");
+    if (!cv) return;
+    const wrapW = (cv.parentElement && cv.parentElement.clientWidth) || 300;
+    const cssW = Math.max(240, Math.min(wrapW, 440));
+    const cssH = 180;
+    const ratio = window.devicePixelRatio || 1;
+    cv.style.width = cssW + "px"; cv.style.height = cssH + "px";
+    cv.width = Math.round(cssW * ratio); cv.height = Math.round(cssH * ratio);
+    const ctx = cv.getContext ? cv.getContext("2d") : null;
+    if (ctx) { ctx.scale(ratio, ratio); ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#0f172a"; }
+    let drawing = false, hasDrawn = false, lx = 0, ly = 0;
+    const pos = (ev) => { const r = cv.getBoundingClientRect(); const t = (ev.touches && ev.touches[0]) || ev; return { x: t.clientX - r.left, y: t.clientY - r.top }; };
+    const down = (ev) => { ev.preventDefault(); drawing = true; const p = pos(ev); lx = p.x; ly = p.y; };
+    const moveFn = (ev) => { if (!drawing || !ctx) return; ev.preventDefault(); const p = pos(ev); ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(p.x, p.y); ctx.stroke(); lx = p.x; ly = p.y; hasDrawn = true; };
+    const up = () => { drawing = false; };
+    if (cv.addEventListener) {
+      if (window.PointerEvent) {
+        // 포인터 이벤트 하나로 터치·마우스·펜 모두 처리(중복 방지)
+        cv.addEventListener("pointerdown", down);
+        cv.addEventListener("pointermove", moveFn);
+        window.addEventListener("pointerup", up);
+      } else {
+        cv.addEventListener("touchstart", down, { passive: false });
+        cv.addEventListener("touchmove", moveFn, { passive: false });
+        window.addEventListener("touchend", up);
+        cv.addEventListener("mousedown", down);
+        cv.addEventListener("mousemove", moveFn);
+        window.addEventListener("mouseup", up);
+      }
+    }
+    const cleanup = () => { try { window.removeEventListener("pointerup", up); window.removeEventListener("touchend", up); window.removeEventListener("mouseup", up); } catch (e) {} };
+    $("#cn-sign-clear").onclick = () => { if (ctx) ctx.clearRect(0, 0, cssW, cssH); hasDrawn = false; };
+    $("#cn-sign-cancel").onclick = () => { cleanup(); closeModal(); SeMIS.renderView(); };
+    $("#cn-sign-ok").onclick = () => {
+      if (!hasDrawn) { toast("서명을 입력해 주세요.", true); return; }
+      const finish = (val) => { cleanup(); setSign(meetingId, idx, val); closeModal(); toast("서명이 저장되었습니다."); SeMIS.renderView(); };
+      const dataFallback = () => { try { finish(cv.toDataURL("image/png")); } catch (e) { toast("서명 저장에 실패했습니다.", true); } };
+      try {
+        if (cv.toBlob && window.SemisSync && typeof fetch !== "undefined") {
+          cv.toBlob((blob) => {
+            if (!blob) return dataFallback();
+            (async () => {
+              try {
+                const file = new File([blob], "sign_" + Date.now() + ".png", { type: "image/png" });
+                const up = await SemisSync.uploadFile(file, "council-sign");
+                finish(up.url);
+              } catch (e) { dataFallback(); }
+            })();
+          }, "image/png");
+        } else dataFallback();
+      } catch (e) { dataFallback(); }
+    };
+  }
+
   /* ══════════ 모듈 렌더 ══════════ */
   SeMIS.registerModule("council", {
     title: "보안장비 협의회",
     render(root) {
+      const u = SeMIS.user;
+      if (u && u.role === "signer") { renderSigning(root, u.signMeetingId); return; }
       const s = stats();
       root.innerHTML = `
         <div class="page-head">
@@ -587,5 +709,5 @@
   });
 
   /* ══════════ 테스트/외부 노출 ══════════ */
-  window.SemisCouncil = { CATS, stats, all, sorted, nextRound, printMinutes };
+  window.SemisCouncil = { CATS, stats, all, sorted, nextRound, printMinutes, setSign, renderSigning };
 })();

@@ -4154,6 +4154,102 @@ function makeFetchStub(server) {
     ok(c.envHtml.toLowerCase().indexOf("onerror") < 0, "onerror 속성 제거");
   });
 
+  t("CN10 인쇄: 머리행 가운데정렬 + 서명 열 + 서명 이미지", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "c1", round: 1, date: "2026-07-29", place: "B동",
+      attendees: [{ cat: "제조사", org: "뉴원", name: "홍길동", role: "차장", sign: "https://ex.com/s.png" }],
+      cases: [], actions: [], files: [] }];
+    loginAs(e, "hq");
+    go(e, "council");
+    e.w.SemisCouncil.printMinutes("c1");
+    const fr = Array.from(e.w.document.querySelectorAll("iframe")).pop();
+    const html = fr.contentWindow.document.documentElement.innerHTML;
+    ok(/\bth\s*\{[^}]*text-align:\s*center/.test(html), "머리행 가운데정렬 CSS");
+    ok(html.indexOf("서명") >= 0, "서명 열 헤더");
+    ok(html.indexOf("ex.com/s.png") >= 0, "서명 이미지 포함");
+  });
+
+  t("CN11 상세 서명 열 + setSign 저장/렌더", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "c1", round: 2, date: "2026-08-01", place: "B동",
+      attendees: [{ cat: "본사", org: "항공화물", name: "김철수", role: "프로" }],
+      cases: [], actions: [], files: [] }];
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, "[data-cn-row]").click();
+    ok(q(e, "#modal-box").innerHTML.indexOf("서명") >= 0, "상세에 서명 헤더");
+    e.S.closeModal();
+    ok(e.w.SemisCouncil.setSign("c1", 0, "https://ex.com/sig.png"), "setSign 성공");
+    eq(e.S.data.council[0].attendees[0].sign, "https://ex.com/sig.png", "서명 값 저장");
+    go(e, "council");
+    q(e, "[data-cn-row]").click();
+    ok(q(e, "#modal-box").innerHTML.indexOf("ex.com/sig.png") >= 0, "상세에 서명 이미지 렌더");
+  });
+
+  t("CN12 조직자 편집 저장 시 기존 서명 보존", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "c1", round: 3, date: "2026-08-05", place: "B동",
+      attendees: [{ cat: "제조사", org: "뉴원", name: "홍길동", role: "차장", note: "", sign: "https://ex.com/keep.png" }],
+      cases: [], actions: [], files: [] }];
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, "[data-cn-row]").click();
+    q(e, "#cn-edit").click();
+    q(e, "#cn-att .cn-att-row").querySelector(".cn-a-name").value = "홍길동(수정)";
+    q(e, "#cn-save").click();
+    eq(e.S.data.council[0].attendees[0].name, "홍길동(수정)", "이름 수정 반영");
+    eq(e.S.data.council[0].attendees[0].sign, "https://ex.com/keep.png", "서명 보존");
+  });
+
+  t("CN13 회의일 코드 로그인 → 서명 세션·서명 화면·타모듈 차단", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "cm1", round: 7, date: "2026-07-29", place: "인천화물터미널 B동",
+      attendees: [{ cat: "제조사", org: "뉴원S&T", name: "홍길동", role: "차장" }, { cat: "본사", org: "항공화물", name: "김철수" }],
+      cases: [], actions: [], files: [] }];
+    submitLogin(e, "20260729");
+    ok(e.S.user && e.S.user.role === "signer", "서명 세션 진입");
+    eq(e.S.user.signMeetingId, "cm1", "대상 회의 지정");
+    const view = q(e, "#view");
+    ok(view.textContent.indexOf("참석 서명") >= 0, "서명 화면 렌더");
+    ok(view.textContent.indexOf("홍길동") >= 0 && view.textContent.indexOf("김철수") >= 0, "참석자 목록 표시");
+    ok(q(e, ".cn-sign-list [data-sign]"), "서명 버튼 존재");
+    // 타 모듈 접근 차단 — 강제 council 서명 화면 유지
+    go(e, "kpi");
+    ok(q(e, "#view").textContent.indexOf("참석 서명") >= 0, "kpi 이동해도 서명 화면 유지");
+    // 서명 저장 → 완료 표시
+    e.w.SemisCouncil.setSign("cm1", 0, "https://ex.com/h.png");
+    e.S.renderView();
+    ok(q(e, "#view").innerHTML.indexOf("ex.com/h.png") >= 0, "서명 후 완료 상태 반영");
+  });
+
+  t("CN14 매칭 없는 회의일 코드 → 로그인 실패", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "cm1", round: 1, date: "2026-07-29", attendees: [], cases: [], actions: [], files: [] }];
+    submitLogin(e, "20250101");
+    ok(!e.S.user, "세션 없음(로그인 실패)");
+    ok(q(e, "#login-error").textContent.indexOf("올바르지") >= 0, "오류 메시지 표시");
+  });
+
+  t("CN15 조직자 상세에 서명 코드 안내 노출(hq) / 일반 미노출", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "c1", round: 4, date: "2026-07-29", place: "B동",
+      attendees: [{ cat: "제조사", org: "뉴원", name: "홍" }], cases: [], actions: [], files: [] }];
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, "[data-cn-row]").click();
+    ok(q(e, "#modal-box .cn-signcode"), "hq 상세에 코드 안내");
+    ok(q(e, "#modal-box").innerHTML.indexOf("20260729") >= 0, "회의일 코드 표시");
+    e.S.closeModal();
+    // manager(열람 전용)는 코드 안내 미노출
+    const e2 = makeEnv();
+    e2.S.data.council = [{ id: "c1", round: 4, date: "2026-07-29", place: "B동",
+      attendees: [{ cat: "제조사", org: "뉴원", name: "홍" }], cases: [], actions: [], files: [] }];
+    loginAs(e2, "manager");
+    go(e2, "council");
+    q(e2, "[data-cn-row]").click();
+    ok(!q(e2, "#modal-box .cn-signcode"), "manager 상세에는 코드 안내 없음");
+  });
+
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
   console.log(`  SeMIS v2.9 테스트: ${passed + failed}건 실행`);
