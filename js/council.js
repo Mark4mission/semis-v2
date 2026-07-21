@@ -161,7 +161,8 @@
       </tbody></table>` : "";
 
     const caseHTML = cases.length ? `<table class="tbl cn-case-tbl"><thead><tr>
-        <th style="width:110px">장비</th><th>증상</th><th>근본원인</th><th>조치</th></tr></thead><tbody>
+        <th style="width:15%">장비</th><th style="width:18%">증상</th>
+        <th style="width:34%">근본원인</th><th style="width:33%">조치</th></tr></thead><tbody>
       ${cases.map(c => `<tr>
         <td><b>${esc(c.equip || "-")}</b></td><td>${nl2br(c.symptom)}</td>
         <td>${nl2br(c.cause)}</td><td>${nl2br(c.action)}</td></tr>`).join("")}
@@ -494,8 +495,8 @@
   table { width: 100%; border-collapse: collapse; }
   th, td { border: 1px solid #94a3b8; padding: 4px 6px; text-align: left; vertical-align: top; font-size: 9.5px; }
   th { background: #eff6ff; color: #1e3a8a; font-weight: 700; border-bottom: 1.5px solid #64748b; }
-  table.att { table-layout: fixed; }
-  table.att td { word-break: break-word; }
+  table.att, table.cases { table-layout: fixed; }
+  table.att td, table.cases td { word-break: break-word; }
   .ptext { border: 1px solid #94a3b8; border-left: 3px solid #1d4ed8; border-radius: 6px; padding: 8px 10px; background: #fff; white-space: normal; }
   .ptext img { max-width: 100%; height: auto; border-radius: 4px; margin: 4px 0; }
   .ptext a { color: #1d4ed8; word-break: break-all; }
@@ -522,7 +523,8 @@
       <tbody>${attRows}</tbody></table></div>
   ${textSec("안건", x.agendaHtml, x.agenda)}
   <div class="sec"><div class="sec-h">① 고장·수리·유지보수 사례 근본원인</div>
-    <table><thead><tr><th style="width:90px">장비</th><th>증상</th><th>근본원인</th><th>조치</th></tr></thead>
+    <table class="cases"><thead><tr><th style="width:15%">장비</th><th style="width:18%">증상</th>
+      <th style="width:34%">근본원인</th><th style="width:33%">조치</th></tr></thead>
       <tbody>${caseRows}</tbody></table></div>
   ${textSec("② 장비 사용환경 개선 방안", x.envHtml, x.env)}
   ${textSec("③ 분야별 제안 및 토의", x.proposalsHtml, x.proposals)}

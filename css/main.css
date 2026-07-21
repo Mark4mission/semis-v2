@@ -1168,7 +1168,7 @@ a.ct-tel:hover { color: var(--primary); }
 /* 상세 표: 셀마다 격자선(세로 구분 뚜렷) + 진한 헤더 밑줄 */
 .cn-att-tbl, .cn-case-tbl, .cn-act-tbl { border: 1.5px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
 /* 참석자 표는 고정 레이아웃 — 소속이 폭을 독점하지 않도록 소속·비고가 잔여폭 분배 */
-.cn-att-tbl { table-layout: fixed; }
+.cn-att-tbl, .cn-case-tbl { table-layout: fixed; }
 .cn-att-tbl td { word-break: break-word; }
 .cn-att-tbl td:nth-child(2) { white-space: nowrap; }  /* 구분 badge 줄바꿈 방지 */
 .cn-att-tbl th, .cn-case-tbl th, .cn-act-tbl th { background: var(--surface-2); border-bottom: 2px solid var(--border-strong); }
