@@ -116,6 +116,7 @@
       </tbody></table>` : "";
 
     openModal(`
+     <div class="cn-view">
       <h3>🤝 ${esc(meetTitle(x))}</h3>
       <div class="cn-meta">
         <span>📅 <b>${esc(x.date || "미정")}</b>${x.time ? " " + esc(x.time) : ""}</span>
@@ -140,7 +141,8 @@
         <button class="btn btn-ghost" id="cn-print">🖨 인쇄</button>
         ${canWrite() ? '<button class="btn btn-ghost" id="cn-edit">✎ 수정</button>' : ""}
         <button class="btn btn-primary" id="cn-close">닫기</button>
-      </div>`, { wide: true });
+      </div>
+     </div>`, { wide: true });
 
     $("#cn-close").onclick = closeModal;
     $("#cn-print").onclick = () => printMinutes(x.id);
@@ -162,60 +164,69 @@
     let files = x ? (x.files || []).map(f => Object.assign({}, f)) : [];
 
     openModal(`
+     <div class="cn-form">
       <h3>${x ? "회의록 수정" : "회의록 작성"} <span class="badge badge-gray">보안장비 협의회</span></h3>
-      <div class="form-grid">
-        <div class="form-row"><label>회차</label>
-          <input id="cn-round" type="number" min="1" max="999" value="${esc(x ? x.round || "" : nextRound())}"></div>
-        <div class="form-row"><label>회의일</label>
-          <input id="cn-date" type="date" value="${esc(x ? x.date || "" : "")}"></div>
-      </div>
-      <div class="form-grid">
-        <div class="form-row"><label>시간 (선택)</label>
-          <input id="cn-time" value="${esc(x ? x.time || "" : "")}" maxlength="40" placeholder="예: 14:00~16:00"></div>
-        <div class="form-row"><label>장소</label>
-          <input id="cn-place" value="${esc(x ? x.place || "" : DEFAULT_PLACE)}" maxlength="80"></div>
-      </div>
-      <div class="form-grid">
-        <div class="form-row"><label>주재 (의장)</label>
-          <input id="cn-chair" value="${esc(x ? x.chair || "" : "")}" maxlength="40" placeholder="예: 최상일 파트장"></div>
-        <div class="form-row"><label>작성자 (서기)</label>
-          <input id="cn-scribe" value="${esc(x ? x.scribe || "" : "")}" maxlength="40"></div>
-      </div>
 
-      <div class="form-row"><label>참석자 <span class="form-hint" style="display:inline;font-weight:400">${CAT_HINT}</span></label>
+      <fieldset class="cn-fs"><legend>📋 회의 정보</legend>
+        <div class="form-grid">
+          <div class="form-row"><label>회차</label>
+            <input id="cn-round" type="number" min="1" max="999" value="${esc(x ? x.round || "" : nextRound())}"></div>
+          <div class="form-row"><label>회의일</label>
+            <input id="cn-date" type="date" value="${esc(x ? x.date || "" : "")}"></div>
+        </div>
+        <div class="form-grid">
+          <div class="form-row"><label>시간 (선택)</label>
+            <input id="cn-time" value="${esc(x ? x.time || "" : "")}" maxlength="40" placeholder="예: 14:00~16:00"></div>
+          <div class="form-row"><label>장소</label>
+            <input id="cn-place" value="${esc(x ? x.place || "" : DEFAULT_PLACE)}" maxlength="80"></div>
+        </div>
+        <div class="form-grid">
+          <div class="form-row"><label>주재 (의장)</label>
+            <input id="cn-chair" value="${esc(x ? x.chair || "" : "")}" maxlength="40" placeholder="예: 최상일 프로"></div>
+          <div class="form-row"><label>작성자 (서기)</label>
+            <input id="cn-scribe" value="${esc(x ? x.scribe || "" : "")}" maxlength="40"></div>
+        </div>
+      </fieldset>
+
+      <fieldset class="cn-fs"><legend>👥 참석자</legend>
+        <div class="form-hint" style="margin:0 0 8px">${CAT_HINT}</div>
         <div id="cn-att"></div>
-        <button type="button" class="btn btn-ghost btn-sm" id="cn-att-add" style="margin-top:4px">+ 참석자 추가</button></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="cn-att-add" style="margin-top:6px">+ 참석자 추가</button>
+      </fieldset>
 
-      <div class="form-row"><label>안건 (선택)</label>
-        <textarea id="cn-agenda" maxlength="800" placeholder="이번 회의 안건 (한 줄에 하나씩)">${esc(x ? x.agenda || "" : "")}</textarea></div>
+      <fieldset class="cn-fs"><legend>🗣 협의 안건</legend>
+        <div class="form-row"><label>안건 (선택)</label>
+          <textarea id="cn-agenda" maxlength="800" placeholder="이번 회의 안건 (한 줄에 하나씩)">${esc(x ? x.agenda || "" : "")}</textarea></div>
+        <div class="form-row"><label class="cn-flabel">① 고장·수리·유지보수 사례 근본원인</label>
+          <div id="cn-cases"></div>
+          <button type="button" class="btn btn-ghost btn-sm" id="cn-case-add" style="margin-top:6px">+ 사례 추가</button></div>
+        <div class="form-row"><label class="cn-flabel">② 장비 사용환경 개선 방안</label>
+          <textarea id="cn-env" maxlength="2000" placeholder="온·습도·먼지 등 사용환경 개선 논의 및 방안">${esc(x ? x.env || "" : "")}</textarea></div>
+        <div class="form-row"><label class="cn-flabel">③ 분야별 제안 및 토의</label>
+          <textarea id="cn-proposals" maxlength="2000" placeholder="제조사·유지보수·운영사·본사 각 분야 제안 및 토의 내용">${esc(x ? x.proposals || "" : "")}</textarea></div>
+      </fieldset>
 
-      <div class="form-row"><label>① 고장·수리·유지보수 사례 근본원인</label>
-        <div id="cn-cases"></div>
-        <button type="button" class="btn btn-ghost btn-sm" id="cn-case-add" style="margin-top:4px">+ 사례 추가</button></div>
+      <fieldset class="cn-fs"><legend>✅ 결정 및 차기</legend>
+        <div class="form-row"><label>결정사항 / 액션 아이템</label>
+          <div id="cn-acts"></div>
+          <button type="button" class="btn btn-ghost btn-sm" id="cn-act-add" style="margin-top:6px">+ 결정사항 추가</button></div>
+        <div class="form-row"><label>차기 회의 (선택)</label>
+          <input id="cn-next" value="${esc(x ? x.nextPlan || "" : "")}" maxlength="200" placeholder="예: 2026-08-20 / 부품 교체주기 데이터 검토"></div>
+      </fieldset>
 
-      <div class="form-row"><label>② 장비 사용환경 개선 방안</label>
-        <textarea id="cn-env" maxlength="2000" placeholder="온·습도·먼지 등 사용환경 개선 논의 및 방안">${esc(x ? x.env || "" : "")}</textarea></div>
-
-      <div class="form-row"><label>③ 분야별 제안 및 토의</label>
-        <textarea id="cn-proposals" maxlength="2000" placeholder="제조사·유지보수·운영사·본사 각 분야 제안 및 토의 내용">${esc(x ? x.proposals || "" : "")}</textarea></div>
-
-      <div class="form-row"><label>결정사항 / 액션 아이템</label>
-        <div id="cn-acts"></div>
-        <button type="button" class="btn btn-ghost btn-sm" id="cn-act-add" style="margin-top:4px">+ 결정사항 추가</button></div>
-
-      <div class="form-row"><label>차기 회의 (선택)</label>
-        <input id="cn-next" value="${esc(x ? x.nextPlan || "" : "")}" maxlength="200" placeholder="예: 2026-08-20 / 부품 교체주기 데이터 검토"></div>
-
-      <div class="form-row"><label>첨부파일 <span class="form-hint" style="display:inline;font-weight:400">(회의자료·사진 등 · 최대 ${MAX_FILES}개 · 각 20MB 이하)</span></label>
+      <fieldset class="cn-fs"><legend>📎 첨부파일</legend>
+        <div class="form-hint" style="margin:0 0 8px">회의자료·사진 등 · 최대 ${MAX_FILES}개 · 각 20MB 이하</div>
         <div id="cn-dropzone" class="br-dropzone">📎 파일을 이곳에 끌어다 놓거나 <u>클릭하여 선택</u>하세요
           <input type="file" id="cn-file" multiple style="display:none"></div>
-        <div id="cn-file-box" class="nb-files-view br-files-scroll"></div></div>
+        <div id="cn-file-box" class="nb-files-view br-files-scroll"></div>
+      </fieldset>
 
       <div class="modal-actions">
         ${x ? '<button class="btn btn-danger" id="cn-fdel" style="margin-right:auto">삭제</button>' : ""}
         <button class="btn btn-ghost" id="cn-cancel">취소</button>
         <button class="btn btn-primary" id="cn-save">저장</button>
-      </div>`, { wide: true });
+      </div>
+     </div>`, { wide: true });
 
     /* ─ 참석자 동적행 ─ */
     function attCollect() {
@@ -407,11 +418,12 @@
   .meta { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 10px; color: #334155; margin-top: 8px; }
   .meta b { color: #0f172a; }
   .sec { margin: 12px 0; page-break-inside: avoid; }
-  .sec-h { font-size: 11px; font-weight: 800; color: #1d4ed8; border-left: 3px solid #1d4ed8; padding-left: 6px; margin-bottom: 6px; }
+  .sec-h { font-size: 11px; font-weight: 800; color: #1d4ed8; border-left: 3px solid #1d4ed8;
+    padding: 0 0 3px 6px; margin-bottom: 6px; border-bottom: 1px solid #94a3b8; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #cbd5e1; padding: 4px 6px; text-align: left; vertical-align: top; font-size: 9.5px; }
-  th { background: #eff6ff; color: #1e3a8a; font-weight: 700; }
-  .ptext { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; background: #f8fafc; white-space: normal; }
+  th, td { border: 1px solid #94a3b8; padding: 4px 6px; text-align: left; vertical-align: top; font-size: 9.5px; }
+  th { background: #eff6ff; color: #1e3a8a; font-weight: 700; border-bottom: 1.5px solid #64748b; }
+  .ptext { border: 1px solid #94a3b8; border-left: 3px solid #1d4ed8; border-radius: 6px; padding: 8px 10px; background: #fff; white-space: normal; }
   .pc-empty { color: #94a3b8; text-align: center; }
   .foot { margin-top: 16px; padding-top: 8px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 8.5px; color: #64748b; }
 </style></head><body>

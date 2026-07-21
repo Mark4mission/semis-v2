@@ -4014,7 +4014,7 @@ function makeFetchStub(server) {
     q(e, "#cn-round").value = "3";
     q(e, "#cn-date").value = "2026-07-15";
     q(e, "#cn-place").value = "인천화물터미널 B동 회의실";
-    q(e, "#cn-chair").value = "최상일 파트장";
+    q(e, "#cn-chair").value = "최상일 프로";
     q(e, "#cn-att-add").click();
     const arow = q(e, "#cn-att .cn-att-row");
     arow.querySelector(".cn-a-org").value = "뉴원S&T";
