@@ -28,6 +28,7 @@
   --shadow-lg: 0 8px 32px rgba(15,23,42,.18);
   --header-h: 56px;
   --sidebar-w: 250px;
+  --sidebar-mini-w: 66px;
   --font: "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
 }
 
@@ -143,6 +144,38 @@ input, select, textarea { font-family: inherit; font-size: .95rem; }
 
 .sidebar-foot { padding: 14px 20px; font-size: .7rem; color: #475569; border-top: 1px solid #1e293b; }
 .sidebar-backdrop { display: none; }
+
+/* v2.22: 사이드바 상단 툴바 (모두 펼치기/접기 · 축소/확대) */
+.nav-toolbar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 2px 8px; margin-bottom: 4px; border-bottom: 1px solid #1e293b;
+}
+.nav-tool-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: #1e293b; border: none; color: #94a3b8; cursor: pointer;
+  font-size: .72rem; font-weight: 600; padding: 6px 8px; border-radius: var(--radius-sm);
+  transition: background .15s, color .15s;
+}
+.nav-tool-btn:hover { background: #273449; color: #e2e8f0; }
+#nav-toggle-all { flex: 1; }
+#nav-toggle-all .nt-ico { font-size: .85rem; }
+.nav-tool-mini { font-size: .95rem; line-height: 1; padding: 6px 10px; }
+
+/* v2.22: 사이드바 축소(아이콘 전용) 모드 */
+.app.sidebar-mini .sidebar { width: var(--sidebar-mini-w); }
+.app.sidebar-mini .main { margin-left: var(--sidebar-mini-w); }
+.app.sidebar-mini .nav-menu { padding: 12px 6px 20px; }
+.app.sidebar-mini .nav-item { justify-content: center; gap: 0; padding: 9px 0; }
+.app.sidebar-mini .nav-item > span:not(.nav-ico),
+.app.sidebar-mini .nav-item .ext-mark { display: none; }
+.app.sidebar-mini .nav-item .nav-ico { width: auto; font-size: 1.05rem; }
+.app.sidebar-mini .nav-group-label { display: none; }
+.app.sidebar-mini .nav-group { border-top: 1px solid #1e293b; margin-top: 4px; padding-top: 4px; }
+.app.sidebar-mini .nav-group:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+.app.sidebar-mini .nav-group.collapsed .nav-group-items { display: block; } /* 축소 시 접힘 무시하고 아이콘 노출 */
+.app.sidebar-mini .nav-toolbar { justify-content: center; padding: 2px 0 8px; }
+.app.sidebar-mini #nav-toggle-all { display: none; }
+.app.sidebar-mini .sidebar-foot { display: none; }
 
 /* 메인 */
 .main { margin-left: var(--sidebar-w); padding-top: var(--header-h); min-height: 100vh; }
@@ -591,6 +624,14 @@ a.nb-file:hover { border-color: var(--primary); color: var(--primary); }
   .sidebar.open { transform: none; }
   .sidebar-backdrop.show { display: block; position: fixed; inset: 0; top: var(--header-h); background: rgba(15,23,42,.45); z-index: 140; }
   .main { margin-left: 0; }
+  /* v2.22: 모바일에서는 축소 모드 무효(오버레이 전체 폭 유지) + 축소 토글 숨김 */
+  .app.sidebar-mini .sidebar { width: var(--sidebar-w); }
+  .app.sidebar-mini .main { margin-left: 0; }
+  .app.sidebar-mini .nav-group-label { display: flex; }
+  .app.sidebar-mini .nav-item { justify-content: flex-start; gap: 9px; padding: 8px 12px; }
+  .app.sidebar-mini .nav-item > span:not(.nav-ico) { display: inline; }
+  .app.sidebar-mini #nav-toggle-all { display: inline-flex; }
+  .nav-tool-mini { display: none; }
   .view { padding: 16px 14px; }
   .user-chip { display: none; }
   .form-grid { grid-template-columns: 1fr; }

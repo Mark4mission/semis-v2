@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.21.0";
+  const VERSION = "2.22.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -134,13 +134,15 @@ const SeMIS = (() => {
       lk("insp-cabin", "기내 보안점검", "✈️", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EC%A0%90%EA%B2%80%EA%B8%B0%EB%A1%9D-%EB%AA%A8%EB%8B%88%ED%84%B0%EB%A7%81/%EA%B8%B0%EB%82%B4-%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80", "grp-inspect"),
       lk("insp-daily", "일일 보안점검", "🙆", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EC%A0%90%EA%B2%80%EA%B8%B0%EB%A1%9D-%EB%AA%A8%EB%8B%88%ED%84%B0%EB%A7%81/%EC%9D%BC%EC%9D%BC-%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80", "grp-inspect"),
 
-      g("grp-pass", "출입증 / 보안장비"),
+      g("grp-pass", "출입증"),
       m("passes", "출입증 관리", "🪪", "passes", "mgr", "grp-pass"),
-      m("equipment", "보안장비 유지관리", "🔧", "equipment", "mgr", "grp-pass"),
-      m("billing", "대금 청구 관리", "🧾", "billing", "hq", "grp-pass"),
       lk("pass-mgmt", "출입증 관리 (구버전)", "🪪", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EC%B6%9C%EC%9E%85%EC%A6%9D-%EA%B4%80%EB%A6%AC", "grp-pass"),
-      lk("equip-mgmt", "보안장비 관리 (구버전)", "🔧", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%EA%B4%80%EB%A6%AC", "grp-pass"),
-      lk("equip-council", "보안장비 협의체", "🤝", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%ED%98%91%EC%9D%98%EC%B2%B4", "grp-pass"),
+
+      g("grp-equip", "보안장비"),
+      m("equipment", "보안장비 유지관리", "🔧", "equipment", "mgr", "grp-equip"),
+      m("billing", "대금 청구 관리", "🧾", "billing", "hq", "grp-equip"),
+      lk("equip-mgmt", "보안장비 관리 (구버전)", "🔧", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%EA%B4%80%EB%A6%AC", "grp-equip"),
+      lk("equip-council", "보안장비 협의체", "🤝", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84-%ED%98%91%EC%9D%98%EC%B2%B4", "grp-equip"),
 
       g("grp-edu", "보안 증진"),
       m("training", "보안교육 관리", "🎓", "training", "mgr", "grp-edu"),
@@ -254,6 +256,26 @@ const SeMIS = (() => {
   function normalizeData() {
     const before = JSON.stringify(DATA);
     if (!Array.isArray(DATA.menus)) DATA.menus = defaultMenus();
+    // v2.22: '출입증 / 보안장비' 그룹을 '출입증'(grp-pass) + '보안장비'(grp-equip)로 분리.
+    //  기존 사용자 데이터도 grp-equip 생성 + 장비/청구/구링크 이동 (idempotent).
+    {
+      const passGrp = DATA.menus.find(m => m && m.id === "grp-pass" && m.type === "group");
+      if (passGrp && passGrp.label !== "출입증") passGrp.label = "출입증";
+      let equipGrp = DATA.menus.find(m => m && m.id === "grp-equip" && m.type === "group");
+      if (!equipGrp) {
+        const baseSeq = passGrp ? (passGrp.seq || 0)
+          : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
+        equipGrp = { id: "grp-equip", seq: baseSeq + 0.5, type: "group", label: "보안장비" };
+        DATA.menus.push(equipGrp);
+      } else if (equipGrp.label !== "보안장비") {
+        equipGrp.label = "보안장비";
+      }
+      // 보안장비 소속 항목을 grp-pass → grp-equip 로 이동
+      ["equipment", "billing", "equip-mgmt", "equip-council"].forEach(id => {
+        const mn = DATA.menus.find(m => m && m.id === id);
+        if (mn && mn.parent === "grp-pass") mn.parent = "grp-equip";
+      });
+    }
     // 필드 보정 (구버전 데이터 마이그레이션 대비)
     DATA.notices = DATA.notices || [];
     DATA.pwOverrides = DATA.pwOverrides || {};
@@ -359,8 +381,8 @@ const SeMIS = (() => {
       DATA.menus.push({ id: menuId, seq, type: "module", label, icon, module: moduleId,
         vis: vis || "all", parent: grp ? grpId : null });
     };
-    // grp-pass 최상단에 출입증 → 보안장비 순서 (equipment 먼저 삽입해야 passes가 위에 옴)
-    ensureModuleMenu("equipment", "grp-pass", "보안장비 유지관리", "🔧", "equipment", "mgr");
+    // 출입증(grp-pass) 최상단에 출입증 관리, 보안장비(grp-equip) 최상단에 보안장비 유지관리
+    ensureModuleMenu("equipment", "grp-equip", "보안장비 유지관리", "🔧", "equipment", "mgr");
     ensureModuleMenu("passes", "grp-pass", "출입증 관리", "🪪", "passes", "mgr");
     ensureModuleMenu("training", "grp-edu", "보안교육 관리", "🎓", "training", "mgr");
     // 계약서 관리는 '지점 관리' 바로 다음 위치 (관리자 이상 전용)
@@ -416,12 +438,13 @@ const SeMIS = (() => {
       if (mn && mn.label === "에어제타 보안정책") mn.label = "에어제타 보안정책 (구버전)";
     }
     // v2.16: 대금 청구 — 데이터 보정 + 메뉴 자동 삽입 (보안장비 유지관리 다음, hq 전용)
+    //  v2.22: 소속 그룹을 grp-equip(보안장비)로 변경
     if (!Array.isArray(DATA.billing)) DATA.billing = [];
     if (!DATA.menus.some(m => m && m.type === "module" && m.module === "billing")) {
-      const eq = DATA.menus.find(m => m && m.type === "module" && m.module === "equipment" && m.parent === "grp-pass");
+      const eq = DATA.menus.find(m => m && m.type === "module" && m.module === "equipment");
       if (eq) DATA.menus.push({ id: "billing", seq: (eq.seq || 0) + 0.2, type: "module",
-        label: "대금 청구 관리", icon: "🧾", module: "billing", vis: "hq", parent: "grp-pass" });
-      else ensureModuleMenu("billing", "grp-pass", "대금 청구 관리", "🧾", "billing", "hq");
+        label: "대금 청구 관리", icon: "🧾", module: "billing", vis: "hq", parent: "grp-equip" });
+      else ensureModuleMenu("billing", "grp-equip", "대금 청구 관리", "🧾", "billing", "hq");
     }
     // v2.15: 교육 이수증 관리 — 데이터 보정 + 메뉴 자동 삽입 (보안교육 관리 바로 다음, mgr 열람)
     if (!Array.isArray(DATA.certs)) DATA.certs = [];
@@ -469,6 +492,19 @@ const SeMIS = (() => {
   }
   function setUiState(patch) {
     localStorage.setItem(LS_UI, JSON.stringify(Object.assign(uiState(), patch)));
+  }
+  // v2.22: 사이드바 상태(그룹 펼치기/접기·미니 모드)를 접속 계정별로 저장.
+  //  같은 브라우저를 여러 계정이 공유해도 각자의 설정이 유지됨.
+  function navPrefsKey() { return (currentUser && currentUser.id) || "_anon"; }
+  function navPrefs() {
+    const all = uiState().navPrefs || {};
+    return all[navPrefsKey()] || {};
+  }
+  function setNavPref(patch) {
+    const st = uiState();
+    const all = st.navPrefs || {};
+    all[navPrefsKey()] = Object.assign({}, all[navPrefsKey()] || {}, patch);
+    setUiState({ navPrefs: all });
   }
 
   /* ─────────── 인증 ─────────── */
@@ -667,7 +703,10 @@ const SeMIS = (() => {
       return;
     }
     const menus = sortedMenus();
-    const collapsed = uiState().collapsed || {};
+    const collapsed = navPrefs().collapsed || {};        // v2.22: 계정별 그룹 펼치기/접기
+    const mini = !!navPrefs().sidebarMini;               // v2.22: 사이드바 축소(아이콘 전용) 모드
+    const appEl = $("#app");
+    if (appEl) appEl.classList.toggle("sidebar-mini", mini);
 
     const itemEl = (mn) => {
       if (mn.type === "link") {
@@ -676,6 +715,7 @@ const SeMIS = (() => {
           const b2 = document.createElement("button");
           b2.className = "nav-item";
           b2.dataset.route = "embed/" + mn.id;
+          b2.title = mn.label;
           b2.innerHTML = '<span class="nav-ico">' + esc(mn.icon || "🔗") + '</span><span>' + esc(mn.label) + '</span><span class="ext-mark">▣</span>';
           b2.onclick = () => navigate("embed/" + mn.id);
           return b2;
@@ -685,15 +725,44 @@ const SeMIS = (() => {
         a.href = mn.url;
         a.target = "_blank";
         a.rel = "noopener";
+        a.title = mn.label;
         a.innerHTML = '<span class="nav-ico">' + esc(mn.icon || "🔗") + '</span><span>' + esc(mn.label) + '</span><span class="ext-mark">↗</span>';
         return a;
       }
       const b = document.createElement("button");
       b.className = "nav-item";
       b.dataset.route = mn.module;
+      b.title = mn.label;
       b.innerHTML = '<span class="nav-ico">' + esc(mn.icon || "▪") + '</span><span>' + esc(mn.label) + '</span>';
       b.onclick = () => navigate(mn.module);
       return b;
+    };
+
+    // v2.22: 사이드바 상단 툴바 — [모두 펼치기/접기] 토글 + [축소/확대] 토글
+    const groupIds = menus.filter(g => g.type === "group" &&
+      menus.some(c => c.parent === g.id && canSee(c))).map(g => g.id);
+    const allCollapsed = groupIds.length > 0 && groupIds.every(id => collapsed[id]);
+    const bar = document.createElement("div");
+    bar.className = "nav-toolbar";
+    bar.innerHTML =
+      '<button type="button" class="nav-tool-btn" id="nav-toggle-all" title="' +
+        (allCollapsed ? "모두 펼치기" : "모두 접기") + '">' +
+        '<span class="nt-ico">' + (allCollapsed ? "⊞" : "⊟") + '</span>' +
+        '<span class="nt-txt">' + (allCollapsed ? "모두 펼치기" : "모두 접기") + '</span></button>' +
+      '<button type="button" class="nav-tool-btn nav-tool-mini" id="nav-toggle-mini" title="' +
+        (mini ? "사이드바 확대" : "사이드바 축소") + '" aria-label="사이드바 축소/확대">' +
+        (mini ? "»" : "«") + '</button>';
+    box.appendChild(bar);
+    bar.querySelector("#nav-toggle-all").onclick = () => {
+      const c = Object.assign({}, navPrefs().collapsed || {});
+      const collapseNow = !allCollapsed;   // 하나라도 펼쳐져 있으면 모두 접기, 전부 접혀 있으면 모두 펼치기
+      groupIds.forEach(id => { c[id] = collapseNow; });
+      setNavPref({ collapsed: c });
+      renderNav();
+    };
+    bar.querySelector("#nav-toggle-mini").onclick = () => {
+      setNavPref({ sidebarMini: !navPrefs().sidebarMini });
+      renderNav();
     };
 
     menus.filter(mn => !mn.parent || mn.type === "group").forEach(mn => {
@@ -707,9 +776,11 @@ const SeMIS = (() => {
         head.innerHTML = "<span>" + esc(mn.label) + '</span><span class="chev">▼</span>';
         head.onclick = () => {
           wrap.classList.toggle("collapsed");
-          const c = uiState().collapsed || {};
+          const c = Object.assign({}, navPrefs().collapsed || {});
           c[mn.id] = wrap.classList.contains("collapsed");
-          setUiState({ collapsed: c });
+          setNavPref({ collapsed: c });
+          // 툴바 [모두 펼치기/접기] 라벨 갱신을 위해 재렌더
+          renderNav();
         };
         const inner = document.createElement("div");
         inner.className = "nav-group-items";

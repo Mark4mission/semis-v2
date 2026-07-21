@@ -2093,6 +2093,85 @@ function makeFetchStub(server) {
       ok(e.Sync.SYNC_KEYS.includes(k), k + " 포함"));
   });
 
+  /* ══════════ [SB] v2.22 사이드바 — 그룹 분리 · 계정별 접기 · 툴바 · 축소 ══════════ */
+  t("SB01 기본 메뉴: 출입증(grp-pass) / 보안장비(grp-equip) 분리", () => {
+    const e = makeEnv();
+    const d = e.S.data;
+    const pass = d.menus.find(m => m.id === "grp-pass" && m.type === "group");
+    const equip = d.menus.find(m => m.id === "grp-equip" && m.type === "group");
+    eq(pass.label, "출입증", "grp-pass 라벨");
+    ok(equip, "grp-equip 존재");
+    eq(equip.label, "보안장비", "grp-equip 라벨");
+    const parentOf = (id) => (d.menus.find(m => m.id === id) || {}).parent;
+    eq(parentOf("passes"), "grp-pass", "출입증 관리 → grp-pass");
+    eq(parentOf("pass-mgmt"), "grp-pass", "출입증 구링크 → grp-pass");
+    eq(parentOf("equipment"), "grp-equip", "장비 유지관리 → grp-equip");
+    eq(parentOf("billing"), "grp-equip", "대금청구 → grp-equip");
+    eq(parentOf("equip-mgmt"), "grp-equip", "장비 구링크 → grp-equip");
+    eq(parentOf("equip-council"), "grp-equip", "장비 협의체 → grp-equip");
+    const edu = d.menus.find(m => m.id === "grp-edu");
+    ok(pass.seq < equip.seq && equip.seq < edu.seq, "그룹 순서: 출입증 < 보안장비 < 보안증진");
+    eq(e.S.normalizeData(), false, "idempotent");
+  });
+
+  t("SB02 구버전(grp-pass 통합) 데이터 → 분리 마이그레이션", () => {
+    const e = makeEnv();
+    const d = e.S.data;
+    // 구버전 재현: grp-equip 제거 + 라벨 원복 + 장비류를 grp-pass 소속으로
+    d.menus = d.menus.filter(m => m.id !== "grp-equip");
+    d.menus.find(m => m.id === "grp-pass").label = "출입증 / 보안장비";
+    ["equipment", "billing", "equip-mgmt", "equip-council"].forEach(id => {
+      const mn = d.menus.find(m => m.id === id); if (mn) mn.parent = "grp-pass";
+    });
+    eq(e.S.normalizeData(), true, "변경 감지");
+    const equip = d.menus.find(m => m.id === "grp-equip" && m.type === "group");
+    ok(equip && equip.label === "보안장비", "grp-equip 생성");
+    eq(d.menus.find(m => m.id === "grp-pass").label, "출입증", "grp-pass 라벨 갱신");
+    ["equipment", "billing", "equip-mgmt", "equip-council"].forEach(id =>
+      eq(d.menus.find(m => m.id === id).parent, "grp-equip", id + " 이동"));
+    eq(d.menus.find(m => m.id === "passes").parent, "grp-pass", "출입증은 grp-pass 유지");
+    eq(e.S.normalizeData(), false, "idempotent");
+  });
+
+  t("SB03 계정별 그룹 접기 상태 저장 (navPrefs[uid])", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.renderNav();
+    const heads = qa(e, "#nav-menu .nav-group-label");
+    ok(heads.length, "그룹 헤더 존재");
+    heads[0].click();
+    const ui = JSON.parse(e.w.localStorage.getItem("semis2:ui"));
+    ok(ui.navPrefs && ui.navPrefs.thq, "thq 계정 navPrefs 기록");
+    ok(Object.values(ui.navPrefs.thq.collapsed || {}).some(v => v === true), "접힘 저장");
+    ok(!ui.navPrefs.tmgr, "타 계정 미영향");
+  });
+
+  t("SB04 툴바: 모두 접기 / 모두 펼치기 토글", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.renderNav();
+    const groupCount = qa(e, "#nav-menu .nav-group").length;
+    ok(groupCount > 1, "그룹 다수");
+    q(e, "#nav-toggle-all").click();
+    eq(qa(e, "#nav-menu .nav-group.collapsed").length, groupCount, "모두 접힘");
+    ok(q(e, "#nav-toggle-all").title.includes("펼치기"), "라벨 → 모두 펼치기");
+    q(e, "#nav-toggle-all").click();
+    eq(qa(e, "#nav-menu .nav-group.collapsed").length, 0, "모두 펼침");
+    ok(q(e, "#nav-toggle-all").title.includes("접기"), "라벨 → 모두 접기");
+  });
+
+  t("SB05 툴바: 사이드바 축소 / 확대 (계정별 저장)", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.renderNav();
+    ok(!q(e, "#app").className.includes("sidebar-mini"), "초기 확대 상태");
+    q(e, "#nav-toggle-mini").click();
+    ok(q(e, "#app").className.includes("sidebar-mini"), "축소 적용");
+    eq(JSON.parse(e.w.localStorage.getItem("semis2:ui")).navPrefs.thq.sidebarMini, true, "축소 상태 저장");
+    q(e, "#nav-toggle-mini").click();
+    ok(!q(e, "#app").className.includes("sidebar-mini"), "확대 복원");
+  });
+
   /* ── [PS] 출입증 관리 ── */
   t("PS01 렌더: manager 등록 버튼 / user 미표시", () => {
     const e = makeEnv();
@@ -3079,7 +3158,7 @@ function makeFetchStub(server) {
     const mn = e.S.data.menus.find(m => m.type === "module" && m.module === "billing");
     ok(mn, "billing 메뉴");
     eq(mn.vis, "hq", "hq 전용 (대외비)");
-    eq(mn.parent, "grp-pass", "출입증/보안장비 그룹");
+    eq(mn.parent, "grp-equip", "보안장비 그룹 (v2.22 분리)");
     const eq2 = e.S.data.menus.find(m => m.type === "module" && m.module === "equipment");
     ok((eq2.seq || 0) < (mn.seq || 0), "보안장비 유지관리 다음 위치");
     ok(e.Sync.SYNC_KEYS.includes("billing"), "SYNC_KEYS 등록");
