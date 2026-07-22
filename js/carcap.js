@@ -506,15 +506,18 @@
       reason: `심각도 ${S}(${sv}) · 발생빈도 ${L}${rc >= 2 ? "(재발 " + rc + "건 반영)" : ""} → ${b.label}` };
   }
 
-  /* ═══════════ 위험도 선택 모달 (5x5 + 자동 제안) ═══════════ */
+  /* ═══════════ 위험도 선택 (독립 오버레이 — CAR 폼을 파괴하지 않음) ═══════════ */
   function pickRisk(cur, cb, ctx) {
     ctx = ctx || {};
     let sel = cur ? { L: cur.L, S: cur.S } : {};
-    openModal(`
+    const ov = document.createElement("div");
+    ov.className = "modal-overlay cr-rm-overlay";
+    ov.style.zIndex = "620";
+    ov.innerHTML = `<div class="modal-box wide" style="max-height:88vh;overflow:auto">
       <h3>⚠️ 위험도 평가 (Risk Assessment)</h3>
       <div class="form-hint" style="margin-bottom:8px">심각도(X축, 예상피해)와 발생빈도(Y축, 가능성)가 만나는 셀을 선택하세요. 항공보안파트 위험평가 기준(5×5)입니다.</div>
-      <div id="cr-rm">${matrixGrid("picker", { sel })}</div>
-      <div id="cr-rm-info" class="cr-rm-info"></div>
+      <div class="cr-rm-grid">${matrixGrid("picker", { sel })}</div>
+      <div class="cr-rm-info2 cr-rm-info"></div>
       <details class="cr-rm-ref"><summary>📖 평가 기준 (예상피해 · 발생가능성 · 대응방안)</summary>
         <div class="cr-rm-refbody">
           <div><b>심각도 — 예상피해</b>${cfg().severity.map(s => `<div class="cr-rm-r"><span>${esc(s.v)} ${esc(s.label)}</span><em>${esc(s.desc)}</em></div>`).join("")}</div>
@@ -524,13 +527,21 @@
         ${levelActionsHTML()}
       </details>
       <div class="modal-actions">
-        <button class="btn btn-ghost" id="cr-rm-clear" style="margin-right:auto">평가 해제</button>
-        ${ctx.classification ? '<button class="btn btn-ghost" id="cr-rm-sug">🤖 자동 제안</button>' : ""}
-        <button class="btn btn-ghost" id="cr-rm-cancel">취소</button>
-        <button class="btn btn-primary" id="cr-rm-ok">적용</button>
-      </div>`, { wide: true });
+        <button class="btn btn-ghost cr-rm-clear" style="margin-right:auto">평가 해제</button>
+        ${ctx.classification ? '<button class="btn btn-ghost cr-rm-sug">🤖 자동 제안</button>' : ""}
+        <button class="btn btn-ghost cr-rm-cancel">취소</button>
+        <button class="btn btn-primary cr-rm-ok">적용</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const q1 = (s) => ov.querySelector(s);
+    const qa1 = (s) => Array.from(ov.querySelectorAll(s));
+    const onEsc = (e) => { if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); close(); } };
+    const close = () => { try { document.removeEventListener("keydown", onEsc, true); } catch (e) {} ov.remove(); };
+    document.addEventListener("keydown", onEsc, true);
+    ov.addEventListener("mousedown", (e) => { if (e.target === ov) close(); });
+
     function paintInfo() {
-      const box = $("#cr-rm-info");
+      const box = q1(".cr-rm-info2");
       if (!box) return;
       if (!sel.L || !sel.S) { box.innerHTML = '<span style="color:var(--text-3)">선택된 셀이 없습니다.</span>'; return; }
       const b = bandOf(sel.L, sel.S);
@@ -544,28 +555,28 @@
         <div style="font-size:.82rem;margin-top:3px">▸ ${esc(act)}</div></div>`;
     }
     function wireCells() {
-      $$("#cr-rm .rm-cell").forEach(td => td.onclick = () => {
+      qa1(".cr-rm-grid .rm-cell").forEach(td => td.onclick = () => {
         sel = { L: Number(td.dataset.l), S: td.dataset.s };
-        $("#cr-rm").innerHTML = matrixGrid("picker", { sel });
+        q1(".cr-rm-grid").innerHTML = matrixGrid("picker", { sel });
         wireCells(); paintInfo();
       });
     }
     wireCells(); paintInfo();
-    const sug = $("#cr-rm-sug");
+    const sug = q1(".cr-rm-sug");
     if (sug) sug.onclick = () => {
       const s = suggestRisk(ctx);
       sel = { L: s.L, S: s.S };
-      $("#cr-rm").innerHTML = matrixGrid("picker", { sel });
+      q1(".cr-rm-grid").innerHTML = matrixGrid("picker", { sel });
       wireCells(); paintInfo();
       toast("자동 제안: " + s.reason);
     };
-    $("#cr-rm-clear").onclick = () => { cb(null); closeModal(); };
-    $("#cr-rm-cancel").onclick = closeModal;
-    $("#cr-rm-ok").onclick = () => {
+    q1(".cr-rm-clear").onclick = () => { cb(null); close(); };
+    q1(".cr-rm-cancel").onclick = close;
+    q1(".cr-rm-ok").onclick = () => {
       if (!sel.L || !sel.S) { toast("셀을 선택하거나 평가 해제를 누르세요.", true); return; }
       const b = bandOf(sel.L, sel.S);
       cb({ L: sel.L, S: sel.S, band: b.key, score: b.score });
-      closeModal();
+      close();
     };
   }
 

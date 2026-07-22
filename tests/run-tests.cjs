@@ -4724,6 +4724,33 @@ function makeFetchStub(server) {
     eq(n, 25, "총 25셀 검증");
   });
 
+  t("CR28 위험도 평가 후 폼 입력 보존(데이터 손실 회귀)", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "carcap");
+    q(e, "#car-add").click();
+    q(e, "#cf-target").value = "FRASF";
+    q(e, "#cf-nc").value = "발목 위해물품 미탐지";
+    q(e, "#cf-ref").value = "TAC701 5.5";
+    q(e, "#cf-risk-btn").click();                              // 위험도 평가 오버레이 열기
+    ok(q(e, "#cf-nc"), "폼이 파괴되지 않음(오버레이 분리)");
+    eq(q(e, "#cf-nc").value, "발목 위해물품 미탐지", "입력 보존(부적합)");
+    const ov = e.w.document.querySelector(".cr-rm-overlay");
+    ok(ov, "위험도 오버레이 생성");
+    const cell = ov.querySelector('.rm-cell[data-l="4"][data-s="B"]');
+    ok(cell, "4B 셀 존재");
+    cell.click();
+    ov.querySelector(".cr-rm-ok").click();
+    ok(!e.w.document.querySelector(".cr-rm-overlay"), "적용 후 오버레이 닫힘");
+    ok(q(e, "#cf-risk-box").textContent.includes("4B"), "위험도가 폼에 표시됨");
+    eq(q(e, "#cf-ref").value, "TAC701 5.5", "입력 보존(근거)");
+    q(e, "#cf-save").click();
+    const rec = e.S.data.cars[e.S.data.cars.length - 1];
+    eq(rec.nonconformance, "발목 위해물품 미탐지", "저장: 부적합 내용");
+    eq(rec.reference, "TAC701 5.5", "저장: 관련근거");
+    ok(rec.risk && rec.risk.L === 4 && rec.risk.S === "B", "저장: 위험도 4B");
+  });
+
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
   console.log(`  SeMIS v2.9 테스트: ${passed + failed}건 실행`);
