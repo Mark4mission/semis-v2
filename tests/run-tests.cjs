@@ -4552,7 +4552,7 @@ function makeFetchStub(server) {
     ok(box.textContent.includes("Corrective Action Report"), "CAR 문서 제목");
     ok(q(e, ".cr-flow"), "프로세스 타임라인");
     ok(q(e, ".cr-signs"), "서명 그리드");
-    ok(qa(e, ".cr-sign").length === 7, "서명 슬롯 7종(발행/작성/검토/승인/수리/검증/종결)");
+    ok(qa(e, ".cr-sign").length === 8, "서명 슬롯 8종(발행/접수확인/작성/검토/승인/수리/검증/종결)");
     ok(box.textContent.includes("근본원인"), "CAP 근본원인 표시");
   });
 
@@ -4624,6 +4624,72 @@ function makeFetchStub(server) {
     // 폼 드롭다운에도 반영
     q(e, "#car-add").click();
     ok(q(e, "#cf-domain").textContent.includes("특송화물"), "등록 폼 드롭다운 반영");
+  });
+
+  t("CR22 CAR 코드 원격 로그인 → signer 세션", () => {
+    const e = makeEnv();
+    const Y = new Date().getFullYear();
+    e.S.data.cars.push({ id: "sc1", year: Y, no: "26-BKK-SU-09F", target: "BKK지점", classification: "시정", stage: "CAR", issuedDate: "2026-07-10", nonconformance: "봉인 미부착", signs: {} });
+    const code = e.S.signCodeFor(e.S.data.cars.find(c => c.id === "sc1"));
+    ok(/^\d{6}$/.test(code), "6자리 코드");
+    eq(e.S.signCarFor(code).id, "sc1", "코드→CAR 매칭");
+    submitLogin(e, code);
+    ok(e.S.user && e.S.user.role === "signer", "signer 로그인");
+    eq(e.S.user.signCarId, "sc1", "signCarId 세팅");
+    e.S.renderView();
+    ok(q(e, ".cr-sign-page"), "접수확인 서명 화면 렌더");
+    ok(q(e, "#crs-sign"), "서명 버튼");
+  });
+
+  t("CR23 renderSigning 안전정보 표시 + orgAck 반영", () => {
+    const e = makeEnv();
+    const Y = new Date().getFullYear();
+    e.S.data.cars.push({ id: "sc2", year: Y, no: "26-LSG-OM-09F", target: "LSG", classification: "시정", stage: "CAR", issuedDate: "2026-07-10", nonconformance: "봉인 미부착 확인", reference: "자체보안계획 8.1.2", signs: {} });
+    const CC = e.w.SemisCarcap;
+    const root = e.w.document.getElementById("view");
+    CC.renderSigning(root, "sc2");
+    ok(root.textContent.includes("LSG"), "수검조직 표시");
+    ok(root.textContent.includes("봉인 미부착"), "부적합 내용 표시");
+    ok(root.textContent.includes("접수확인"), "접수확인 안내");
+    const rec = e.S.data.cars.find(c => c.id === "sc2");
+    rec.signs.orgAck = { name: "LSG 소장", img: "data:img", at: "2026-07-12T00:00:00Z" };
+    const ai = CC.ackInfo(rec);
+    ok(ai.acked, "ackInfo.acked");
+    eq(ai.at.slice(0, 10), "2026-07-12", "서명일");
+  });
+
+  t("CR24 접수확인 기한/경과 (ackDays)", () => {
+    const CC = makeEnv().w.SemisCarcap;
+    eq(CC.calcAckDue({ issuedDate: "2026-07-10" }), "2026-07-17", "발행+7일");
+    const today = new Date().toISOString().slice(0, 10);
+    ok(CC.ackInfo({ stage: "CAR", issuedDate: CC.addDays(today, -10), signs: {} }).overdue, "미서명 기한경과");
+    ok(!CC.ackInfo({ stage: "CAR", issuedDate: CC.addDays(today, -10), signs: { orgAck: { name: "x", at: "2026" } } }).overdue, "서명완료시 경과 아님");
+  });
+
+  t("CR25 상세 접수확인 배너 + 코드 (hq)", () => {
+    const e = makeEnv();
+    const Y = new Date().getFullYear();
+    e.S.data.cars.push({ id: "sc3", year: Y, no: "26-BKK-SU-08F", target: "BKK", classification: "시정", stage: "CAR", issuedDate: "2026-07-10", signs: {} });
+    loginAs(e, "hq");
+    e.w.SemisCarcap.open("sc3");
+    const box = q(e, "#modal-box");
+    ok(box.textContent.includes("접수확인"), "상세 접수확인 배너");
+    const code = e.S.signCodeFor(e.S.data.cars.find(c => c.id === "sc3"));
+    ok(box.textContent.includes(code), "코드 표시");
+    ok(q(e, "#cd-copycode"), "코드 복사 버튼");
+  });
+
+  t("CR26 signer 격리 — 단일 메뉴만", () => {
+    const e = makeEnv();
+    const Y = new Date().getFullYear();
+    e.S.data.cars.push({ id: "sc4", year: Y, no: "26-ABC-DE-01F", target: "T", classification: "시정", stage: "CAR", issuedDate: "2026-07-10", signs: {} });
+    const code = e.S.signCodeFor(e.S.data.cars.find(c => c.id === "sc4"));
+    submitLogin(e, code);
+    ok(e.S.user && e.S.user.role === "signer", "signer");
+    e.S.renderNav();
+    const items = qa(e, "#nav-menu .nav-item");
+    eq(items.length, 1, "단일 메뉴");
+    ok(items[0].textContent.includes("접수확인"), "접수확인 서명 메뉴");
   });
 
   /* ══════════ 결과 ══════════ */

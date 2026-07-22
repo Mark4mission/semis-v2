@@ -1426,3 +1426,25 @@ a.ct-tel:hover { color: var(--primary); }
   border-radius: 20px; padding: 3px 6px 3px 11px; font-size: .82rem; font-weight: 600; }
 .cs-tag button { background: none; border: none; color: var(--primary); cursor: pointer; font-size: .78rem; opacity: .7; padding: 0 2px; line-height: 1; }
 .cs-tag button:hover { opacity: 1; color: var(--danger); }
+
+/* CAR v2.29.2 — 수검조직 원격 접수확인 서명 화면 + 접수확인 배너 */
+.cr-sign-page { max-width: 560px; margin: 0 auto; padding: 8px 0; }
+.cr-sign-phead { text-align: center; margin-bottom: 14px; }
+.cr-sign-ptitle { font-size: 1.3rem; font-weight: 800; }
+.cr-sign-pmeta { font-size: .82rem; color: var(--text-2); margin-top: 3px; }
+.cr-sign-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); }
+.cr-sign-card .cr-dt td { font-size: .88rem; padding: 8px 10px; white-space: normal; }
+.cr-sign-guide { font-size: .88rem; line-height: 1.55; color: var(--text-2); margin: 14px 0; padding: 10px 12px; background: var(--primary-soft); border-radius: 8px; }
+.cr-sign-act { text-align: center; margin-top: 6px; }
+.cr-sign-act .btn-primary { font-size: 1rem; padding: 12px 26px; }
+.cr-sign-done2 { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cr-sign-done2 img { max-height: 80px; max-width: 220px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.cr-sign-done2 div { font-size: .9rem; font-weight: 700; color: var(--success); }
+.cr-sign-foot { text-align: center; font-size: .78rem; color: var(--text-3); margin-top: 14px; }
+.cr-ackbox { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px;
+  background: #eff6ff; border: 1px solid #bfdbfe; font-size: .84rem; }
+.cr-ackbox.ok { background: #f0fdf4; border-color: #bbf7d0; }
+.cr-ackbox.over { background: #fffbeb; border-color: #fde68a; }
+.cr-ack-ic { font-size: 1.1rem; }
+.cr-ack-body { flex: 1; line-height: 1.5; }
+.cr-ackcode { font-size: 1.02rem; letter-spacing: 1px; background: #fff; padding: 1px 8px; border-radius: 5px; border: 1px solid var(--border-strong); font-weight: 800; }

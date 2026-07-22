@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.29.1";
+  const VERSION = "2.29.2";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -579,18 +579,38 @@ const SeMIS = (() => {
     if (!list.length) return null;
     return list.sort((a, b) => (Number(b.round) || 0) - (Number(a.round) || 0))[0];
   }
+  // v2.29.2: CAR(시정조치) 접수확인 원격 서명 — 수검조직에게 6자리 코드 부여
+  function signCarFor(pw) {
+    const code = String(pw || "").trim();
+    if (!/^\d{6}$/.test(code)) return null;
+    return (DATA.cars || []).find(c => c && signCodeFor(c) === code) || null;
+  }
   function signLogin(pw) {
     const m = signMeetingFor(pw);
-    if (!m) return null;
-    currentUser = { id: "__signer__", name: "보안장비 협의회", role: "signer", signMeetingId: m.id };
-    sessionStorage.setItem(SS_SESSION, JSON.stringify({ uid: "__signer__", signMeetingId: m.id, ts: Date.now() }));
-    return currentUser;
+    if (m) {
+      currentUser = { id: "__signer__", name: "보안장비 협의회", role: "signer", signMeetingId: m.id };
+      sessionStorage.setItem(SS_SESSION, JSON.stringify({ uid: "__signer__", signMeetingId: m.id, ts: Date.now() }));
+      return currentUser;
+    }
+    const car = signCarFor(pw);
+    if (car) {
+      currentUser = { id: "__signer__", name: "수검조직 서명", role: "signer", signCarId: car.id };
+      sessionStorage.setItem(SS_SESSION, JSON.stringify({ uid: "__signer__", signCarId: car.id, ts: Date.now() }));
+      return currentUser;
+    }
+    return null;
   }
   function restoreSession() {
     try {
       const s = JSON.parse(sessionStorage.getItem(SS_SESSION));
       if (!s) return false;
       if (s.uid === "__signer__") {
+        if (s.signCarId) {
+          const car = (DATA.cars || []).find(c => c && c.id === s.signCarId);
+          if (!car) return false;
+          currentUser = { id: "__signer__", name: "수검조직 서명", role: "signer", signCarId: car.id };
+          return true;
+        }
         const m = (DATA.council || []).find(c => c && c.id === s.signMeetingId);
         if (!m) return false;
         currentUser = { id: "__signer__", name: "보안장비 협의회", role: "signer", signMeetingId: m.id };
@@ -699,10 +719,11 @@ const SeMIS = (() => {
       return;
     }
     if (currentUser && currentUser.role === "signer") {
-      // v2.26: 서명 참석자 — 보안장비 협의회 서명 화면만 접근 (다른 모든 라우트 차단)
-      const def = modules.council || modules.dashboard;
+      // v2.26/v2.29.2: 서명 참석자 — 협의회(signMeetingId) 또는 CAR 접수확인(signCarId) 화면만 접근
+      const isCar = !!currentUser.signCarId;
+      const def = isCar ? (modules.carcap || modules.dashboard) : (modules.council || modules.dashboard);
       def.render(view);
-      highlightNav("council");
+      highlightNav(isCar ? "carcap" : "council");
       $("#sidebar").classList.remove("open");
       $("#sidebar-backdrop").classList.remove("show");
       $("#main").scrollTop = 0;
@@ -771,11 +792,13 @@ const SeMIS = (() => {
       return;
     }
     if (currentUser && currentUser.role === "signer") {
-      // v2.26: 서명 참석자 — 보안장비 협의회 서명 메뉴만 표시
+      // v2.26/v2.29.2: 서명 참석자 — 협의회 또는 CAR 접수확인 서명 메뉴만 표시
+      const isCar = !!currentUser.signCarId;
       const b = document.createElement("button");
       b.className = "nav-item active";
-      b.dataset.route = "council";
-      b.innerHTML = '<span class="nav-ico">🤝</span><span>보안장비 협의회 · 서명</span>';
+      b.dataset.route = isCar ? "carcap" : "council";
+      b.innerHTML = isCar ? '<span class="nav-ico">📋</span><span>시정조치 · 접수확인 서명</span>'
+        : '<span class="nav-ico">🤝</span><span>보안장비 협의회 · 서명</span>';
       b.onclick = () => renderView();
       box.appendChild(b);
       return;
@@ -959,7 +982,7 @@ const SeMIS = (() => {
     save, load, onSave, saveSilent, normalizeData,
     get user() { return currentUser; },
     allUsers, isAdmin, roleRank, canEdit, canSee,
-    pwHash, sha256, signCodeFor,
+    pwHash, sha256, signCodeFor, signCarFor,
     renderNav, renderHeader, renderSecBadge, renderView,
     openModal, closeModal, confirmModal, toast,
     $, $$, esc, fmtDate, sortedMenus,

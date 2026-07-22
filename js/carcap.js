@@ -32,6 +32,7 @@
     fatMonths:    { "시정": 1, "개선권고": 3, "현장시정": 0, "관찰사항": 0 }, // 완료기한(월) — TAC701 4.2.3
     fatMonthsMax: { "시정": 3, "개선권고": 6, "현장시정": 0, "관찰사항": 0 }, // 1회 연장 최대(월)
     effDays: 90,                                      // 효과성 유지 확인 기간(일) — KAB753 4.7 라
+    ackDays: 7,                                       // 수검조직 접수확인(이의없음) 기한(발행+일)
     warnDays: 3,                                      // 마감 임박 경고(D-일)
     overdue: [                                        // 경과일 기준 에스컬레이션 — TAC701 4.2.4
       { over: 1,  label: "지연", band: "amber" },
@@ -110,6 +111,7 @@
 
   const SIGN_SLOTS = [
     { key: "carIssue",   label: "CAR 발행 승인",  who: "심사주관(항공보안파트)", gate: "CAR" },
+    { key: "orgAck",     label: "수검조직 접수확인", who: "수검조직(원격 서명)",    gate: "CAR" },
     { key: "capCreate",  label: "CAP 작성",        who: "수검조직 작성자",        gate: "CAP" },
     { key: "capReview",  label: "CAP 검토",        who: "수검조직 검토자",        gate: "CAP" },
     { key: "capApprove", label: "CAP 승인",        who: "수검조직 승인권자",      gate: "CAP" },
@@ -220,6 +222,19 @@
   }
   const calcEffSustain = (r) => r.effSustain || (r.effStart ? addDays(r.effStart, cfg().effDays)
     : (r.fatDone ? addDays(r.fatDone, cfg().effDays) : ""));
+
+  // 수검조직 접수확인(이의없음) — 발행+ackDays 이내 원격 서명
+  const calcAckDue = (r) => r.issuedDate ? addDays(r.issuedDate, cfg().ackDays) : "";
+  function ackInfo(r) {
+    const acked = !!(r.signs && r.signs.orgAck);
+    const due = calcAckDue(r);
+    let overdue = false, days = null;
+    if (due && !acked && r.stage !== "종결" && r.stage !== "기각") {
+      days = daysBetween(todayISO(), due);
+      overdue = days !== null && days < 0;
+    }
+    return { code: SeMIS.signCodeFor(r), acked, due, at: acked ? (r.signs.orgAck.at || "") : "", overdue, days };
+  }
 
   function activeDeadline(r) {
     if (r.stage === "종결" || r.stage === "기각") return null;
@@ -731,6 +746,7 @@
     const rec = recurrence(x);
     const st = stageOf(x.stage);
     const capDue = calcCapDue(x), fatDue = calcFatDue(x), effSus = calcEffSustain(x);
+    const ack = ackInfo(x);
     const row = (lb, val) => `<tr><td class="cr-dt-l">${lb}</td><td>${val}</td></tr>`;
     openModal(`
       <div class="cr-detail">
@@ -745,6 +761,14 @@
         ${(e || rec.focus) ? `<div class="cr-alert ${e ? (e.over ? "over" : "warn") : "focus"}">
           ${e ? `<b>${e.over ? "⚠ 기한 경과" : "⏰ 마감 임박"}</b> — ${esc(e.kind)} 기한 ${esc(e.date)} (${e.over ? "D+" + e.days : "D-" + e.days}) · 등급 <b>${esc(e.state)}</b>. ${e.over ? "재시정 요구/에스컬레이션 검토 필요 (TAC701 4.2.4)." : ""}` : ""}
           ${rec.focus ? `${e ? "<br>" : ""}<b>🔁 다빈도 재발</b> — 최근 ${cfg().recurMonths}개월 동일 대상·분야 ${rec.count}건 → 집중관리항목 검토 (KAB753 4.10).` : ""}
+        </div>` : ""}
+
+        ${canWrite && x.stage !== "종결" && x.stage !== "기각" && x.issuedDate ? `<div class="cr-ackbox ${ack.acked ? "ok" : ack.overdue ? "over" : ""}">
+          <span class="cr-ack-ic">📱</span>
+          <div class="cr-ack-body">${ack.acked
+            ? `<b>수검조직 접수확인 완료</b> — ${esc((x.signs.orgAck && x.signs.orgAck.name) || "")} · ${esc((ack.at || "").slice(0, 10))} (이의 없음)`
+            : `<b>수검조직 원격 접수확인 대기</b> — 모바일에서 <b>semis.pe.kr</b> 접속 → 코드 <b class="cr-ackcode">${esc(ack.code)}</b> 입력 → 접수확인 서명${ack.due ? ` · 기한 ${esc(ack.due)}${ack.days != null ? ` (${ack.days < 0 ? "D+" + (-ack.days) + " 경과" : "D-" + ack.days})` : ""}` : ""}`}</div>
+          ${!ack.acked ? '<button class="btn btn-ghost btn-sm" id="cd-copycode">📋 코드 복사</button>' : ""}
         </div>` : ""}
 
         ${timelineHTML(x)}
@@ -794,6 +818,12 @@
     $("#cd-close").onclick = closeModal;
     if (canWrite) {
       $$(".cr-signs [data-sign]").forEach(b => b.onclick = () => signSlot(id, b.dataset.sign));
+      const cc = $("#cd-copycode"); if (cc) cc.onclick = () => {
+        const code = ack.code;
+        try { const ta = document.createElement("textarea"); ta.value = code; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); } catch (e) {}
+        try { if (navigator.clipboard) navigator.clipboard.writeText(code); } catch (e) {}
+        toast("접수확인 코드가 복사되었습니다: " + code);
+      };
       const ed = $("#cd-edit"); if (ed) ed.onclick = () => carForm(id);
       const vd = $("#cd-void"); if (vd) vd.onclick = () => confirmModal("이 CAR을 기각/개선불요로 종료하시겠습니까?", () => {
         x.stage = "기각"; x.closedDate = x.closedDate || todayISO(); x.updatedAt = new Date().toISOString();
@@ -895,6 +925,7 @@
         <div class="form-row"><label>시정 완료기한 (개월)</label><input type="number" id="cs-fat-f" value="${c.fatMonths["시정"]}" min="0"></div>
         <div class="form-row"><label>개선권고 완료기한 (개월)</label><input type="number" id="cs-fat-r" value="${c.fatMonths["개선권고"]}" min="0"></div>
       </div>
+      <div class="form-row"><label>수검조직 접수확인 기한 (발행+일, 이 기한 내 원격 서명=이의없음)</label><input type="number" id="cs-ackdays" value="${c.ackDays}" min="1"></div>
       <div class="cr-sec">에스컬레이션 (기한 경과일 기준)</div>
       <div class="form-grid">
         <div class="form-row"><label>임박 경고 (D-일 이내)</label><input type="number" id="cs-warn" value="${c.warnDays}" min="0"></div>
@@ -971,6 +1002,7 @@
       const patch = {
         capDueDays: Number($("#cs-capdays").value) || 21,
         effDays: Number($("#cs-effdays").value) || 90,
+        ackDays: Number($("#cs-ackdays").value) || 7,
         warnDays: Number($("#cs-warn").value) || 3,
         recurMonths: Number($("#cs-rmon").value) || 12,
         recurCount: Number($("#cs-rcnt").value) || 4,
@@ -994,10 +1026,53 @@
     };
   }
 
+  /* ═══════════ 수검조직 원격 접수확인 서명 화면 (signer 세션) ═══════════ */
+  function renderSigning(root, carId) {
+    const r = (D().cars || []).find(c => c.id === carId);
+    if (!r) { root.innerHTML = '<div class="empty">유효하지 않은 서명 링크입니다.</div>'; return; }
+    const ack = r.signs && r.signs.orgAck;
+    const due = calcAckDue(r);
+    root.innerHTML = `
+      <div class="cr-sign-page">
+        <div class="cr-sign-phead">
+          <div class="cr-sign-ptitle">📋 시정조치 접수확인</div>
+          <div class="cr-sign-pmeta">${esc(r.no || "")} · 발행일 ${esc(r.issuedDate || "-")}${due ? " · 접수확인 기한 " + esc(due) : ""}</div>
+        </div>
+        <div class="cr-sign-card">
+          <table class="tbl cr-dt">
+            <tr><td class="cr-dt-l">수검조직</td><td><b>${esc(r.target || "-")}</b></td></tr>
+            <tr><td class="cr-dt-l">분류</td><td><span class="badge ${classOf(r.classification).badge}">${esc(classOf(r.classification).full)}</span></td></tr>
+            <tr><td class="cr-dt-l">부적합 내용</td><td>${esc(r.nonconformance || "-")}</td></tr>
+            <tr><td class="cr-dt-l">관련근거</td><td>${esc(r.reference || "-")}</td></tr>
+          </table>
+          <div class="cr-sign-guide">위 시정조치 요구서(CAR)를 <b>접수·확인</b>하셨다면 아래에 서명해 주세요. 기한 내 서명은 <b>이의 없음(접수 확인)</b>으로 처리되어 시정조치계획(CAP) 단계로 진행됩니다.</div>
+          <div class="cr-sign-act">
+            ${ack
+              ? `<div class="cr-sign-done2">${ack.img ? `<img src="${esc(ack.img)}" alt="서명">` : ""}<div>✅ <b>${esc(ack.name)}</b> · ${esc((ack.at || "").slice(0, 10))} 접수확인 완료</div></div>
+                 <button class="btn btn-ghost btn-sm" id="crs-re">다시 서명</button>`
+              : `<button class="btn btn-primary" id="crs-sign">✍️ 접수확인 서명</button>`}
+          </div>
+        </div>
+        <div class="cr-sign-foot">서명은 저장 즉시 반영됩니다. 완료 후 창을 닫으셔도 됩니다.</div>
+      </div>`;
+    const doSign = () => openSignPad("수검조직 접수확인 서명", (r.target || "") + " — 이의 없음(접수 확인)", (sign) => {
+      const rec = (D().cars || []).find(c => c.id === carId);
+      if (!rec) return;
+      rec.signs = rec.signs || {};
+      rec.signs.orgAck = Object.assign({ role: "수검조직 접수확인" }, sign);
+      rec.updatedAt = new Date().toISOString();
+      SeMIS.save(); closeModal(); toast("접수확인 서명이 저장되었습니다."); SeMIS.renderView();
+    });
+    const b1 = $("#crs-sign"); if (b1) b1.onclick = doSign;
+    const b2 = $("#crs-re"); if (b2) b2.onclick = doSign;
+  }
+
   /* ═══════════ 모듈 렌더 ═══════════ */
   SeMIS.registerModule("carcap", {
     title: "부적합·시정조치 (CAR)",
     render(root) {
+      const u = SeMIS.user;
+      if (u && u.role === "signer" && u.signCarId) { renderSigning(root, u.signCarId); return; }
       const canWrite = SeMIS.canEdit();
       const s = stats(year);
       const yrs = Array.from(new Set((D().cars || []).map(c => c.year).concat([year, new Date().getFullYear()]))).sort((a, b) => b - a);
@@ -1075,8 +1150,8 @@
     DEFAULT_CFG, cfg, CLASSES, STAGES, FLOW, DOMAINS, SCOPES,
     bandOf, riskBadge, matrixGrid,
     addDays, addMonths, daysBetween,
-    calcCapDue, calcFatDue, calcEffSustain, activeDeadline, escLevel, recurrence,
-    nextNo, list, filtered, stats, dashStats, open,
+    calcCapDue, calcFatDue, calcEffSustain, calcAckDue, ackInfo, activeDeadline, escLevel, recurrence,
+    nextNo, list, filtered, stats, dashStats, open, renderSigning,
     getYear: () => year, setYear: (y) => { year = Number(y) || year; },
     setView: (v) => { if (["list", "matrix", "board"].includes(v)) view = v; }
   };
