@@ -20,6 +20,7 @@
     cares:    "all",  // 🌡 CARES 환경센서
     level:    "mgr",  // 🚨 보안등급
     insp:     "mgr",  // 🕵️ 보안점검 실적
+    car:      "mgr",  // 📋 부적합·시정조치 (CAR) — 보안관리자 이상 열람
     expiry:   "all",  // ⏳ 만료 · 점검 도래 (계약은 내부에서 hq 필터)
     certs:    "mgr",  // 🎖 교육 이수증 — 보안사항: 보안관리자 이상 열람 (v2.15)
     quick:    "all",  // ⚡ 바로가기
@@ -90,6 +91,11 @@
                 <button class="btn btn-ghost btn-sm" id="btn-go-insp">전체보기</button></div>
               <div id="insp-box"></div>
             </div>` : "",
+        car: cardVis("car") && window.SemisCarcap ? `<div class="card">
+              <div class="card-title">📋 부적합·시정조치 (CAR) <span class="spacer"></span>
+                <button class="btn btn-ghost btn-sm" id="btn-go-car">전체보기</button></div>
+              <div id="car-box"></div>
+            </div>` : "",
         expiry: cardVis("expiry") ? `<div class="card">
               <div class="card-title">⏳ 만료 · 점검 도래</div>
               <div id="expiry-box"></div>
@@ -145,7 +151,7 @@
         : C.notice + C.cares + C.equip;                                // 좌측: 공지 → CARES 환경센서 → 고장신고
       const colR = guest
         ? C.quick + C.cares + C.insight + C.expiry                     // guest 우측: 바로가기 → 환경센서 → 인사이트 → 만료
-        : C.level + C.quick + C.upcoming + C.kpi + C.insp + C.expiry + C.certs; // 우측: 등급→바로가기→일정→KPI→점검→만료→이수증
+        : C.level + C.quick + C.upcoming + C.kpi + C.insp + C.car + C.expiry + C.certs; // 우측: 등급→바로가기→일정→KPI→점검→CAR→만료→이수증
       root.innerHTML = `
         <div class="page-head">
           <div class="page-title">🏠 대시보드</div>
@@ -252,6 +258,36 @@
       $$("#insp-box [data-insp-open]").forEach(el => el.onclick = () => {
         if (window.SemisInspection) SemisInspection.open(el.dataset.inspOpen);
       });
+      }
+
+      // 부적합·시정조치 (CAR) — 진행/에스컬레이션 요약
+      if ($("#car-box") && window.SemisCarcap) {
+        const CC = window.SemisCarcap;
+        const yr = new Date().getFullYear();
+        const s = CC.stats(yr);
+        const alarms = [];
+        CC.list(yr).filter(x => x.stage !== "종결" && x.stage !== "기각").forEach(x => {
+          const e = CC.escLevel(x); if (e) alarms.push({ x, e });
+        });
+        alarms.sort((a, b) => (b.e.over - a.e.over) || (b.e.days - a.e.days));
+        const bc = { red: "badge-red", orange: "badge-orange", amber: "badge-amber", green: "badge-green", gray: "badge-gray" };
+        $("#car-box").innerHTML = `
+          <div class="car-dash-grid">
+            <div class="car-dash-cell"><b>${s.active}</b><span>진행 중</span></div>
+            <div class="car-dash-cell${s.overdue ? " alarm" : ""}"><b style="color:var(--danger)">${s.overdue}</b><span>기한 경과</span></div>
+            <div class="car-dash-cell${s.soon ? " warn" : ""}"><b style="color:var(--warning)">${s.soon}</b><span>마감 임박</span></div>
+            <div class="car-dash-cell"><b style="color:#ea580c">${s.extreme}</b><span>고위험</span></div>
+          </div>
+          <div style="font-size:.74rem;font-weight:700;color:var(--text-3);margin:10px 0 4px">⏰ 기한 알람 (에스컬레이션)</div>
+          ${alarms.length ? alarms.slice(0, 5).map(({ x, e }) => `
+            <div class="car-dash-row" data-car-open="${esc(x.id)}" title="클릭하여 상세 확인"
+              style="display:flex;align-items:center;gap:6px;font-size:.8rem;padding:3px 0;cursor:pointer">
+              <span class="badge ${bc[e.band] || "badge-gray"}" style="flex-shrink:0">${e.over ? "⚠ D+" + e.days : "D-" + e.days}</span>
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.no || "")} · ${esc(x.target || "")}</span>
+              <span style="flex-shrink:0;color:var(--text-3)">${esc(e.kind)}</span>
+            </div>`).join("") : '<div style="font-size:.8rem;color:var(--text-3)">기한 경과·임박 건이 없습니다. ✅</div>'}`;
+        $("#btn-go-car").onclick = () => SeMIS.navigate("carcap");
+        $$("#car-box [data-car-open]").forEach(el => el.onclick = () => CC.open(el.dataset.carOpen));
       }
 
       // 만료 · 점검 도래 (출입증/계약/장비 통합, v2.8)

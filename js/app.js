@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.28.0";
+  const VERSION = "2.29.1";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -131,6 +131,7 @@ const SeMIS = (() => {
 
       g("grp-inspect", "보안 점검"),
       m("insp-mgmt", "보안점검 일정관리", "🕵️", "inspection", "mgr", "grp-inspect"),
+      m("insp-car", "부적합·시정조치 (CAR)", "📋", "carcap", "hq", "grp-inspect"),
       lk("insp-plan", "보안점검 일정 (구버전)", "🗓️", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80-%EC%9D%BC%EC%A0%95", "grp-inspect"),
       lk("insp-cabin", "기내 보안점검", "✈️", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EC%A0%90%EA%B2%80%EA%B8%B0%EB%A1%9D-%EB%AA%A8%EB%8B%88%ED%84%B0%EB%A7%81/%EA%B8%B0%EB%82%B4-%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80", "grp-inspect"),
       lk("insp-daily", "일일 보안점검", "🙆", "https://sites.google.com/view/kjsemis/%EB%B3%B4%EC%95%88-%EC%A0%90%EA%B2%80/%EC%A0%90%EA%B2%80%EA%B8%B0%EB%A1%9D-%EB%AA%A8%EB%8B%88%ED%84%B0%EB%A7%81/%EC%9D%BC%EC%9D%BC-%EB%B3%B4%EC%95%88%EC%A0%90%EA%B2%80", "grp-inspect"),
@@ -190,6 +191,8 @@ const SeMIS = (() => {
       schedules: [],     // v2.2: [{id,title,memo,start,end,allDay,time,timeEnd,color,done,assignee,vehicle,room,reminders,gcalId?}]
       gcal: { enabled: false, calendarId: "airzetaavsec@gmail.com", apiKey: "" },
       inspections: seedInspections(), // v2.4: 보안점검 일정
+      cars: [],                       // v2.29: 보안점검 부적합·시정조치 (CAR→CAP→FAT) 위험관리
+      carCfg: {},                     // v2.29: CAR 프로세스 설정(기한·5x5 위험매트릭스·에스컬레이션) — 모듈이 기본값 병합
       contacts: { sections: [] },     // v2.6: 보고체계 연락망 (실데이터는 공용 DB 동기화 — 코드에 미시드)
       branches: [],                   // v2.7: 지점 관리 (해외지점 세계지도)
       passes: [],                     // v2.8: 출입증 관리 (개인정보 — 공용 DB 동기화)
@@ -340,6 +343,17 @@ const SeMIS = (() => {
         : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
       DATA.menus.push({ id: "insp-mgmt", seq, type: "module", label: "보안점검 일정관리",
         icon: "🕵️", module: "inspection", vis: "all", parent: grp ? "grp-inspect" : null });
+    }
+    // v2.29: 부적합·시정조치(CAR→CAP→FAT) 컬렉션/설정 + 메뉴 보장
+    if (!Array.isArray(DATA.cars)) DATA.cars = [];
+    if (!DATA.carCfg || typeof DATA.carCfg !== "object" || Array.isArray(DATA.carCfg)) DATA.carCfg = {};
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "carcap")) {
+      const grpC = DATA.menus.find(m => m && m.id === "grp-inspect" && m.type === "group");
+      const insM = DATA.menus.find(m => m && m.type === "module" && m.module === "inspection");
+      const seqC = insM ? (insM.seq || 0) + 0.3
+        : (grpC ? (grpC.seq || 0) + 0.3 : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1);
+      DATA.menus.push({ id: "insp-car", seq: seqC, type: "module", label: "부적합·시정조치 (CAR)",
+        icon: "📋", module: "carcap", vis: "hq", parent: grpC ? "grp-inspect" : null });
     }
     // v2.6: 보고체계 연락망 — 기본 빈 구조 (실데이터는 공용 DB에서 동기화, 코드 미시드)
     if (!DATA.contacts || typeof DATA.contacts !== "object" || Array.isArray(DATA.contacts)) DATA.contacts = { sections: [] };

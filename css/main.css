@@ -1283,3 +1283,146 @@ a.ct-tel:hover { color: var(--primary); }
   .cn-sign-item { flex-wrap: wrap; }
   .cn-sign-act { width: 100%; justify-content: flex-end; }
 }
+
+/* ═══════════════ 부적합·시정조치 (CAR · CAP · FAT) v2.29 ═══════════════ */
+.badge-indigo { background: #eef2ff; color: #4f46e5; }
+.badge-violet { background: #f5f3ff; color: #7c3aed; }
+
+/* 통계 카드 알람 강조 */
+.car-stats .stat { position: relative; cursor: default; }
+.car-stats .stat[data-fstage] { cursor: pointer; }
+.car-stats .stat[data-fstage]:hover { border-color: var(--primary); }
+.car-stat-alarm.on { border-color: #fca5a5; background: #fff5f5; }
+.car-stat-alarm.on::after { content: ""; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 0 rgba(220,38,38,.5); animation: carPulse 1.8s infinite; }
+.car-stat-warn { border-color: #fcd34d; background: #fffdf5; }
+@keyframes carPulse { 0% { box-shadow: 0 0 0 0 rgba(220,38,38,.5); } 70% { box-shadow: 0 0 0 8px rgba(220,38,38,0); } 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); } }
+
+/* 툴바 */
+.car-toolbar { flex-wrap: wrap; gap: 8px; }
+.car-sel { padding: 7px 10px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-size: .84rem; background: var(--surface); color: var(--text); }
+.car-q { min-width: 190px; flex: 1; }
+.car-tbl td { vertical-align: top; }
+
+/* 위험 매트릭스 5×5 */
+.rm-wrap { overflow-x: auto; }
+.rm-grid { border-collapse: separate; border-spacing: 3px; margin: 0 auto; }
+.rm-grid th { background: var(--surface-2); color: var(--text-2); font-size: .74rem; font-weight: 700; padding: 4px 6px; text-align: center; white-space: nowrap; }
+.rm-grid .rm-corner { font-size: .72rem; color: var(--text-3); }
+.rm-lh, .rm-sh { line-height: 1.1; }
+.rm-lh span, .rm-sh span { display: block; font-size: .66rem; font-weight: 600; color: var(--text-3); margin-top: 1px; }
+.rm-cell { width: 62px; height: 54px; text-align: center; vertical-align: middle; border: 1.5px solid; border-radius: 8px;
+  cursor: pointer; position: relative; font-weight: 700; transition: transform .08s; user-select: none; }
+.rm-cell:hover { transform: scale(1.06); box-shadow: var(--shadow); z-index: 2; }
+.rm-cell .rm-code { display: block; font-size: .84rem; letter-spacing: -.3px; }
+.rm-cell .rm-score { display: block; font-size: .64rem; font-weight: 600; opacity: .75; }
+.rm-cell .rm-cnt { display: block; font-size: 1.02rem; font-weight: 800; }
+.rm-cell.on { outline: 3px solid var(--primary); outline-offset: 1px; }
+.rm-cell .rm-tick { position: absolute; top: 2px; right: 4px; font-size: .7rem; color: var(--primary); }
+.rm-legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 12px; }
+.rm-leg { display: inline-flex; align-items: center; gap: 5px; font-size: .78rem; font-weight: 600; color: var(--text-2); }
+.rm-leg i { width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid; display: inline-block; }
+.rm-leg em { color: var(--text-3); font-style: normal; font-size: .72rem; }
+.cr-rm-info { margin-top: 10px; font-size: .84rem; }
+
+/* CAR 폼 */
+.cr-form { max-height: 68vh; overflow-y: auto; padding-right: 4px; }
+.cr-sec { font-weight: 800; font-size: .82rem; color: var(--primary); margin: 18px 0 8px; padding-bottom: 5px;
+  border-bottom: 2px solid var(--primary-soft); letter-spacing: -.2px; }
+.cr-sec:first-child { margin-top: 2px; }
+.cr-sec-sub { font-weight: 500; color: var(--text-3); font-size: .74rem; }
+.cr-inline { display: flex; gap: 8px; align-items: center; }
+.cr-inline input[type=number] { max-width: 90px; }
+.cr-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cr-file { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 3px 10px; font-size: .8rem; }
+.cr-file a { color: var(--primary); text-decoration: none; }
+.cr-file button { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: .8rem; }
+.cr-file button:hover { color: var(--danger); }
+
+/* CAR 상세 문서 */
+.cr-detail { max-height: 70vh; overflow-y: auto; padding-right: 4px; }
+.cr-doc-head { display: flex; align-items: flex-start; gap: 12px; border-bottom: 2px solid var(--primary); padding-bottom: 10px; margin-bottom: 12px; }
+.cr-doc-head h3 { font-size: 1.14rem; }
+.cr-doc-risk { margin-left: auto; }
+.cr-alert { border-radius: 8px; padding: 10px 12px; font-size: .84rem; margin-bottom: 12px; line-height: 1.5; }
+.cr-alert.over { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+.cr-alert.warn { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+.cr-alert.focus { background: #eff6ff; border: 1px solid #93c5fd; color: #1e40af; }
+.cr-sec2 { font-weight: 800; font-size: .84rem; color: var(--text); margin: 16px 0 6px; padding-left: 8px; border-left: 3px solid var(--primary); }
+.cr-dt td { font-size: .86rem; vertical-align: top; }
+.cr-dt .cr-dt-l { width: 132px; color: var(--text-2); font-weight: 600; background: var(--surface-2); white-space: nowrap; }
+.cr-dt-grid { }
+.cr-auto { font-size: .68rem; color: var(--text-3); background: var(--surface-2); border-radius: 4px; padding: 0 5px; }
+
+/* 프로세스 타임라인 */
+.cr-flow { display: flex; align-items: flex-start; justify-content: space-between; margin: 6px 0 16px; padding: 4px 0; }
+.cr-flow-step { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; width: 76px; text-align: center; }
+.cr-flow-dot { width: 30px; height: 30px; border-radius: 50%; background: var(--surface-2); border: 2px solid var(--border-strong);
+  color: var(--text-3); font-weight: 800; font-size: .84rem; display: flex; align-items: center; justify-content: center; }
+.cr-flow-step.done .cr-flow-dot { background: var(--success); border-color: var(--success); color: #fff; }
+.cr-flow-step.cur .cr-flow-dot { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 0 0 4px var(--primary-soft); }
+.cr-flow-lb { font-size: .76rem; font-weight: 700; margin-top: 5px; color: var(--text-2); }
+.cr-flow-step.cur .cr-flow-lb { color: var(--primary); }
+.cr-flow-dt { font-size: .68rem; color: var(--text-3); margin-top: 1px; }
+.cr-flow-line { flex: 1; height: 2px; background: var(--border-strong); margin-top: 15px; }
+.cr-flow-line.done { background: var(--success); }
+
+/* 서명 그리드 */
+.cr-signs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.cr-sign { border: 1.5px solid var(--border); border-radius: 8px; padding: 8px; text-align: center; background: var(--surface-2); }
+.cr-sign.done { border-color: var(--success); background: #f6fef9; }
+.cr-sign-h b { display: block; font-size: .78rem; color: var(--text); }
+.cr-sign-h span { display: block; font-size: .68rem; color: var(--text-3); margin-bottom: 4px; }
+.cr-sign-b { min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0; }
+.cr-sign-b img { max-height: 44px; max-width: 90px; }
+.cr-sign-nm { font-size: .68rem; color: var(--text-2); text-align: left; }
+.cr-sign-nm span { color: var(--text-3); }
+.cr-sign-no { font-size: .78rem; color: var(--text-3); }
+
+/* 프로세스 보드(칸반) */
+.car-board { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 10px; overflow-x: auto; }
+.car-col { background: var(--surface-2); border-radius: 8px; padding: 8px; min-width: 150px; }
+.car-col-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.car-col-n { font-size: .78rem; font-weight: 800; color: var(--text-3); }
+.car-col-body { display: flex; flex-direction: column; gap: 7px; }
+.car-card { background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 8px; cursor: pointer; transition: box-shadow .1s; }
+.car-card:hover { box-shadow: var(--shadow); border-color: var(--primary); }
+.car-card-no { font-size: .78rem; font-weight: 800; color: var(--primary); }
+.car-card-tg { font-size: .82rem; font-weight: 700; margin: 1px 0; }
+.car-card-nc { font-size: .74rem; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.car-card-ft { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; }
+.car-col-empty { font-size: .8rem; color: var(--text-3); text-align: center; padding: 8px 0; }
+
+/* 대시보드 카드 */
+.car-dash-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.car-dash-cell { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 4px; text-align: center; }
+.car-dash-cell b { display: block; font-size: 1.3rem; font-weight: 800; letter-spacing: -.5px; }
+.car-dash-cell span { font-size: .7rem; color: var(--text-3); }
+.car-dash-cell.alarm { border-color: #fca5a5; background: #fff5f5; }
+.car-dash-cell.warn { border-color: #fcd34d; background: #fffdf5; }
+.car-dash-row:hover { background: var(--surface-2); }
+
+@media (max-width: 720px) {
+  .car-board { grid-template-columns: 1fr; }
+  .cr-flow { overflow-x: auto; }
+  .cr-flow-step { width: 64px; }
+  .car-dash-grid { grid-template-columns: repeat(2, 1fr); }
+  .rm-cell { width: 52px; height: 48px; }
+}
+
+/* CAR v2.29.1 — 전체화면 · 표 줄바꿈 · 드롭다운 항목 편집 */
+.car-tbl td { white-space: nowrap; }              /* 좁은 열 줄바꿈 방지(대상 셀 내부 div는 자체 말줄임) */
+.card.car-fullscreen {
+  position: fixed; inset: 0; z-index: 400; margin: 0; border: none; border-radius: 0;
+  box-shadow: none; padding: 12px 18px 16px; display: flex; flex-direction: column;
+  background: var(--surface); overflow: hidden;
+}
+.car-fullscreen .car-toolbar { flex: none; }
+.car-fullscreen #car-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.car-fullscreen .table-wrap { overflow: visible; }
+.cs-taglist { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.cs-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--primary-soft); color: var(--primary);
+  border-radius: 20px; padding: 3px 6px 3px 11px; font-size: .82rem; font-weight: 600; }
+.cs-tag button { background: none; border: none; color: var(--primary); cursor: pointer; font-size: .78rem; opacity: .7; padding: 0 2px; line-height: 1; }
+.cs-tag button:hover { opacity: 1; color: var(--danger); }
