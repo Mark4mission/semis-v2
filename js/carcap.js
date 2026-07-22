@@ -27,6 +27,16 @@
   const pad2 = (n) => String(n).padStart(2, "0");
 
   /* ═══════════ 기본 설정 (규정 기반 · 전부 수정 가능) ═══════════ */
+  // 항공보안파트 위험평가 매트릭스 기준(2026) — 셀별 위험수준 고정 배치(Lv5 심각 ~ Lv1 예방)
+  const CELL_DEFAULT = {
+    "5A": "lv5", "4A": "lv5", "5B": "lv5", "4B": "lv5",                         // 빨강 Lv5 심각
+    "5C": "lv4", "4C": "lv4", "3B": "lv4", "3A": "lv4",                         // 오렌지 Lv4 경계
+    "5E": "lv3", "5D": "lv3", "4D": "lv3", "3C": "lv3", "2B": "lv3", "2A": "lv3", "1A": "lv3", // 노랑 Lv3 주의
+    "4E": "lv2", "3D": "lv2", "2D": "lv2", "2C": "lv2", "1B": "lv2",            // 파랑 Lv2 관심
+    "3E": "lv1", "2E": "lv1", "1E": "lv1", "1D": "lv1", "1C": "lv1"             // 초록 Lv1 예방
+  };
+  const LEVEL_ORDER = ["lv5", "lv4", "lv3", "lv2", "lv1"];
+
   const DEFAULT_CFG = {
     capDueDays: 21,                                   // CAP 접수 마감(발행일+N일) — TAC701 4.2.1
     fatMonths:    { "시정": 1, "개선권고": 3, "현장시정": 0, "관찰사항": 0 }, // 완료기한(월) — TAC701 4.2.3
@@ -40,27 +50,28 @@
       { over: 15, label: "심각", band: "red" }
     ],
     recurMonths: 12, recurCount: 4,                   // 다빈도 재발 집중관리 — KAB753 4.10
-    likelihood: [                                     // 발생빈도 1~5 (숫자↑=빈번)
-      { v: 5, label: "빈번",   desc: "수시 발생 (연 다수)" },
-      { v: 4, label: "높음",   desc: "종종 발생 (연 수회)" },
-      { v: 3, label: "보통",   desc: "가끔 발생 (연 1회 내외)" },
-      { v: 2, label: "낮음",   desc: "드물게 발생 (수년 1회)" },
-      { v: 1, label: "희박",   desc: "거의 발생하지 않음" }
+    likelihood: [                                     // 발생빈도(Y축) 5(매우 높음)~1(매우 낮음)
+      { v: 5, label: "매우 높음", desc: "한 달 이내 재발 가능" },
+      { v: 4, label: "높음",     desc: "6개월 이내 재발 가능" },
+      { v: 3, label: "중간",     desc: "1년 이내 재발 가능" },
+      { v: 2, label: "낮음",     desc: "10년 이내 재발 가능" },
+      { v: 1, label: "매우 낮음", desc: "10년 이내 재발 가능성 낮음" }
     ],
-    severity: [                                       // 심각도 A~E (A=파국적)
-      { v: "A", w: 5, label: "파국적",   desc: "치명적 보안사고·불법방해행위 직결" },
-      { v: "B", w: 4, label: "위험",     desc: "중대 보안위해·주요 행정처분 초래" },
-      { v: "C", w: 3, label: "중대",     desc: "상당한 보안영향·규정 위반" },
-      { v: "D", w: 2, label: "경미",     desc: "제한적 영향·경미한 이행 미흡" },
-      { v: "E", w: 1, label: "무시가능", desc: "미미한 영향" }
+    severity: [                                       // 심각도(X축) A(매우 높음)~E(매우 낮음) — 예상피해
+      { v: "A", w: 5, label: "매우 높음", desc: "항공기 폭파 및 인명 사망" },
+      { v: "B", w: 4, label: "높음",     desc: "항공기 손상·인명 중상·운항 중단" },
+      { v: "C", w: 3, label: "중간",     desc: "지연 운항·인명 경상" },
+      { v: "D", w: 2, label: "낮음",     desc: "점검 지적사항 또는 인적/물적 피해 없는 사고" },
+      { v: "E", w: 1, label: "매우 낮음", desc: "권고 사항" }
     ],
-    bands: [                                          // score=빈도×심각도가중치(1~25) 기준 위험밴드
-      { key: "extreme", label: "수용불가",   color: "red",    min: 15 },
-      { key: "high",    label: "조건부수용", color: "orange", min: 10 },
-      { key: "medium",  label: "완화필요",   color: "amber",  min: 5 },
-      { key: "low",     label: "수용가능",   color: "green",  min: 1 }
+    bands: [                                          // 위험수준 5단계 — 대응 조치 방안
+      { key: "lv5", label: "Lv5 심각", color: "red",    action: "회사 종합 대응대책 수립·시행으로 위험요인 즉시 제거" },
+      { key: "lv4", label: "Lv4 경계", color: "orange", action: "항공보안 자원 투입 등 보안 강화로 위험요인 감소 조치" },
+      { key: "lv3", label: "Lv3 주의", color: "yellow", action: "항공보안 관련 규정·절차 보완 조치 시행" },
+      { key: "lv2", label: "Lv2 관심", color: "blue",   action: "항공보안 감독 활동 강화를 통한 모니터링 수행" },
+      { key: "lv1", label: "Lv1 예방", color: "green",  action: "현행 조치사항 유지를 통한 기본 보안 예방 조치" }
     ],
-    cellOverride: {}                                  // "5A" → band key (셀별 수동 지정)
+    cellOverride: CELL_DEFAULT                         // "5A" → 위험수준 key (셀별 배치)
   };
 
   function cfg() {
@@ -72,7 +83,7 @@
     out.overdue      = (c.overdue && c.overdue.length) ? c.overdue : DEFAULT_CFG.overdue;
     out.fatMonths    = Object.assign({}, DEFAULT_CFG.fatMonths, c.fatMonths || {});
     out.fatMonthsMax = Object.assign({}, DEFAULT_CFG.fatMonthsMax, c.fatMonthsMax || {});
-    out.cellOverride = c.cellOverride || {};
+    out.cellOverride = (c.cellOverride && Object.keys(c.cellOverride).length) ? c.cellOverride : CELL_DEFAULT;
     out.domains      = (c.domains && c.domains.length) ? c.domains : DOMAINS;
     out.scopes       = (c.scopes && c.scopes.length) ? c.scopes : SCOPES;
     return out;
@@ -124,10 +135,12 @@
     red:    { bg: "#fee2e2", bd: "#fca5a5", tx: "#991b1b" },
     orange: { bg: "#ffedd5", bd: "#fdba74", tx: "#9a3412" },
     amber:  { bg: "#fef3c7", bd: "#fcd34d", tx: "#92400e" },
+    yellow: { bg: "#fef9c3", bd: "#fde047", tx: "#854d0e" },
+    blue:   { bg: "#dbeafe", bd: "#93c5fd", tx: "#1e40af" },
     green:  { bg: "#dcfce7", bd: "#86efac", tx: "#166534" },
     gray:   { bg: "#f1f5f9", bd: "#cbd5e1", tx: "#475569" }
   };
-  const bandBadge = { red: "badge-red", orange: "badge-orange", amber: "badge-amber", green: "badge-green", gray: "badge-gray" };
+  const bandBadge = { red: "badge-red", orange: "badge-orange", amber: "badge-amber", yellow: "badge-yellow", blue: "badge-blue", green: "badge-green", gray: "badge-gray" };
 
   /* ═══════════ 날짜 유틸 ═══════════ */
   function addDays(iso, n) {
@@ -171,45 +184,51 @@
   }
   function riskBadge(risk) {
     if (!risk || !risk.L || !risk.S) return '<span style="color:var(--text-3)">미평가</span>';
-    const b = bandOf(risk.L, risk.S) || { color: "gray", label: "", score: 0 };
-    return `<span class="badge ${bandBadge[b.color] || "badge-gray"}" title="발생빈도 ${esc(String(risk.L))} × 심각도 ${esc(risk.S)} = 위험지수 ${b.score}">${esc(risk.L)}${esc(risk.S)} · ${esc(b.label)}</span>`;
+    const b = bandOf(risk.L, risk.S) || { color: "gray", label: "" };
+    return `<span class="badge ${bandBadge[b.color] || "badge-gray"}" title="발생빈도 ${esc(String(risk.L))} · 심각도 ${esc(risk.S)} → ${esc(b.label)}">${esc(risk.L)}${esc(risk.S)} · ${esc(b.label)}</span>`;
   }
-  /* 5x5 매트릭스 그리드 — mode: "picker"(선택) | "heat"(건수) | "config"(밴드지정) */
+  /* 5x5 매트릭스 — 심각도(X축 E→A) × 발생빈도(Y축 5→1). mode: "picker" | "heat" | "config" */
   function matrixGrid(mode, opts) {
     opts = opts || {};
     const c = cfg();
     const sel = opts.sel || {};                 // {L,S}
     const counts = opts.counts || {};           // "3C" → n
-    const sevs = c.severity;                     // A..E
-    const liks = c.likelihood.slice().sort((a, b) => a.v - b.v); // 1..5 (좌→우)
-    let html = `<div class="rm-wrap"><table class="rm-grid"><thead><tr><th class="rm-corner">심각도 ＼ 빈도</th>`;
-    liks.forEach(l => { html += `<th class="rm-lh" title="${esc(l.desc)}">${l.v}<span>${esc(l.label)}</span></th>`; });
+    const sevsX = c.severity.slice().sort((a, b) => a.w - b.w);    // E..A (좌→우, 심각도 X축)
+    const liksY = c.likelihood.slice().sort((a, b) => b.v - a.v);  // 5..1 (상→하, 발생빈도 Y축)
+    let html = `<div class="rm-wrap"><table class="rm-grid"><thead><tr><th class="rm-corner">빈도 ＼ 심각도</th>`;
+    sevsX.forEach(s => { html += `<th class="rm-sh" title="${esc(s.desc)}">${esc(s.v)}<span>${esc(s.label)}</span></th>`; });
     html += `</tr></thead><tbody>`;
-    sevs.forEach(s => {
-      html += `<tr><th class="rm-sh" title="${esc(s.desc)}">${esc(s.v)}<span>${esc(s.label)}</span></th>`;
-      liks.forEach(l => {
-        const b = bandOf(l.v, s.v) || { color: "gray", score: 0, label: "" };
+    liksY.forEach(l => {
+      html += `<tr><th class="rm-lh" title="${esc(l.desc)}">${l.v}<span>${esc(l.label)}</span></th>`;
+      sevsX.forEach(s => {
+        const b = bandOf(l.v, s.v) || { color: "gray", label: "", key: "" };
         const hx = BAND_HEX[b.color] || BAND_HEX.gray;
         const code = String(l.v) + s.v;
         const on = sel.L === l.v && sel.S === s.v;
         const cnt = counts[code] || 0;
         html += `<td class="rm-cell${on ? " on" : ""}" data-l="${l.v}" data-s="${esc(s.v)}"
           style="background:${hx.bg};border-color:${hx.bd};color:${hx.tx}"
-          title="빈도 ${l.v}(${esc(l.label)}) × 심각도 ${esc(s.v)}(${esc(s.label)}) = ${b.score} · ${esc(b.label)}">
+          title="빈도 ${l.v}(${esc(l.label)}) × 심각도 ${esc(s.v)}(${esc(s.label)}) → ${esc(b.label)}">
           <span class="rm-code">${code}</span>
-          ${mode === "heat" ? (cnt ? `<span class="rm-cnt">${cnt}</span>` : "") : `<span class="rm-score">${b.score}</span>`}
+          ${mode === "heat" ? (cnt ? `<span class="rm-cnt">${cnt}</span>` : "") : `<span class="rm-score">${esc((b.key || "").replace("lv", "Lv"))}</span>`}
           ${on ? '<span class="rm-tick">✓</span>' : ""}
         </td>`;
       });
       html += `</tr>`;
     });
     html += `</tbody></table>`;
-    // 범례
-    html += `<div class="rm-legend">` + c.bands.slice().sort((a, b) => b.min - a.min).map(b => {
+    html += `<div class="rm-legend">` + c.bands.map(b => {
       const hx = BAND_HEX[b.color] || BAND_HEX.gray;
-      return `<span class="rm-leg"><i style="background:${hx.bg};border-color:${hx.bd}"></i>${esc(b.label)} <em>(지수≥${b.min})</em></span>`;
+      return `<span class="rm-leg"><i style="background:${hx.bg};border-color:${hx.bd}"></i>${esc(b.label)}</span>`;
     }).join("") + `</div></div>`;
     return html;
+  }
+  // 위험수준별 대응 조치 방안 표 (picker/config 참고용)
+  function levelActionsHTML() {
+    return `<table class="rm-lvtbl"><tbody>${cfg().bands.map(b => {
+      const hx = BAND_HEX[b.color] || BAND_HEX.gray;
+      return `<tr><td style="background:${hx.bg};border-color:${hx.bd};color:${hx.tx};font-weight:800;white-space:nowrap">${esc(b.label)}</td><td>${esc(b.action || "")}</td></tr>`;
+    }).join("")}</tbody></table>`;
   }
 
   /* ═══════════ 기한·에스컬레이션 계산 ═══════════ */
@@ -315,7 +334,7 @@
     return {
       total: items.length, active: active.length, overdue, soon,
       closed: items.filter(x => x.stage === "종결").length,
-      extreme: active.filter(x => { const b = x.risk && bandOf(x.risk.L, x.risk.S); return b && (b.key === "extreme" || b.key === "high"); }).length
+      extreme: active.filter(x => { const b = x.risk && bandOf(x.risk.L, x.risk.S); return b && (b.key === "lv5" || b.key === "lv4"); }).length
     };
   }
 
@@ -468,19 +487,48 @@
     });
   }
 
-  /* ═══════════ 위험도 선택 모달 (5x5) ═══════════ */
-  function pickRisk(cur, cb) {
+  /* 자동 위험도 제안 — 부적합 내용·분류의 키워드 + 재발 이력 기반(제안이며 담당자가 확정) */
+  function suggestRisk(ctx) {
+    ctx = ctx || {};
+    const text = ((ctx.nonconformance || "") + " " + (ctx.domain || "")).toLowerCase();
+    const has = (re) => re.test(text);
+    let S;
+    if (has(/폭파|폭발물|사망|테러|불법방해|납치|하이재킹|피랍/)) S = "A";
+    else if (has(/위해물품|무기|칼|총|폭발물|미탐지|검색\s*실패|반입|손상|중상|운항\s*중단/)) S = "B";
+    else if (has(/봉인|누락|미적용|미제정|부재|지연|경상|위반|취약|실패|미준수/)) S = "C";
+    else if ((ctx.classification || "") === "개선권고" || has(/권고/)) S = "E";
+    else S = "D";
+    const rc = Number(ctx.recurCount || 1);
+    let L = rc >= 4 ? 5 : rc >= 2 ? 4 : 3;
+    const b = bandOf(L, S);
+    const sv = (cfg().severity.find(x => x.v === S) || {}).label || "";
+    return { L: L, S: S, band: b.key, score: b.score,
+      reason: `심각도 ${S}(${sv}) · 발생빈도 ${L}${rc >= 2 ? "(재발 " + rc + "건 반영)" : ""} → ${b.label}` };
+  }
+
+  /* ═══════════ 위험도 선택 모달 (5x5 + 자동 제안) ═══════════ */
+  function pickRisk(cur, cb, ctx) {
+    ctx = ctx || {};
     let sel = cur ? { L: cur.L, S: cur.S } : {};
     openModal(`
       <h3>⚠️ 위험도 평가 (Risk Assessment)</h3>
-      <div class="form-hint" style="margin-bottom:8px">발생빈도(1~5)와 심각도(A~E)가 만나는 셀을 선택하세요. 회사 5×5 위험 매트릭스 기준입니다.</div>
+      <div class="form-hint" style="margin-bottom:8px">심각도(X축, 예상피해)와 발생빈도(Y축, 가능성)가 만나는 셀을 선택하세요. 항공보안파트 위험평가 기준(5×5)입니다.</div>
       <div id="cr-rm">${matrixGrid("picker", { sel })}</div>
       <div id="cr-rm-info" class="cr-rm-info"></div>
+      <details class="cr-rm-ref"><summary>📖 평가 기준 (예상피해 · 발생가능성 · 대응방안)</summary>
+        <div class="cr-rm-refbody">
+          <div><b>심각도 — 예상피해</b>${cfg().severity.map(s => `<div class="cr-rm-r"><span>${esc(s.v)} ${esc(s.label)}</span><em>${esc(s.desc)}</em></div>`).join("")}</div>
+          <div><b>발생빈도 — 발생가능성</b>${cfg().likelihood.map(l => `<div class="cr-rm-r"><span>${l.v} ${esc(l.label)}</span><em>${esc(l.desc)}</em></div>`).join("")}</div>
+        </div>
+        <div style="margin-top:8px;font-weight:700;font-size:.8rem;color:var(--text-2)">위험수준별 대응 조치</div>
+        ${levelActionsHTML()}
+      </details>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="cr-rm-clear" style="margin-right:auto">평가 해제</button>
+        ${ctx.classification ? '<button class="btn btn-ghost" id="cr-rm-sug">🤖 자동 제안</button>' : ""}
         <button class="btn btn-ghost" id="cr-rm-cancel">취소</button>
         <button class="btn btn-primary" id="cr-rm-ok">적용</button>
-      </div>`);
+      </div>`, { wide: true });
     function paintInfo() {
       const box = $("#cr-rm-info");
       if (!box) return;
@@ -490,9 +538,10 @@
       const c = cfg();
       const lk = c.likelihood.find(x => x.v === sel.L) || {};
       const sv = c.severity.find(x => x.v === sel.S) || {};
+      const act = (c.bands.find(x => x.key === b.key) || {}).action || "";
       box.innerHTML = `<div style="padding:10px 12px;border-radius:8px;background:${hx.bg};border:1px solid ${hx.bd};color:${hx.tx}">
-        <b>${sel.L}${esc(sel.S)}</b> · 발생빈도 <b>${sel.L} ${esc(lk.label || "")}</b> × 심각도 <b>${esc(sel.S)} ${esc(sv.label || "")}</b>
-        = 위험지수 <b>${b.score}</b> → <b>${esc(b.label)}</b></div>`;
+        <b>${sel.L}${esc(sel.S)}</b> · 발생빈도 <b>${sel.L} ${esc(lk.label || "")}</b> · 심각도 <b>${esc(sel.S)} ${esc(sv.label || "")}</b> → <b>${esc(b.label)}</b>
+        <div style="font-size:.82rem;margin-top:3px">▸ ${esc(act)}</div></div>`;
     }
     function wireCells() {
       $$("#cr-rm .rm-cell").forEach(td => td.onclick = () => {
@@ -502,6 +551,14 @@
       });
     }
     wireCells(); paintInfo();
+    const sug = $("#cr-rm-sug");
+    if (sug) sug.onclick = () => {
+      const s = suggestRisk(ctx);
+      sel = { L: s.L, S: s.S };
+      $("#cr-rm").innerHTML = matrixGrid("picker", { sel });
+      wireCells(); paintInfo();
+      toast("자동 제안: " + s.reason);
+    };
     $("#cr-rm-clear").onclick = () => { cb(null); closeModal(); };
     $("#cr-rm-cancel").onclick = closeModal;
     $("#cr-rm-ok").onclick = () => {
@@ -560,7 +617,10 @@
 
         <div class="cr-sec">3. 위험평가 (Risk Assessment · 5×5)</div>
         <div class="form-row"><div id="cf-risk-box"></div>
-          <button type="button" class="btn btn-ghost btn-sm" id="cf-risk-btn" style="margin-top:6px">⚠️ 위험도 평가/변경</button></div>
+          <div class="cr-inline" style="margin-top:6px">
+            <button type="button" class="btn btn-ghost btn-sm" id="cf-risk-btn">⚠️ 위험도 평가/변경</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="cf-risk-sug" title="부적합 내용·분류·재발이력 기반 자동 제안">🤖 자동 제안</button>
+          </div></div>
 
         <div class="cr-sec">4. 기한 관리 <span class="cr-sec-sub">(발행일 기준 자동 계산 · 직접 수정 가능)</span></div>
         <div class="form-grid">
@@ -609,7 +669,13 @@
       box.innerHTML = riskBadge(risk);
     }
     paintRisk();
-    $("#cf-risk-btn").onclick = () => pickRisk(risk, (r) => { risk = r; paintRisk(); });
+    function riskCtx() {
+      const target = $("#cf-target").value.trim(), domain = $("#cf-domain").value;
+      const rc = recurrence({ id: x ? x.id : "__new__", target, domain, auditDate: $("#cf-audit").value || todayISO() }).count;
+      return { classification: $("#cf-class").value, nonconformance: $("#cf-nc").value, domain, target, recurCount: rc };
+    }
+    $("#cf-risk-btn").onclick = () => pickRisk(risk, (r) => { risk = r; paintRisk(); }, riskCtx());
+    $("#cf-risk-sug").onclick = () => { const s = suggestRisk(riskCtx()); risk = { L: s.L, S: s.S, band: s.band, score: s.score }; paintRisk(); toast("자동 제안 적용: " + s.reason); };
 
     function paintFiles() {
       const box = $("#cf-files"); if (!box) return;
@@ -937,16 +1003,9 @@
       </div>
       <div class="form-row"><label>심각 (경과일≥)</label><input type="number" id="cs-o3" value="${c.overdue[2] ? c.overdue[2].over : 15}" min="1"></div>
 
-      <div class="cr-sec">위험 매트릭스 밴드 임계 (위험지수 = 빈도 × 심각도가중치, 1~25)</div>
-      <div class="form-grid">
-        <div class="form-row"><label>수용불가 (지수≥)</label><input type="number" id="cs-b-ex" value="${(c.bands.find(b => b.key === 'extreme') || {}).min || 15}" min="1" max="25"></div>
-        <div class="form-row"><label>조건부수용 (지수≥)</label><input type="number" id="cs-b-hi" value="${(c.bands.find(b => b.key === 'high') || {}).min || 10}" min="1" max="25"></div>
-      </div>
-      <div class="form-grid">
-        <div class="form-row"><label>완화필요 (지수≥)</label><input type="number" id="cs-b-me" value="${(c.bands.find(b => b.key === 'medium') || {}).min || 5}" min="1" max="25"></div>
-        <div class="form-row"><label>수용가능 (지수≥)</label><input type="number" id="cs-b-lo" value="${(c.bands.find(b => b.key === 'low') || {}).min || 1}" min="1" max="25"></div>
-      </div>
-      <div id="cs-preview" style="margin-top:8px"></div>
+      <div class="cr-sec">위험 매트릭스 (5×5) <span class="cr-sec-sub">셀을 클릭하면 위험수준이 Lv5→Lv4→…→Lv1 순으로 바뀝니다 (기준 변경 대비)</span></div>
+      <div id="cs-matrix"></div>
+      <div class="cr-lvref">${levelActionsHTML()}</div>
 
       <div class="cr-sec">드롭다운 항목 편집 <span class="cr-sec-sub">(입력 폼의 선택지 — 추가/삭제)</span></div>
       <div class="form-row"><label>부적합 분야</label>
@@ -980,19 +1039,20 @@
     $("#cs-dom-new").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addDom(); } };
     $("#cs-scope-new").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addScope(); } };
 
-    function preview() {
-      const bands = [
-        { key: "extreme", label: "수용불가", color: "red", min: Number($("#cs-b-ex").value) || 15 },
-        { key: "high", label: "조건부수용", color: "orange", min: Number($("#cs-b-hi").value) || 10 },
-        { key: "medium", label: "완화필요", color: "amber", min: Number($("#cs-b-me").value) || 5 },
-        { key: "low", label: "수용가능", color: "green", min: Number($("#cs-b-lo").value) || 1 }
-      ];
-      const prev = D().carCfg; D().carCfg = Object.assign({}, cfg(), { bands });
-      $("#cs-preview").innerHTML = matrixGrid("config", {});
+    let cells = Object.assign({}, cfg().cellOverride);
+    function paintMatrix() {
+      const prev = D().carCfg;
+      D().carCfg = Object.assign({}, cfg(), { cellOverride: cells });
+      $("#cs-matrix").innerHTML = matrixGrid("config", {});
       D().carCfg = prev;
+      $$("#cs-matrix .rm-cell").forEach(td => td.onclick = () => {
+        const code = td.dataset.l + td.dataset.s;
+        const cur = cells[code] || LEVEL_ORDER[LEVEL_ORDER.length - 1];
+        cells[code] = LEVEL_ORDER[(LEVEL_ORDER.indexOf(cur) + 1) % LEVEL_ORDER.length];
+        paintMatrix();
+      });
     }
-    ["cs-b-ex", "cs-b-hi", "cs-b-me", "cs-b-lo"].forEach(id => { const el = $("#" + id); if (el) el.oninput = preview; });
-    preview();
+    paintMatrix();
 
     $("#cs-cancel").onclick = closeModal;
     $("#cs-reset").onclick = () => confirmModal("모든 설정을 기본값(규정 기준)으로 복원하시겠습니까?", () => {
@@ -1012,12 +1072,7 @@
           { over: Number($("#cs-o2").value) || 8, label: "경고", band: "orange" },
           { over: Number($("#cs-o3").value) || 15, label: "심각", band: "red" }
         ],
-        bands: [
-          { key: "extreme", label: "수용불가", color: "red", min: Number($("#cs-b-ex").value) || 15 },
-          { key: "high", label: "조건부수용", color: "orange", min: Number($("#cs-b-hi").value) || 10 },
-          { key: "medium", label: "완화필요", color: "amber", min: Number($("#cs-b-me").value) || 5 },
-          { key: "low", label: "수용가능", color: "green", min: Number($("#cs-b-lo").value) || 1 }
-        ],
+        cellOverride: Object.assign({}, cells),
         domains: doms.length ? doms.slice() : DOMAINS.slice(),
         scopes: scps.length ? scps.slice() : SCOPES.slice()
       };
@@ -1148,7 +1203,7 @@
 
   window.SemisCarcap = {
     DEFAULT_CFG, cfg, CLASSES, STAGES, FLOW, DOMAINS, SCOPES,
-    bandOf, riskBadge, matrixGrid,
+    bandOf, riskBadge, matrixGrid, suggestRisk, levelActionsHTML, CELL_DEFAULT,
     addDays, addMonths, daysBetween,
     calcCapDue, calcFatDue, calcEffSustain, calcAckDue, ackInfo, activeDeadline, escLevel, recurrence,
     nextNo, list, filtered, stats, dashStats, open, renderSigning,

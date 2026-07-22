@@ -4407,14 +4407,27 @@ function makeFetchStub(server) {
     ok(e.Sync.SYNC_KEYS.includes("carCfg"), "carCfg");
   });
 
-  t("CR04 위험 매트릭스 bandOf (빈도×심각도가중치)", () => {
+  t("CR04 위험 매트릭스 bandOf (항공보안파트 셀별 기준)", () => {
     const CC = makeEnv().w.SemisCarcap;
-    eq(CC.bandOf(3, "C").score, 9, "3C=9");
-    eq(CC.bandOf(3, "C").key, "medium", "3C=완화필요");
-    eq(CC.bandOf(5, "A").score, 25, "5A=25");
-    eq(CC.bandOf(5, "A").key, "extreme", "5A=수용불가");
-    eq(CC.bandOf(1, "E").key, "low", "1E=수용가능");
-    eq(CC.bandOf(4, "B").key, "extreme", "4B=16=수용불가");
+    eq(CC.bandOf(5, "A").key, "lv5", "5A=Lv5 심각(빨강)");
+    eq(CC.bandOf(4, "B").key, "lv5", "4B=Lv5 심각");
+    eq(CC.bandOf(3, "A").key, "lv4", "3A=Lv4 경계(오렌지)");
+    eq(CC.bandOf(3, "C").key, "lv3", "3C=Lv3 주의(노랑)");
+    eq(CC.bandOf(2, "C").key, "lv2", "2C=Lv2 관심(파랑)");
+    eq(CC.bandOf(1, "E").key, "lv1", "1E=Lv1 예방(초록)");
+    eq(CC.bandOf(1, "A").key, "lv3", "1A=Lv3(고심각·저빈도)");
+    // 25셀 전부 배정 확인
+    eq(Object.keys(CC.CELL_DEFAULT).length, 25, "25셀 배정");
+  });
+
+  t("CR04b 자동 위험도 제안 (suggestRisk)", () => {
+    const CC = makeEnv().w.SemisCarcap;
+    eq(CC.suggestRisk({ classification: "시정", nonconformance: "위해물품(칼) 검색 실패" }).S, "B", "위해물품 검색실패→심각도 B");
+    eq(CC.suggestRisk({ classification: "개선권고", nonconformance: "교육 컨텐츠 개선 권고" }).S, "E", "개선권고→심각도 E");
+    eq(CC.suggestRisk({ classification: "시정", nonconformance: "봉인 미부착" }).S, "C", "봉인 미부착→심각도 C");
+    eq(CC.suggestRisk({ classification: "시정", nonconformance: "봉인", recurCount: 4 }).L, 5, "재발 4건→빈도 5");
+    eq(CC.suggestRisk({ classification: "시정", nonconformance: "봉인", recurCount: 1 }).L, 3, "최초→빈도 3");
+    ok(CC.suggestRisk({ classification: "시정", nonconformance: "위해물품 검색 실패", recurCount: 4 }).band === "lv5", "빈발+고심각→Lv5");
   });
 
   t("CR05 날짜 유틸 (addDays/addMonths 말일보정/daysBetween)", () => {
@@ -4522,8 +4535,8 @@ function makeFetchStub(server) {
     eq(CC.cfg().capDueDays, 30, "설정 반영");
     eq(CC.cfg().likelihood.length, 5, "기본 빈도 유지");
     eq(CC.calcCapDue({ issuedDate: "2026-07-01" }), "2026-07-31", "마감 30일 적용");
-    e.S.data.carCfg = { bands: [{ key: "extreme", label: "X", color: "red", min: 20 }, { key: "low", label: "L", color: "green", min: 1 }] };
-    eq(CC.bandOf(3, "C").key, "low", "밴드 임계 변경 반영(9<20→low)");
+    e.S.data.carCfg = { cellOverride: { "3C": "lv5" } };
+    eq(CC.bandOf(3, "C").key, "lv5", "셀별 위험수준 변경 반영(3C→Lv5)");
   });
 
   t("CR15 위험매트릭스/보드 뷰 렌더 무오류", () => {
@@ -4690,6 +4703,25 @@ function makeFetchStub(server) {
     const items = qa(e, "#nav-menu .nav-item");
     eq(items.length, 1, "단일 메뉴");
     ok(items[0].textContent.includes("접수확인"), "접수확인 서명 메뉴");
+  });
+
+  t("CR27 25셀 색상 배정이 항공보안파트 기준과 정확히 일치", () => {
+    const CC = makeEnv().w.SemisCarcap;
+    const expect = {
+      red:    ["5A", "4A", "5B", "4B"],
+      orange: ["5C", "4C", "3B", "3A"],
+      yellow: ["5E", "5D", "4D", "3C", "2B", "2A", "1A"],
+      blue:   ["4E", "3D", "2D", "2C", "1B"],
+      green:  ["3E", "2E", "1E", "1D", "1C"]
+    };
+    const key2color = { lv5: "red", lv4: "orange", lv3: "yellow", lv2: "blue", lv1: "green" };
+    let n = 0;
+    Object.keys(expect).forEach(color => expect[color].forEach(code => {
+      const L = Number(code[0]), S = code[1];
+      eq(key2color[CC.bandOf(L, S).key], color, code + " → " + color);
+      n++;
+    }));
+    eq(n, 25, "총 25셀 검증");
   });
 
   /* ══════════ 결과 ══════════ */

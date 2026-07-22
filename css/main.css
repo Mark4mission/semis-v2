@@ -1448,3 +1448,19 @@ a.ct-tel:hover { color: var(--primary); }
 .cr-ack-ic { font-size: 1.1rem; }
 .cr-ack-body { flex: 1; line-height: 1.5; }
 .cr-ackcode { font-size: 1.02rem; letter-spacing: 1px; background: #fff; padding: 1px 8px; border-radius: 5px; border: 1px solid var(--border-strong); font-weight: 800; }
+
+/* CAR v2.29.3 — 위험수준 대응표 · 평가기준 참고 · 셀 Lv 표기 */
+.badge-yellow { background: #fef9c3; color: #854d0e; }
+.rm-cell .rm-score { font-weight: 800; }
+.rm-lvtbl { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: .82rem; }
+.rm-lvtbl td { border: 1px solid var(--border); padding: 5px 9px; vertical-align: middle; }
+.rm-lvtbl td:first-child { width: 96px; text-align: center; border-radius: 4px; }
+.cr-lvref { margin-top: 10px; }
+.cr-rm-ref { margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: var(--surface-2); }
+.cr-rm-ref summary { cursor: pointer; font-weight: 700; font-size: .84rem; color: var(--text-2); }
+.cr-rm-refbody { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
+.cr-rm-refbody > div > b { display: block; font-size: .8rem; color: var(--primary); margin-bottom: 4px; }
+.cr-rm-r { display: flex; justify-content: space-between; gap: 8px; font-size: .8rem; padding: 2px 0; border-bottom: 1px dashed var(--border); }
+.cr-rm-r span { font-weight: 700; white-space: nowrap; }
+.cr-rm-r em { color: var(--text-3); font-style: normal; text-align: right; }
+@media (max-width: 640px) { .cr-rm-refbody { grid-template-columns: 1fr; } }
