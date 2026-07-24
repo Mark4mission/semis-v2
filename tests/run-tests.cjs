@@ -1221,6 +1221,78 @@ function makeFetchStub(server) {
     e.Sync.stop();
   });
 
+  await ta("CA09 멀티센서: 기기별 블록 분리 + 기기명 표시 (2호기 초과)", async () => {
+    // deviceId 포함 리딩 생성 헬퍼
+    const mk = (deviceId, temp) => ({ document: { fields: {
+      deviceId: { stringValue: deviceId },
+      timestamp: { timestampValue: "2026-07-24T10:00:00Z" },
+      temp: { doubleValue: temp }, humidity: { integerValue: "50" },
+      co2: { integerValue: "600" }, pm25: { integerValue: "10" }, pm10: { integerValue: "20" },
+      pm1: { integerValue: "5" }, tvoc: { doubleValue: 0.1 }, hcho: { doubleValue: 0.05 }
+    } } });
+    const stub = (url, opts = {}) => {
+      const u = String(url);
+      if (u.includes(":runQuery")) {
+        const body = JSON.parse(opts.body);
+        const col = body.structuredQuery.from[0].collectionId;
+        if (col === "sensorLogs") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([
+          // 1호기 정상, 2호기 온도 초과(45>40), 3호기 정상
+          mk("ICN_CARGO_B", 24), mk("ICN_ETD_CASE", 45), mk("ICN_SEARCH_ROOM", 23),
+          mk("ICN_CARGO_B", 25), mk("ICN_ETD_CASE", 44), mk("ICN_SEARCH_ROOM", 22)
+        ]) });
+        // alarmHistory
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([
+          { document: { fields: {
+            deviceId: { stringValue: "ICN_ETD_CASE" }, metricLabel: { stringValue: "실내 온도" },
+            metric: { stringValue: "temp" }, type: { stringValue: "max" },
+            threshold: { integerValue: "40" }, unit: { stringValue: "°C" },
+            peakValue: { doubleValue: 45 }, endedAt: { nullValue: null }
+          } } }
+        ]) });
+      }
+      if (u.includes("sensorThresholds")) return Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+    };
+    const e = makeEnv({ fetch: stub, preLS: { "semis2:caresKey": "test-api-key" } });
+    loginAs(e, "hq");
+    const box = q(e, "#cares-box");
+    await e.w.SemisCares.renderInto(box, true);
+    eq(qa(e, ".cares-device").length, 3, "기기 3개 블록 분리");
+    ok(box.innerHTML.includes("2호기"), "2호기 표시명 노출");
+    ok(box.innerHTML.includes("3호기"), "3호기 표시명 노출");
+    ok(box.innerHTML.includes("임계치 초과 1건"), "전 기기 합산 초과 1건");
+    ok(q(e, ".cares-alarm-dev"), "알람에 기기 라벨 표시");
+    ok(box.innerHTML.includes("전체 표시"), "축소 모드 토글 존재");
+    e.Sync.stop();
+  });
+
+  await ta("CA10 멀티센서: 단일 기기(구버전 무 deviceId)는 기존 레이아웃 유지", async () => {
+    const mk = (temp) => ({ document: { fields: {
+      timestamp: { timestampValue: "2026-07-24T10:00:00Z" },
+      temp: { doubleValue: temp }, humidity: { integerValue: "50" },
+      co2: { integerValue: "600" }, pm25: { integerValue: "10" }, pm10: { integerValue: "20" },
+      pm1: { integerValue: "5" }, tvoc: { doubleValue: 0.1 }, hcho: { doubleValue: 0.05 }
+    } } });
+    const stub = (url, opts = {}) => {
+      const u = String(url);
+      if (u.includes(":runQuery")) {
+        const body = JSON.parse(opts.body);
+        if (body.structuredQuery.from[0].collectionId === "sensorLogs")
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([mk(24), mk(25)]) });
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      }
+      if (u.includes("sensorThresholds")) return Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+    };
+    const e = makeEnv({ fetch: stub, preLS: { "semis2:caresKey": "test-api-key" } });
+    loginAs(e, "hq");
+    const box = q(e, "#cares-box");
+    await e.w.SemisCares.renderInto(box, true);
+    eq(qa(e, ".cares-device").length, 0, "단일 기기는 기기 블록 래퍼 없음(기존 레이아웃)");
+    ok(q(e, ".cares-allok"), "정상 시 한 줄 안내 유지");
+    e.Sync.stop();
+  });
+
   /* ══════════ [CT] 보고체계 연락망 (v2.6) ══════════
      ※ 테스트 데이터는 전부 가상 — 실연락처는 repo에 두지 않음(공용 DB 동기화) */
   {

@@ -35,7 +35,19 @@
   }
   const PROJECT = "airzeta-security-system";
   const FS_DOCS = "https://firestore.googleapis.com/v1/projects/" + PROJECT + "/databases/(default)/documents";
-  const DEVICE = { id: "ICN_CARGO_B", name: "인천 화물터미널 B동" };
+
+  // 멀티센서 — logicalId(백엔드/CARES 앱과 일치) → 표시명
+  const DEVICE_NAMES = {
+    ICN_CARGO_B:     "1호기 · 화물터미널 입구",
+    ICN_ETD_CASE:    "2호기 · ETD 보호케이스",
+    ICN_SEARCH_ROOM: "3호기 · 검색실"
+  };
+  const DEVICE_ORDER = ["ICN_CARGO_B", "ICN_ETD_CASE", "ICN_SEARCH_ROOM"];
+  const DEFAULT_DEVICE_ID = "ICN_CARGO_B";
+  const deviceName  = (id) => DEVICE_NAMES[id] || id;
+  const deviceShort = (id) => { const n = DEVICE_NAMES[id]; return n ? n.split(" · ")[0] : id; };
+  const DEVICE = { id: DEFAULT_DEVICE_ID, name: deviceName(DEFAULT_DEVICE_ID) }; // 하위호환 export
+
   const CFG_KEY = "semis2:cares"; // 기기 로컬 전용 (동기화 안 함)
 
   const METRICS = [
@@ -99,9 +111,10 @@
       limit: n || 120
     } })).reverse(); // 시간 오름차순
   }
-  async function fetchThresholds() {
+  async function fetchThresholds(deviceId) {
+    const id = deviceId || DEVICE.id;
     try {
-      const res = await fetch(FS_DOCS + "/sensorThresholds/" + DEVICE.id + "?key=" + (await getKey()));
+      const res = await fetch(FS_DOCS + "/sensorThresholds/" + id + "?key=" + (await getKey()));
       if (!res.ok) return DEFAULT_TH;
       const j = await res.json();
       const th = docToObj(j.fields);
@@ -145,6 +158,32 @@
       <polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
   }
 
+  /* ─────── 기기별 그리드 블록 ─────── */
+  // multi=false면 기존 단일 레이아웃과 동일한 HTML(래퍼/헤더 없음)을 반환해 하위호환 유지
+  function deviceBlockHTML(id, rs, th, showAll, multi) {
+    const last = rs[rs.length - 1];
+    const exceeded = METRICS.filter(m => isExceed(last[m.key], th[m.key]));
+    const shown = showAll ? METRICS : exceeded;
+    const header = multi ? `<div class="cares-dev-head">
+        <span class="cares-dev-name">${esc(deviceName(id))}</span>
+        <span class="badge ${exceeded.length ? "badge-red" : "badge-green"} badge-sm">${exceeded.length ? "⚠ " + exceeded.length : "✓ 정상"}</span>
+      </div>` : "";
+    const body = shown.length ? `<div class="cares-grid">
+        ${shown.map(m => {
+          const v = last[m.key];
+          const ex = isExceed(v, th[m.key]);
+          const series = rs.map(r => (typeof r[m.key] === "number" ? r[m.key] : null));
+          return `<div class="cares-cell${ex ? " exceed" : ""}">
+            <div class="cares-label">${esc(m.label)}${ex ? " ⚠" : ""}</div>
+            <div class="cares-value">${v == null ? "-" : esc(v.toFixed(m.dec))}<span class="cares-unit">${esc(m.unit)}</span></div>
+            ${sparkSVG(series, th[m.key])}
+          </div>`;
+        }).join("")}
+      </div>`
+      : `<div class="cares-allok">${multi ? "임계값 이내" : "모든 지표가 임계값 이내입니다."} <span style="color:var(--text-3)">(1분마다 자동 갱신)</span></div>`;
+    return multi ? `<div class="cares-device">${header}${body}</div>` : body;
+  }
+
   /* ─────── 위젯 렌더 ─────── */
   let refreshTimer = null;
   async function renderInto(box, canWrite) {
@@ -160,44 +199,55 @@
     box.innerHTML = '<div class="empty" style="padding:20px 10px">환경센서 데이터를 불러오는 중…</div>';
     try {
       await getKey(); // 연동 키 확보 (공용 DB caresCfg → 로컬 캐시)
-      const [readings, th, alarms] = await Promise.all([fetchReadings(120), fetchThresholds(), fetchAlarms()]);
+      const [readings, alarms] = await Promise.all([fetchReadings(180), fetchAlarms()]);
       if (!document.body.contains(box)) return false; // 화면 이탈
       if (!readings.length) { box.innerHTML = '<div class="empty">센서 데이터가 없습니다.</div>'; return false; }
-      const last = readings[readings.length - 1];
-      const lastTs = last.timestamp ? new Date(last.timestamp).toLocaleString("ko-KR") : "-";
-      const exceeded = METRICS.filter(m => isExceed(last[m.key], th[m.key]));
-      const active = alarms.filter(a => !a.endedAt);
 
-      // 기본: 임계치 초과 지표만 표시 (대시보드 공간 축소). "전체 표시" 토글로 8개 전체.
-      const showAll = c.showAll === true;
-      const shown = showAll ? METRICS : exceeded;
+      // ── 기기별 그룹핑 (시간 오름차순 유지) ──
+      const byDevice = new Map();
+      readings.forEach(r => {
+        const id = r.deviceId || DEFAULT_DEVICE_ID;
+        if (!byDevice.has(id)) byDevice.set(id, []);
+        byDevice.get(id).push(r);
+      });
+      const presentIds = [];
+      DEVICE_ORDER.forEach(id => { if (byDevice.has(id)) presentIds.push(id); });
+      byDevice.forEach((_, id) => { if (presentIds.indexOf(id) < 0) presentIds.push(id); });
+      const multi = presentIds.length > 1;
+
+      // ── 기기별 임계값 (표시되는 기기만 조회) ──
+      const thList = await Promise.all(presentIds.map(id => fetchThresholds(id)));
+      const thByDevice = {};
+      presentIds.forEach((id, i) => { thByDevice[id] = thList[i]; });
+
+      const active = alarms.filter(a => !a.endedAt);
+      const showAll = c.showAll === true; // "전체 표시" 토글
+
+      // ── 전 기기 합산 초과 건수 + 최신 수신 시각 ──
+      let totalExceeded = 0, latestMs = 0;
+      presentIds.forEach(id => {
+        const rs = byDevice.get(id), last = rs[rs.length - 1], th = thByDevice[id];
+        totalExceeded += METRICS.filter(m => isExceed(last[m.key], th[m.key])).length;
+        const ms = last.timestamp ? new Date(last.timestamp).getTime() : 0;
+        if (ms > latestMs) latestMs = ms;
+      });
+      const lastTs = latestMs ? new Date(latestMs).toLocaleString("ko-KR") : "-";
+      const headLabel = multi ? (presentIds.length + "개소") : esc(deviceName(presentIds[0]));
 
       box.innerHTML = `
         <div class="cares-head">
-          <span class="badge ${exceeded.length ? "badge-red" : "badge-green"}">${exceeded.length ? "⚠ 임계치 초과 " + exceeded.length + "건" : "✓ 전체 정상"}</span>
-          <span style="font-size:.76rem;color:var(--text-3)">${esc(DEVICE.name)} · ${esc(lastTs)}</span>
+          <span class="badge ${totalExceeded ? "badge-red" : "badge-green"}">${totalExceeded ? "⚠ 임계치 초과 " + totalExceeded + "건" : "✓ 전체 정상"}</span>
+          <span style="font-size:.76rem;color:var(--text-3)">${headLabel} · ${esc(lastTs)}</span>
           <span class="spacer"></span>
           <button class="btn btn-ghost btn-sm" id="cares-mode">${showAll ? "초과만 보기" : "전체 표시"}</button>
           <button class="btn btn-ghost btn-sm" id="cares-refresh">↻</button>
         </div>
         ${active.length ? `<div class="cares-alarms">${active.map(a => `
-          <div class="cares-alarm">🔴 <b>${esc(a.metricLabel || a.metric)}</b>
+          <div class="cares-alarm">🔴 ${a.deviceId ? `<span class="cares-alarm-dev">${esc(deviceShort(a.deviceId))}</span>` : ""}<b>${esc(a.metricLabel || a.metric)}</b>
             ${a.type === "max" ? "상한" : "하한"} ${esc(String(a.threshold))}${esc(a.unit || "")} 초과 진행 중
             <span style="color:var(--text-3)">(최고 ${esc(String(a.peakValue))}${esc(a.unit || "")})</span></div>`).join("")}</div>` : ""}
-        ${shown.length ? `<div class="cares-grid">
-          ${shown.map(m => {
-            const v = last[m.key];
-            const ex = isExceed(v, th[m.key]);
-            const series = readings.map(r => (typeof r[m.key] === "number" ? r[m.key] : null));
-            return `<div class="cares-cell${ex ? " exceed" : ""}">
-              <div class="cares-label">${esc(m.label)}${ex ? " ⚠" : ""}</div>
-              <div class="cares-value">${v == null ? "-" : esc(v.toFixed(m.dec))}<span class="cares-unit">${esc(m.unit)}</span></div>
-              ${sparkSVG(series, th[m.key])}
-            </div>`;
-          }).join("")}
-        </div>
-        <div class="form-hint" style="margin-top:6px">최근 2시간 추이 · 점선=임계값 · 1분마다 자동 갱신</div>`
-        : `<div class="cares-allok">모든 지표가 임계값 이내입니다. <span style="color:var(--text-3)">(1분마다 자동 갱신)</span></div>`}`;
+        ${presentIds.map(id => deviceBlockHTML(id, byDevice.get(id), thByDevice[id], showAll, multi)).join("")}
+        <div class="form-hint" style="margin-top:6px">최근 추이 · 점선=임계값 · 1분마다 자동 갱신</div>`;
       $("#cares-refresh", box).onclick = () => renderInto(box, canWrite);
       $("#cares-mode", box).onclick = () => {
         setCfg(Object.assign(cfg(), { showAll: !showAll }));
@@ -229,7 +279,7 @@
       <h3>🌡 CARES 환경센서 연동</h3>
       <div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
         <input type="checkbox" id="c-enabled" style="width:auto" ${c.enabled !== false ? "checked" : ""}> 대시보드에 환경센서 표시</label>
-        <div class="form-hint" style="margin-top:8px">CARES(${esc(DEVICE.name)})의 센서 데이터를 공개 조회 방식으로 표시합니다.
+        <div class="form-hint" style="margin-top:8px">CARES 환경센서(1·2·3호기)의 데이터를 공개 조회 방식으로 표시합니다.
         별도 계정이 필요 없으며, 표시 여부는 이 브라우저에만 적용됩니다.
         임계값 변경은 <a href="https://airzeta-security-system.web.app" target="_blank" rel="noopener">CARES 앱</a>에서 관리합니다.</div></div>
       <div class="modal-actions">
