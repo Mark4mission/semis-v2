@@ -191,7 +191,7 @@ input, select, textarea { font-family: inherit; font-size: .95rem; }
 .page-head .spacer { flex: 1; }
 
 .card {
-  background: var(--surface); border: 1px solid var(--border);
+  background: var(--surface); border: 1.5px solid var(--border-strong);
   border-radius: var(--radius); box-shadow: var(--shadow);
   padding: 20px; margin-bottom: 18px;
 }
