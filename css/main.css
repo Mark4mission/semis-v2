@@ -434,7 +434,6 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .cal-tchip.done { opacity: .5; }
 .cal-tchip.done .chip-title { text-decoration: line-through; }
 .cal-tchip.dragging { opacity: .4; }
-.cal-tchip .chip-tag { background: var(--surface-2); }
 .chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--evc, #64748b); flex-shrink: 0; }
 
 .cal-chip {
@@ -445,8 +444,6 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .cal-chip .chip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; letter-spacing: -.2px; }
 .cal-chip .chip-time { font-size: .6rem; opacity: .85; white-space: nowrap; }
 .cal-chip .chip-check { font-size: .72rem; cursor: pointer; opacity: .9; }
-.cal-chip .chip-resize { cursor: ew-resize; font-size: .72rem; opacity: .55; }
-.cal-chip .chip-resize:hover { opacity: 1; }
 .cal-chip.dragging { opacity: .4; }
 .cal-chip.done { opacity: .45; filter: saturate(.4); }
 .cal-chip.done .chip-title { text-decoration: line-through; }
@@ -481,10 +478,8 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 
 /* 담당자 태그 / 리마인더 */
 .chip-tag {
-  background: rgba(255,255,255,.28); border-radius: 3px; padding: 0 3px;
-  font-size: .64rem; font-weight: 700; white-space: nowrap; flex-shrink: 0;
+  font-size: .64rem; font-weight: 700; white-space: nowrap; flex-shrink: 0; opacity: .8;
 }
-.ev-gcal .chip-tag { background: #e8f0fe; }
 .rem-picker { display: flex; gap: 12px; flex-wrap: wrap; }
 .rem-opt { display: flex; align-items: center; gap: 5px; font-size: .84rem; cursor: pointer; font-weight: 600; color: var(--text-2); }
 .team-picker { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 7px; }

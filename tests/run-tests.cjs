@@ -816,15 +816,16 @@ function makeFetchStub(server) {
       eq(e.S.data.gcal.enabled, false);
       eq(e.S.data.gcal.calendarId, "airzetaavsec@gmail.com");
     });
-    t("V03 팀 4명 + 담당자 태그(이모지+약자)", () => {
+    t("V03 팀 4명 + 담당자 태그(약자 1글자, 이모지 제외)", () => {
       const C = e.Cal;
       eq(C.TEAM.length, 4);
       eq(C.TEAM.map(t2 => t2.name).join(","), "박철성,최상일,이은우,이윤민");
-      ok(C.tagOf("박철성").includes("박"));
-      ok(C.tagOf("최상일").includes("최"));
-      ok(C.tagOf("이은우").includes("은"));
-      ok(C.tagOf("이윤민").includes("윤"));
-      eq(C.tagOf("외부인사").length, 2, "미등록자는 앞 2자");
+      eq(C.tagOf("박철성"), "박");
+      eq(C.tagOf("최상일"), "최");
+      eq(C.tagOf("이은우"), "은");
+      eq(C.tagOf("이윤민"), "윤");
+      ok(!C.tagOf("이윤민").includes("🌸"), "태그에 이모지 없음");
+      eq(C.tagOf("외부인사").length, 1, "미등록자는 앞 1자");
     });
     t("V04 리마인더 4종 정의 (2주/1주/1일/1시간 전)", () => {
       eq(e.Cal.REMINDER_DEFS.map(r => r.id).join(","), "2w,1w,1d,1h");
@@ -1945,9 +1946,9 @@ function makeFetchStub(server) {
     const e = makeEnv();
     loginAs(e, "hq");
     const C = e.Cal;
-    t("V14 이윤민 이모지 변경(🌸)", () => {
+    t("V14 이윤민 이모지(🌸)는 TEAM 데이터에만, 태그는 약자만", () => {
       eq(C.TEAM.find(t2 => t2.name === "이윤민").emoji, "🌸");
-      ok(C.tagOf("이윤민").includes("🌸"));
+      eq(C.tagOf("이윤민"), "윤");
     });
     t("V15 일 보기: 담당자 중복 표기 제거('최 최상일' 없음)", () => {
       e.S.data.schedules.push({ id: "dd1", title: "일뷰일정", memo: "", start: "2026-07-16", end: "2026-07-16", allDay: true, time: "", timeEnd: "", color: "blue", done: false, assignee: "최상일", vehicle: false, room: false, reminders: [] });

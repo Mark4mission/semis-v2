@@ -50,7 +50,7 @@
   const tagOf = (name) => {
     if (!name) return "";
     const m = memberOf(name);
-    return m ? m.emoji + m.short : name.slice(0, 2);
+    return m ? m.short : name.slice(0, 1);
   };
 
   /* ─────── 반복 일정 ─────── */
@@ -392,7 +392,6 @@
       ${!e.allDay && e.time ? `<span class="chip-time">${esc(e.time)}</span>` : ""}
       <span class="chip-title">${evIcons(e)}${esc(e.title)}</span>
       ${e.assignee ? `<span class="chip-tag" title="${esc(e.assignee)}">${esc(tagOf(e.assignee))}</span>` : ""}
-      ${canWrite && !it.contR && !isRepeat(e) ? `<span class="chip-resize" draggable="true" data-resize="${esc(e.id)}" title="드래그하여 기간 조정">⇥</span>` : ""}
     </div>`;
   }
 
@@ -502,7 +501,6 @@
       ${timeTxt}
       <span class="chip-title">${cont}${evIcons(e)}${esc(e.title)}${cont2}</span>
       ${!noTag && e.assignee ? `<span class="chip-tag" title="${esc(e.assignee)}">${esc(tagOf(e.assignee))}</span>` : ""}
-      ${canWrite && isLastDay && !compact ? `<span class="chip-resize" draggable="true" data-resize="${esc(e.id)}" title="드래그하여 기간 조정">⇥</span>` : ""}
     </div>`;
   }
 
@@ -792,7 +790,7 @@
           <span class="spacer"></span>
           ${canWrite ? '<button class="btn btn-ghost" id="cal-gcal" title="구글캘린더 연동 설정">🔗</button>' : ""}
           ${canWrite ? '<button class="btn btn-primary" id="cal-add">+ 일정 등록</button>' : ""}
-          <div class="page-desc">보안점검 · 교육 · 회의 등 항공보안파트 주요 일정${canWrite ? " — 일정을 드래그하여 이동, ⇥ 핸들 드래그로 기간 조정" : ""}</div>
+          <div class="page-desc">보안점검 · 교육 · 회의 등 항공보안파트 주요 일정${canWrite ? " — 일정을 드래그하여 이동" : ""}</div>
         </div>
         <div class="card cal-card${fullscreen ? " cal-fullscreen" : ""}">
           <div class="cal-toolbar">
@@ -854,7 +852,7 @@
         ev.stopPropagation(); toggleDone(el.dataset.donetoggle);
       });
       $$("[data-ev]", body).forEach(el => el.onclick = (ev) => {
-        if (ev.target.closest("[data-donetoggle],[data-resize]")) return;
+        if (ev.target.closest("[data-donetoggle]")) return;
         canWrite ? eventForm(el.dataset.ev) : eventDetail(el.dataset.ev);
       });
       $$("[data-gcal]", body).forEach(el => el.onclick = () => gcalDetail(el.dataset.gcal));
@@ -886,15 +884,6 @@
           });
           el.addEventListener("dragend", () => { el.classList.remove("dragging"); body.classList.remove("drag-active"); dragCtx = null; });
         });
-        $$("[data-resize]", body).forEach(h => {
-          h.addEventListener("dragstart", (ev) => {
-            ev.stopPropagation();
-            dragCtx = { id: h.dataset.resize, mode: "resize" };
-            body.classList.add("drag-active");
-            if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = "move"; try { ev.dataTransfer.setData("text/plain", h.dataset.resize); } catch (e) {} }
-          });
-          h.addEventListener("dragend", () => { body.classList.remove("drag-active"); dragCtx = null; });
-        });
         $$(".cal-cell", body).forEach(cell => {
           cell.addEventListener("dragover", (ev) => { ev.preventDefault(); cell.classList.add("drop-hover"); });
           cell.addEventListener("dragleave", () => cell.classList.remove("drop-hover"));
@@ -904,13 +893,10 @@
             body.classList.remove("drag-active");
             if (!dragCtx) return;
             const day = cell.dataset.day;
-            if (dragCtx.mode === "resize") { resizeEvent(dragCtx.id, day); toast("기간이 조정되었습니다."); }
-            else {
-              const e = D().schedules.find(x => x.id === dragCtx.id);
-              if (e) {
-                moveEvent(dragCtx.id, addDays(e.start, diffDays(dragCtx.from, day)));
-                toast(isRepeat(e) ? "반복 일정 전체가 이동되었습니다." : "일정이 이동되었습니다.");
-              }
+            const e = D().schedules.find(x => x.id === dragCtx.id);
+            if (e) {
+              moveEvent(dragCtx.id, addDays(e.start, diffDays(dragCtx.from, day)));
+              toast(isRepeat(e) ? "반복 일정 전체가 이동되었습니다." : "일정이 이동되었습니다.");
             }
             dragCtx = null;
           });
