@@ -47,6 +47,14 @@
   const deviceName  = (id) => DEVICE_NAMES[id] || id;
   const deviceShort = (id) => { const n = DEVICE_NAMES[id]; return n ? n.split(" · ")[0] : id; };
   const DEVICE = { id: DEFAULT_DEVICE_ID, name: deviceName(DEFAULT_DEVICE_ID) }; // 하위호환 export
+  // 오프라인 판정: online:false 또는 3분 무수신(캐시 옛값이므로 값 표시 안 함)
+  const OFFLINE_MS = 3 * 60 * 1000;
+  function isOffline(last) {
+    if (!last) return true;
+    if (last.online === false) return true;
+    const ms = last.timestamp ? new Date(last.timestamp).getTime() : 0;
+    return (Date.now() - ms) > OFFLINE_MS;
+  }
 
   const CFG_KEY = "semis2:cares"; // 기기 로컬 전용 (동기화 안 함)
 
@@ -160,8 +168,17 @@
 
   /* ─────── 기기별 그리드 블록 ─────── */
   // multi=false면 기존 단일 레이아웃과 동일한 HTML(래퍼/헤더 없음)을 반환해 하위호환 유지
-  function deviceBlockHTML(id, rs, th, showAll, multi) {
+  function deviceBlockHTML(id, rs, th, showAll, multi, offline) {
     const last = rs[rs.length - 1];
+    // 오프라인: 캐시된 옛 값이므로 수치 대신 오프라인 안내
+    if (offline) {
+      const oHead = multi ? `<div class="cares-dev-head">
+          <span class="cares-dev-name">${esc(deviceName(id))}</span>
+          <span class="badge badge-amber badge-sm">⚪ 오프라인</span>
+        </div>` : "";
+      const oBody = `<div class="cares-allok" style="color:#b45309">신호 없음 · 오프라인 <span style="color:var(--text-3)">(마지막 수신값 미표시)</span></div>`;
+      return multi ? `<div class="cares-device">${oHead}${oBody}</div>` : oBody;
+    }
     const exceeded = METRICS.filter(m => isExceed(last[m.key], th[m.key]));
     const shown = showAll ? METRICS : exceeded;
     const header = multi ? `<div class="cares-dev-head">
@@ -223,20 +240,31 @@
       const active = alarms.filter(a => !a.endedAt);
       const showAll = c.showAll === true; // "전체 표시" 토글
 
-      // ── 전 기기 합산 초과 건수 + 최신 수신 시각 ──
-      let totalExceeded = 0, latestMs = 0;
+      // ── 기기별 오프라인 판정 + 온라인 기기 합산 초과 건수 + 최신 수신 시각 ──
+      let totalExceeded = 0, latestMs = 0, onlineCount = 0;
+      const offlineById = {};
       presentIds.forEach(id => {
         const rs = byDevice.get(id), last = rs[rs.length - 1], th = thByDevice[id];
-        totalExceeded += METRICS.filter(m => isExceed(last[m.key], th[m.key])).length;
+        const off = isOffline(last);
+        offlineById[id] = off;
+        if (!off) { onlineCount++; totalExceeded += METRICS.filter(m => isExceed(last[m.key], th[m.key])).length; }
         const ms = last.timestamp ? new Date(last.timestamp).getTime() : 0;
         if (ms > latestMs) latestMs = ms;
       });
+      const allOffline = onlineCount === 0;
+      const offlineCount = presentIds.length - onlineCount;
       const lastTs = latestMs ? new Date(latestMs).toLocaleString("ko-KR") : "-";
       const headLabel = multi ? (presentIds.length + "개소") : esc(deviceName(presentIds[0]));
+      const headBadge = allOffline
+        ? '<span class="badge badge-amber">⚪ 오프라인' + (multi ? " (" + presentIds.length + "개소)" : "") + '</span>'
+        : (totalExceeded
+            ? '<span class="badge badge-red">⚠ 임계치 초과 ' + totalExceeded + '건</span>'
+            : '<span class="badge badge-green">✓ 전체 정상</span>')
+          + (offlineCount ? ' <span class="badge badge-amber badge-sm">오프라인 ' + offlineCount + '</span>' : '');
 
       box.innerHTML = `
         <div class="cares-head">
-          <span class="badge ${totalExceeded ? "badge-red" : "badge-green"}">${totalExceeded ? "⚠ 임계치 초과 " + totalExceeded + "건" : "✓ 전체 정상"}</span>
+          ${headBadge}
           <span style="font-size:.76rem;color:var(--text-3)">${headLabel} · ${esc(lastTs)}</span>
           <span class="spacer"></span>
           <button class="btn btn-ghost btn-sm" id="cares-mode">${showAll ? "초과만 보기" : "전체 표시"}</button>
@@ -246,7 +274,7 @@
           <div class="cares-alarm">🔴 ${a.deviceId ? `<span class="cares-alarm-dev">${esc(deviceShort(a.deviceId))}</span>` : ""}<b>${esc(a.metricLabel || a.metric)}</b>
             ${a.type === "max" ? "상한" : "하한"} ${esc(String(a.threshold))}${esc(a.unit || "")} 초과 진행 중
             <span style="color:var(--text-3)">(최고 ${esc(String(a.peakValue))}${esc(a.unit || "")})</span></div>`).join("")}</div>` : ""}
-        ${presentIds.map(id => deviceBlockHTML(id, byDevice.get(id), thByDevice[id], showAll, multi)).join("")}
+        ${presentIds.map(id => deviceBlockHTML(id, byDevice.get(id), thByDevice[id], showAll, multi, offlineById[id])).join("")}
         <div class="form-hint" style="margin-top:6px">최근 추이 · 점선=임계값 · 1분마다 자동 갱신</div>`;
       $("#cares-refresh", box).onclick = () => renderInto(box, canWrite);
       $("#cares-mode", box).onclick = () => {

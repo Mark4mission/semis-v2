@@ -1157,7 +1157,7 @@ function makeFetchStub(server) {
   }
   await ta("CA06 위젯 렌더: 임계치 초과 강조 (fetch 스텁)", async () => {
     const mkReading = (temp) => ({ document: { fields: {
-      timestamp: { timestampValue: "2026-07-16T10:00:00Z" },
+      timestamp: { timestampValue: new Date().toISOString() },
       temp: { doubleValue: temp }, humidity: { integerValue: "50" },
       co2: { integerValue: "600" }, pm25: { integerValue: "10" }, pm10: { integerValue: "20" },
       pm1: { integerValue: "5" }, tvoc: { doubleValue: 0.1 }, hcho: { doubleValue: 0.05 }
@@ -1194,7 +1194,7 @@ function makeFetchStub(server) {
 
   await ta("CA08 전체 정상 시 축소 모드: 그리드 없이 한 줄 안내", async () => {
     const mkReading = (temp) => ({ document: { fields: {
-      timestamp: { timestampValue: "2026-07-16T10:00:00Z" },
+      timestamp: { timestampValue: new Date().toISOString() },
       temp: { doubleValue: temp }, humidity: { integerValue: "50" },
       co2: { integerValue: "600" }, pm25: { integerValue: "10" }, pm10: { integerValue: "20" },
       pm1: { integerValue: "5" }, tvoc: { doubleValue: 0.1 }, hcho: { doubleValue: 0.05 }
@@ -1225,7 +1225,7 @@ function makeFetchStub(server) {
     // deviceId 포함 리딩 생성 헬퍼
     const mk = (deviceId, temp) => ({ document: { fields: {
       deviceId: { stringValue: deviceId },
-      timestamp: { timestampValue: "2026-07-24T10:00:00Z" },
+      timestamp: { timestampValue: new Date().toISOString() },
       temp: { doubleValue: temp }, humidity: { integerValue: "50" },
       co2: { integerValue: "600" }, pm25: { integerValue: "10" }, pm10: { integerValue: "20" },
       pm1: { integerValue: "5" }, tvoc: { doubleValue: 0.1 }, hcho: { doubleValue: 0.05 }
@@ -1268,7 +1268,7 @@ function makeFetchStub(server) {
 
   await ta("CA10 멀티센서: 단일 기기(구버전 무 deviceId)는 기존 레이아웃 유지", async () => {
     const mk = (temp) => ({ document: { fields: {
-      timestamp: { timestampValue: "2026-07-24T10:00:00Z" },
+      timestamp: { timestampValue: new Date().toISOString() },
       temp: { doubleValue: temp }, humidity: { integerValue: "50" },
       co2: { integerValue: "600" }, pm25: { integerValue: "10" }, pm10: { integerValue: "20" },
       pm1: { integerValue: "5" }, tvoc: { doubleValue: 0.1 }, hcho: { doubleValue: 0.05 }
@@ -1290,6 +1290,37 @@ function makeFetchStub(server) {
     await e.w.SemisCares.renderInto(box, true);
     eq(qa(e, ".cares-device").length, 0, "단일 기기는 기기 블록 래퍼 없음(기존 레이아웃)");
     ok(q(e, ".cares-allok"), "정상 시 한 줄 안내 유지");
+    e.Sync.stop();
+  });
+
+  await ta("CA11 오프라인 감지: online:false 기기는 값 대신 오프라인 표시 + 초과 집계 제외", async () => {
+    const mk = (deviceId, temp, online) => { const f = {
+      deviceId: { stringValue: deviceId },
+      timestamp: { timestampValue: new Date().toISOString() },
+      temp: { doubleValue: temp }, humidity: { integerValue: "50" },
+      co2: { integerValue: "600" }, pm25: { integerValue: "10" }, pm10: { integerValue: "20" },
+      pm1: { integerValue: "5" }, tvoc: { doubleValue: 0.1 }, hcho: { doubleValue: 0.05 }
+    }; if (online != null) f.online = { booleanValue: online }; return { document: { fields: f } }; };
+    const stub = (url, opts = {}) => {
+      const u = String(url);
+      if (u.includes(":runQuery")) {
+        const col = JSON.parse(opts.body).structuredQuery.from[0].collectionId;
+        if (col === "sensorLogs") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([
+          // 1호기 온라인 정상, 2호기 오프라인(online:false)이지만 캐시 temp=45(초과여야 하나 오프라인이라 집계 제외)
+          mk("ICN_CARGO_B", 24, true), mk("ICN_ETD_CASE", 45, false),
+          mk("ICN_CARGO_B", 25, true), mk("ICN_ETD_CASE", 44, false)
+        ]) });
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      }
+      if (u.includes("sensorThresholds")) return Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+    };
+    const e = makeEnv({ fetch: stub, preLS: { "semis2:caresKey": "test-api-key" } });
+    loginAs(e, "hq");
+    const box = q(e, "#cares-box");
+    await e.w.SemisCares.renderInto(box, true);
+    ok(box.innerHTML.includes("오프라인"), "오프라인 기기 표시");
+    ok(!box.innerHTML.includes("임계치 초과"), "오프라인 캐시값은 초과로 집계 안 함");
     e.Sync.stop();
   });
 
