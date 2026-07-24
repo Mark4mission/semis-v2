@@ -377,6 +377,12 @@
   const evIcons = (e) => (e.vehicle ? "🚗" : "") + (e.room ? "🏢" : "") +
     ((e.reminders || []).length ? "⏰" : "") + (isRepeat(e) ? "🔁" : "");
 
+  /* 완료 체크: 완료 시 ✓(항상 표시) / 미완료 시 ○(호버 시에만 노출, 클릭으로 완료 처리) */
+  function checkHTML(e, canWrite) {
+    if (e.done) return `<span class="chip-check done"${canWrite ? ` data-donetoggle="${esc(e.id)}"` : ""} title="완료 — 클릭 시 해제">✓</span>`;
+    return canWrite ? `<span class="chip-check todo" data-donetoggle="${esc(e.id)}" title="완료 표시">○</span>` : "";
+  }
+
   function barHTML(it, canWrite, style) {
     const e = it.ev;
     if (!e.id && e.gcalId) {
@@ -388,7 +394,7 @@
     return `<div class="cal-bar ev-${esc(e.color || "blue")}${e.done ? " done" : ""}${it.contL ? " cont-l" : ""}${it.contR ? " cont-r" : ""}"
         style="${style}" data-ev="${esc(e.id)}" data-from="${esc(it.from)}" ${canWrite ? 'draggable="true"' : ""}
         title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}">
-      ${canWrite ? `<span class="chip-check" data-donetoggle="${esc(e.id)}" title="완료 표시">${e.done ? "✓" : "○"}</span>` : (e.done ? '<span class="chip-check">✓</span>' : "")}
+      ${checkHTML(e, canWrite)}
       ${!e.allDay && e.time ? `<span class="chip-time">${esc(e.time)}</span>` : ""}
       <span class="chip-title">${evIcons(e)}${esc(e.title)}</span>
       ${e.assignee ? `<span class="chip-tag" title="${esc(e.assignee)}">${esc(tagOf(e.assignee))}</span>` : ""}
@@ -405,7 +411,7 @@
     return `<div class="cal-tchip ev-${esc(e.color || "blue")}${e.done ? " done" : ""}" style="${style}"
         data-ev="${esc(e.id)}" data-from="${esc(it.from)}" ${canWrite ? 'draggable="true"' : ""}
         title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}">
-      ${canWrite ? `<span class="chip-check" data-donetoggle="${esc(e.id)}" title="완료 표시">${e.done ? "✓" : "○"}</span>` : (e.done ? '<span class="chip-check">✓</span>' : "")}
+      ${checkHTML(e, canWrite)}
       <span class="chip-dot"></span>
       <span class="chip-time">${esc(e.time || "")}</span>
       <span class="chip-title">${evIcons(e)}${esc(e.title)}</span>
@@ -497,7 +503,7 @@
     }
     return `<div class="cal-chip ev-${esc(e.color || "blue")}${e.done ? " done" : ""}"
         data-ev="${esc(e.id)}" data-from="${esc(dayIso)}" ${canWrite ? 'draggable="true"' : ""} title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}">
-      ${canWrite ? `<span class="chip-check" data-donetoggle="${esc(e.id)}" title="완료 표시">${e.done ? "✓" : "○"}</span>` : (e.done ? '<span class="chip-check">✓</span>' : "")}
+      ${checkHTML(e, canWrite)}
       ${timeTxt}
       <span class="chip-title">${cont}${evIcons(e)}${esc(e.title)}${cont2}</span>
       ${!noTag && e.assignee ? `<span class="chip-tag" title="${esc(e.assignee)}">${esc(tagOf(e.assignee))}</span>` : ""}

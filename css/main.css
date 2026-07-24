@@ -443,7 +443,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 }
 .cal-chip .chip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; letter-spacing: -.2px; }
 .cal-chip .chip-time { font-size: .6rem; opacity: .85; white-space: nowrap; }
-.cal-chip .chip-check { font-size: .72rem; cursor: pointer; opacity: .9; }
+.chip-check { font-size: .72rem; cursor: pointer; flex-shrink: 0; line-height: 1; }
+.chip-check.done { opacity: .9; }
+.chip-check.todo { display: none; }              /* 미완료: 평소엔 숨김(호버 시 노출) */
+.cal-bar:hover .chip-check.todo,
+.cal-tchip:hover .chip-check.todo,
+.cal-chip:hover .chip-check.todo,
+.cal-agenda-row:hover .chip-check.todo { display: inline-block; opacity: .55; }
 .cal-chip.dragging { opacity: .4; }
 .cal-chip.done { opacity: .45; filter: saturate(.4); }
 .cal-chip.done .chip-title { text-decoration: line-through; }

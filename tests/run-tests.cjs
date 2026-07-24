@@ -746,12 +746,15 @@ function makeFetchStub(server) {
       q(e, "#cal-today").click();
       eq(C.getAnchor(), localToday());
     });
-    t("C35 칩 완료 토글 버튼(○/✓)", () => {
+    t("C35 칩 완료 체크: 미완료 ○(호버 노출)·완료 ✓", () => {
       C.setAnchor("2026-07-15"); C.setView("month"); e.S.renderView();
       const tog = qa(e, '[data-donetoggle="ev1"]')[0];
-      ok(tog);
+      ok(tog, "미완료 시에도 토글 요소는 존재(클릭 가능)");
+      ok(tog.className.includes("todo"), "미완료 체크는 todo(평소 숨김) 클래스");
       tog.click();
       eq(D.schedules.find(x => x.id === "ev1").done, true);
+      const done = qa(e, '[data-donetoggle="ev1"]')[0];
+      ok(done && done.className.includes("done") && done.textContent.includes("✓"), "완료 후 ✓ 표시");
     });
     t("C35a 전체화면: 토글로 cal-fullscreen 진입/해제 + 그리드 유지", () => {
       C.setAnchor("2026-07-15"); C.setView("month"); e.S.renderView();
