@@ -987,7 +987,7 @@
         const n = $("#eq-sync");
         if (!n) return;
         n.textContent = cares.err ? "CARES 연동 불가" :
-          cares.ts ? "CARES " + cares.equips.length + "대 연동 · " + new Date(cares.ts).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) + " 갱신" : "CARES 연동 중…";
+          cares.ts ? "CARES " + cares.equips.length + "대 연동 · " + new Date(cares.ts).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" , hour12: false }) + " 갱신" : "CARES 연동 중…";
       };
 
       $$("[data-etab]").forEach(b => b.onclick = () => { tab = b.dataset.etab; SeMIS.renderView(); });
