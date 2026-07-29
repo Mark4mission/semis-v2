@@ -1283,6 +1283,10 @@ a.ct-tel:hover { color: var(--primary); }
 .cn-sign-foot { text-align: center; font-size: .78rem; color: var(--text-3); margin-top: 16px; }
 /* v2.30 자가등록 */
 .cn-sign-addbtn { display: block; width: 100%; margin-top: 10px; }
+/* v2.31 회차 선택 */
+.cn-sign-switch { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; flex-wrap: wrap; }
+.cn-sign-switch label { font-size: .82rem; font-weight: 700; color: var(--text-2); flex-shrink: 0; }
+.cn-sign-switch select { flex: 1; min-width: 180px; }
 .cn-sp-past { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px;
   font-size: .85rem; color: var(--text-2); cursor: pointer; user-select: none; }
 .cn-sp-past input { width: auto; margin: 0; }

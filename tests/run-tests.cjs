@@ -4561,6 +4561,40 @@ function makeFetchStub(server) {
     eq(d[3].attendees[0].role, "차장", "이후 회의(m4)는 미변경");
   });
 
+  t("CN27 회차 선택: 지난 회의 열람·본인 정보만 저장(서명 유지)·이번 회의 복귀", () => {
+    const e = makeEnv();
+    e.S.data.council = [
+      { id: "m1", round: 1, date: "2026-03-19", place: "B동",
+        attendees: [{ cat: "유지보수", org: "인씨스", name: "이정비", role: "대리", note: "", sign: "https://ex.com/s1.png" }],
+        cases: [], actions: [], files: [] },
+      { id: "m2", round: 2, date: "2026-07-29", place: "B동", attendees: [], cases: [], actions: [], files: [] }
+    ];
+    submitLogin(e, e.S.signCodeFor(e.S.data.council[1]));
+    const sel = q(e, "#cn-sign-meet");
+    ok(sel, "회차 선택 존재");
+    eq(qa(e, "#cn-sign-meet option").length, 2, "전체 회차 옵션");
+    eq(sel.value, "m2", "이번 회의 기본 선택");
+    ok(q(e, "#view").textContent.indexOf("이번 서명 회의") >= 0, "이번 회의 표시");
+    // 지난 회의로 전환 (코드 재입력 없음)
+    sel.value = "m1"; sel.onchange();
+    ok(q(e, "#view").textContent.indexOf("이정비") >= 0, "지난 회의 명단 표시");
+    ok(q(e, "#view").textContent.indexOf("지난 회의 명단") >= 0, "지난 회의 안내");
+    ok(q(e, "#cn-sign-home"), "이번 회의로 버튼");
+    // 본인 항목 → 정보만 저장 (서명 유지)
+    q(e, ".cn-sign-list [data-sign]").click();
+    ok(q(e, "#cn-sp-save"), "정보만 저장 버튼(서명 보유자)");
+    q(e, "#cn-sp-role").value = "과장";
+    q(e, "#cn-sp-save").click();
+    const a1 = e.S.data.council[0].attendees[0];
+    eq(a1.role, "과장", "지난 회의 직책 수정");
+    eq(a1.sign, "https://ex.com/s1.png", "기존 서명 유지");
+    eq(q(e, "#cn-sign-meet").value, "m1", "저장 후에도 선택 회차 유지");
+    // 이번 회의 복귀
+    q(e, "#cn-sign-home").click();
+    eq(q(e, "#cn-sign-meet").value, "m2", "이번 회의 복귀");
+    ok(!q(e, "#cn-sign-home"), "복귀 후 버튼 미표시");
+  });
+
   /* ══════════ [CR*] 부적합·시정조치 (CAR·CAP·FAT) v2.29 ══════════ */
   t("CR01 normalize: cars 배열 + carCfg 객체 + insp-car 메뉴(vis hq, grp-inspect)", () => {
     const e = makeEnv();
