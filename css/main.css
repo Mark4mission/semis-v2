@@ -185,9 +185,17 @@ input, select, textarea { font-family: inherit; font-size: .95rem; }
 /* 메인 */
 .main { margin-left: var(--sidebar-w); padding-top: var(--header-h); min-height: 100vh; }
 .view { padding: 24px; max-width: 1180px; margin: 0 auto; animation: fade .2s ease; }
-/* v2.31.1: 넓게 쓰는 화면(일정관리) — 고해상도 모니터의 과도한 좌우 여백 제거 */
+/* v2.31.2: 라우트별 콘텐츠 폭 (app.js VIEW_WIDTH) — 고해상도 모니터의 과도한 좌우 여백 제거
+   wide = 캘린더·다열 표·칸반·문서 뷰어 / mid = 목록 중간 밀도 / 기본(1180px) = 문서·폼 읽기형 */
 .view.view-wide { max-width: 2100px; padding-left: 18px; padding-right: 18px; }
-@media (max-width: 900px) { .view.view-wide { padding-left: 14px; padding-right: 14px; } }
+.view.view-mid  { max-width: 1560px; padding-left: 20px; padding-right: 20px; }
+@media (max-width: 900px) {
+  .view.view-wide, .view.view-mid { padding-left: 14px; padding-right: 14px; }
+}
+/* 가독성 보호: 넓은 화면에서도 서식 본문·긴 문단은 읽기 폭 유지 */
+.view.view-wide .nb-editor, .view.view-mid .nb-editor,
+.view.view-wide .notice-html, .view.view-mid .notice-html { max-width: 1040px; }
+.view.view-wide .page-desc, .view.view-mid .page-desc { max-width: 900px; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
 /* ═══════ 공통 컴포넌트 ═══════ */

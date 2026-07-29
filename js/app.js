@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.31.1";
+  const VERSION = "2.31.2";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -702,18 +702,32 @@ const SeMIS = (() => {
     return DATA.menus.find(x => x.type === "module" && x.module === moduleId);
   }
 
-  /* v2.31.1: 넓은 화면(고해상도)에서 좌우 여백을 줄이고 표시 공간을 넓히는 라우트 */
-  const WIDE_ROUTES = ["schedule"];
+  /* v2.31.2: 라우트별 콘텐츠 폭 — 고해상도 모니터의 과도한 좌우 여백 제거
+     wide(2100px) = 캘린더·다열 표·칸반·문서 뷰어 등 밀집형
+     mid(1560px)  = 목록/표 중간 밀도
+     (미지정 = 기본 1180px) — 폭 조정은 이 표만 수정하면 됩니다. */
+  const VIEW_WIDTH = {
+    schedule: "wide", inspection: "wide", carcap: "wide", equipment: "wide",
+    kpi: "wide", settings: "wide", policy: "wide", dashboard: "wide",
+    passes: "mid", branches: "mid", "contracts-mgmt": "mid", training: "mid",
+    certs: "mid", contacts: "mid", council: "mid", billing: "mid",
+    "regs-intl": "mid", "regs-own": "mid", vault: "mid"
+  };
+  function applyViewWidth(view, route) {
+    const tier = String(route).indexOf("embed/") === 0 ? "wide" : (VIEW_WIDTH[route] || "");
+    view.classList.toggle("view-wide", tier === "wide");
+    view.classList.toggle("view-mid", tier === "mid");
+  }
 
   function renderView() {
     let route = currentRoute();
     const view = $("#view");
     view.innerHTML = "";
-    view.classList.toggle("view-wide", WIDE_ROUTES.indexOf(route) >= 0);
+    applyViewWidth(view, route);
     if (currentUser && currentUser.role === "vendor") {
       // v2.16: 협력업체 계정은 대금 청구 화면만 접근 가능 (다른 모든 라우트 차단)
       route = "billing";
-      view.classList.remove("view-wide");
+      applyViewWidth(view, route);
       const def = modules.billing || modules.dashboard;
       def.render(view);
       highlightNav(route);
@@ -726,7 +740,7 @@ const SeMIS = (() => {
     if (currentUser && currentUser.role === "signer") {
       // v2.26/v2.29.2: 서명 참석자 — 협의회(signMeetingId) 또는 CAR 접수확인(signCarId) 화면만 접근
       const isCar = !!currentUser.signCarId;
-      view.classList.remove("view-wide");
+      view.classList.remove("view-wide"); view.classList.remove("view-mid"); // 서명 화면은 기본 폭(모바일 중심)
       const def = isCar ? (modules.carcap || modules.dashboard) : (modules.council || modules.dashboard);
       def.render(view);
       highlightNav(isCar ? "carcap" : "council");

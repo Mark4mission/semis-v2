@@ -4968,29 +4968,49 @@ function makeFetchStub(server) {
     ok(rec.risk && rec.risk.L === 4 && rec.risk.S === "B", "저장: 위험도 4B");
   });
 
-  /* ══════════ [W] 넓은 레이아웃 (v2.31.1) ══════════ */
+  /* ══════════ [W] 콘텐츠 폭 티어 (v2.31.2) ══════════ */
 
-  t("W1 일정관리 진입 시 #view에 view-wide 부여", () => {
+  const WIDE_EXPECT = ["schedule", "inspection", "carcap", "equipment", "kpi", "settings", "policy", "dashboard"];
+  const MID_EXPECT = ["passes", "branches", "contracts-mgmt", "training", "certs", "contacts", "council", "billing", "regs-intl", "regs-own", "vault"];
+
+  t("W1 밀집형 모듈은 view-wide", () => {
     const e = makeEnv();
-    loginAs(e, "manager");
-    go(e, "schedule");
-    ok(q(e, "#view").classList.contains("view-wide"), "일정관리는 넓은 레이아웃");
+    loginAs(e, "admin");
+    WIDE_EXPECT.forEach(r => {
+      go(e, r);
+      const cl = q(e, "#view").classList;
+      ok(cl.contains("view-wide"), r + " → view-wide");
+      ok(!cl.contains("view-mid"), r + " → mid 클래스 미부여");
+    });
   });
 
-  t("W2 다른 모듈은 기본 폭 유지(회귀)", () => {
+  t("W2 중간 밀도 모듈은 view-mid", () => {
     const e = makeEnv();
-    loginAs(e, "manager");
-    go(e, "schedule");
-    go(e, "dashboard");
-    ok(!q(e, "#view").classList.contains("view-wide"), "대시보드는 기본 폭");
-    go(e, "contacts");
-    ok(!q(e, "#view").classList.contains("view-wide"), "연락망은 기본 폭");
+    loginAs(e, "admin");
+    MID_EXPECT.forEach(r => {
+      go(e, r);
+      const cl = q(e, "#view").classList;
+      ok(cl.contains("view-mid"), r + " → view-mid");
+      ok(!cl.contains("view-wide"), r + " → wide 클래스 미부여");
+    });
   });
 
-  t("W3 view-wide CSS 규칙 존재 및 기본 .view 폭 불변", () => {
+  t("W3 티어 전환 시 이전 클래스 제거(잔류 회귀)", () => {
+    const e = makeEnv();
+    loginAs(e, "admin");
+    go(e, "schedule");
+    go(e, "vault");
+    ok(!q(e, "#view").classList.contains("view-wide"), "wide→mid 전환 시 wide 제거");
+    go(e, "schedule");
+    ok(!q(e, "#view").classList.contains("view-mid"), "mid→wide 전환 시 mid 제거");
+  });
+
+  t("W4 CSS 폭 규칙 및 가독성 보호", () => {
     const css = read("css/main.css");
-    ok(/\.view\.view-wide\s*\{[^}]*max-width:\s*2100px/.test(css), "view-wide 최대폭 규칙");
+    ok(/\.view\.view-wide\s*\{[^}]*max-width:\s*2100px/.test(css), "wide 최대폭");
+    ok(/\.view\.view-mid\s*\{[^}]*max-width:\s*1560px/.test(css), "mid 최대폭");
     ok(/\.view\s*\{[^}]*max-width:\s*1180px/.test(css), "기본 .view 폭 유지");
+    ok(/\.notice-html\s*\{\s*max-width:\s*1040px/.test(css.replace(/\s+/g, " ")) || css.includes(".notice-html { max-width: 1040px; }"), "본문 읽기 폭 제한");
   });
 
   /* ══════════ 결과 ══════════ */
