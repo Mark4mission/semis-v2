@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.31.0";
+  const VERSION = "2.31.1";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -702,13 +702,18 @@ const SeMIS = (() => {
     return DATA.menus.find(x => x.type === "module" && x.module === moduleId);
   }
 
+  /* v2.31.1: 넓은 화면(고해상도)에서 좌우 여백을 줄이고 표시 공간을 넓히는 라우트 */
+  const WIDE_ROUTES = ["schedule"];
+
   function renderView() {
     let route = currentRoute();
     const view = $("#view");
     view.innerHTML = "";
+    view.classList.toggle("view-wide", WIDE_ROUTES.indexOf(route) >= 0);
     if (currentUser && currentUser.role === "vendor") {
       // v2.16: 협력업체 계정은 대금 청구 화면만 접근 가능 (다른 모든 라우트 차단)
       route = "billing";
+      view.classList.remove("view-wide");
       const def = modules.billing || modules.dashboard;
       def.render(view);
       highlightNav(route);
@@ -721,6 +726,7 @@ const SeMIS = (() => {
     if (currentUser && currentUser.role === "signer") {
       // v2.26/v2.29.2: 서명 참석자 — 협의회(signMeetingId) 또는 CAR 접수확인(signCarId) 화면만 접근
       const isCar = !!currentUser.signCarId;
+      view.classList.remove("view-wide");
       const def = isCar ? (modules.carcap || modules.dashboard) : (modules.council || modules.dashboard);
       def.render(view);
       highlightNav(isCar ? "carcap" : "council");

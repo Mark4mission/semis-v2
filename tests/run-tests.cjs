@@ -4968,6 +4968,31 @@ function makeFetchStub(server) {
     ok(rec.risk && rec.risk.L === 4 && rec.risk.S === "B", "저장: 위험도 4B");
   });
 
+  /* ══════════ [W] 넓은 레이아웃 (v2.31.1) ══════════ */
+
+  t("W1 일정관리 진입 시 #view에 view-wide 부여", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    go(e, "schedule");
+    ok(q(e, "#view").classList.contains("view-wide"), "일정관리는 넓은 레이아웃");
+  });
+
+  t("W2 다른 모듈은 기본 폭 유지(회귀)", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    go(e, "schedule");
+    go(e, "dashboard");
+    ok(!q(e, "#view").classList.contains("view-wide"), "대시보드는 기본 폭");
+    go(e, "contacts");
+    ok(!q(e, "#view").classList.contains("view-wide"), "연락망은 기본 폭");
+  });
+
+  t("W3 view-wide CSS 규칙 존재 및 기본 .view 폭 불변", () => {
+    const css = read("css/main.css");
+    ok(/\.view\.view-wide\s*\{[^}]*max-width:\s*2100px/.test(css), "view-wide 최대폭 규칙");
+    ok(/\.view\s*\{[^}]*max-width:\s*1180px/.test(css), "기본 .view 폭 유지");
+  });
+
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
   console.log(`  SeMIS v2.9 테스트: ${passed + failed}건 실행`);

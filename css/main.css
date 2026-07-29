@@ -185,6 +185,9 @@ input, select, textarea { font-family: inherit; font-size: .95rem; }
 /* 메인 */
 .main { margin-left: var(--sidebar-w); padding-top: var(--header-h); min-height: 100vh; }
 .view { padding: 24px; max-width: 1180px; margin: 0 auto; animation: fade .2s ease; }
+/* v2.31.1: 넓게 쓰는 화면(일정관리) — 고해상도 모니터의 과도한 좌우 여백 제거 */
+.view.view-wide { max-width: 2100px; padding-left: 18px; padding-right: 18px; }
+@media (max-width: 900px) { .view.view-wide { padding-left: 14px; padding-right: 14px; } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
 /* ═══════ 공통 컴포넌트 ═══════ */
