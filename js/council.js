@@ -11,7 +11,9 @@
 
    데이터: DATA.council = [{ id, round(회차), date, time, place,
      chair(주재), scribe(작성),
-     attendees:[{ cat(구분), org(소속), name(성명), role(직책) }],
+     attendees:[{ cat(구분), org(소속), name(성명), role(직책), sign(서명URL) }],
+       — v2.30: 참석자 자가등록. 서명 화면에서 본인이 이름·소속·직책 입력 후 서명.
+         구분(cat)은 소속에서 자동 매핑(orgToCat). 관리자 사전등록도 병행 가능.
      agenda(안건),
      cases:[{ equip(장비), symptom(증상), cause(근본원인), action(조치) }],
      env(사용환경 개선), proposals(제안·토의),
@@ -35,6 +37,21 @@
   const CAT_HINT = "제조사=뉴원S&T·인씨스 등 / 유지보수=프로에스콤 등 / 운영자=화물터미널 / 본사=항공화물·항공보안파트";
 
   const DEFAULT_PLACE = "인천화물터미널 B동";
+
+  /* v2.30: 서명 자가등록 — 소속 기본 선택지 + 소속→구분 자동 매핑 */
+  const ORG_PRESETS = ["항공보안파트", "인천화물팀", "프로에스콤", "인씨스", "뉴원에스엔티", "AAP", "국가기관"];
+  const ORG_CAT = { "항공보안파트": "본사", "인천화물팀": "운영자", "프로에스콤": "유지보수", "인씨스": "유지보수", "뉴원에스엔티": "제조사", "AAP": "운영자", "국가기관": "기타" };
+  function orgToCat(org) {
+    const o = String(org || "").trim();
+    if (!o) return "기타";
+    if (ORG_CAT[o]) return ORG_CAT[o];
+    const c = o.replace(/\s+/g, "").toLowerCase();
+    if (c.indexOf("항공보안") >= 0 || c.indexOf("본사") >= 0) return "본사";
+    if (c.indexOf("화물") >= 0 || c.indexOf("aap") >= 0) return "운영자";
+    if (c.indexOf("프로에스콤") >= 0 || c.indexOf("인씨스") >= 0) return "유지보수";
+    if (c.indexOf("뉴원") >= 0) return "제조사";
+    return "기타";
+  }
 
   /* 첨부 제약 (branches 교육현황과 동일) */
   const MAX_FILES = 20;
@@ -290,7 +307,7 @@
       </div>
       ${canWrite() ? `<div class="cn-signcode">
         <span class="cn-signcode-ic">📱</span>
-        <div>참석자 서명 안내 — 모바일에서 <b>semis.pe.kr</b> 접속 후 암호 <b class="cn-signcode-code">${esc(SeMIS.signCodeFor(x))}</b> 입력 → 이 회의 서명 화면에서 본인 서명을 그려 넣습니다. <span class="cn-signcode-copy" data-copy="${esc(SeMIS.signCodeFor(x))}" title="코드 복사">📋 복사</span></div>
+        <div>참석자 서명 안내 — 모바일에서 <b>semis.pe.kr</b> 접속 후 암호 <b class="cn-signcode-code">${esc(SeMIS.signCodeFor(x))}</b> 입력 → 본인 이름을 선택(명단에 없으면 직접 입력)하고 소속·직책 확인 후 서명합니다. 사전등록은 필수가 아닙니다. <span class="cn-signcode-copy" data-copy="${esc(SeMIS.signCodeFor(x))}" title="코드 복사">📋 복사</span></div>
       </div>` : ""}
       ${sec("참석자", attHTML)}
       ${sec("안건", richView(x.agendaHtml, x.agenda))}
@@ -714,7 +731,62 @@
   }
 
   /* ══════════ 서명 모드 (모바일 참석자) ══════════ */
-  /* 특정 협의회 회의일(YYYYMMDD) 코드로 로그인한 참석자에게 보이는 서명 전용 화면 */
+  /* 회의별 6자리 코드로 로그인한 참석자 화면 (v2.30 자가등록):
+     - 명단(사전등록·기존 서명자)에 있으면 → 본인 선택 → 정보 확인·수정 → 서명
+     - 명단에 없으면 → [직접 입력 후 서명] → 이름·소속·직책 입력(이전 참석 이력 있으면 이름 선택 시 자동 채움) → 서명 */
+
+  /* 전 회의 참석 이력 디렉터리 — 같은 이름은 최신(회의일) 기록 우선 */
+  function knownPeople() {
+    const dir = new Map();
+    all().slice().sort((x, y) =>
+      String(y.date || "").localeCompare(String(x.date || "")) ||
+      (Number(y.round) || 0) - (Number(x.round) || 0))
+      .forEach(mm => (mm.attendees || []).forEach(a => {
+        const nm = String(a.name || "").trim();
+        if (!nm || dir.has(nm)) return;
+        dir.set(nm, { name: nm, cat: catNorm(a.cat) || orgToCat(a.org), org: String(a.org || "").trim(), role: String(a.role || "").trim() });
+      }));
+    return dir;
+  }
+
+  /* 지난 회의(현재 회의 제외·이후 회의 제외)의 동명 참석 행 순회 */
+  function forEachPastEntry(meetingId, name, fn) {
+    const nm = String(name || "").trim();
+    if (!nm) return;
+    const cur = all().find(c => c.id === meetingId);
+    const curDate = cur ? String(cur.date || "") : "";
+    all().forEach(mm => {
+      if (!mm || mm.id === meetingId) return;
+      if (curDate && String(mm.date || "") > curDate) return; // 이후 회의 제외
+      (mm.attendees || []).forEach(a => { if (String(a.name || "").trim() === nm) fn(a, mm); });
+    });
+  }
+
+  /* 지난 회의 명단에 소속·직책·구분 일괄 반영 (서명은 건드리지 않음) */
+  function propagatePersonInfo(meetingId, name, rec) {
+    let n = 0;
+    forEachPastEntry(meetingId, name, (a) => { a.cat = rec.cat; a.org = rec.org; a.role = rec.role; n++; });
+    if (n) SeMIS.save();
+    return n;
+  }
+
+  /* 서명+정보 저장 — 최신 상태 재조회 후 반영. idx<0(신규)이면 동명 기존 행에 병합, 없으면 추가 */
+  function saveSignEntry(meetingId, idx, person, signVal, alsoPast) {
+    const m = all().find(c => c.id === meetingId);
+    if (!m) return false;
+    if (!Array.isArray(m.attendees)) m.attendees = [];
+    const nm = String(person.name || "").trim();
+    if (!nm) return false;
+    const rec = { cat: person.cat || orgToCat(person.org), org: String(person.org || "").trim(), name: nm, role: String(person.role || "").trim() };
+    let i = idx;
+    if (i < 0) i = m.attendees.findIndex(a => String(a.name || "").trim() === nm);
+    if (i >= 0 && m.attendees[i]) Object.assign(m.attendees[i], rec, signVal ? { sign: signVal } : {});
+    else m.attendees.push(Object.assign({ note: "", sign: signVal || "" }, rec));
+    if (alsoPast) propagatePersonInfo(meetingId, nm, rec);
+    SeMIS.save();
+    return true;
+  }
+
   function renderSigning(root, meetingId) {
     const m = all().find(c => c.id === meetingId);
     if (!m) { root.innerHTML = '<div class="empty">회의 정보를 찾을 수 없습니다. 진행자에게 문의하세요.</div>'; return; }
@@ -726,7 +798,7 @@
           <div class="cn-sign-title">🤝 ${esc(meetTitle(m))} · 참석 서명</div>
           <div class="cn-sign-meta">📅 ${esc(m.date || "")}${m.time ? " " + esc(m.time) : ""} · 📍 ${esc(m.place || "")}</div>
         </div>
-        <div class="cn-sign-guide">아래에서 <b>본인 이름</b>을 찾아 <b>[서명하기]</b>를 누르고 화면에 서명해 주세요. <span class="cn-sign-count">${signed}/${atts.length}명 완료</span></div>
+        <div class="cn-sign-guide">명단에서 <b>본인 이름</b>을 찾아 <b>[서명하기]</b> → 소속·직책 확인 후 서명해 주세요.<br>명단에 없으면 아래 <b>[직접 입력 후 서명]</b>으로 등록합니다. <span class="cn-sign-count">${signed}/${atts.length}명 완료</span></div>
         <div class="cn-sign-list">
           ${atts.length ? atts.map((a, i) => `
             <div class="cn-sign-item${a.sign ? " done" : ""}">
@@ -739,11 +811,93 @@
                   ? `<img class="cn-sign-thumb" src="${esc(a.sign)}" alt="서명"><span class="cn-sign-ok">✅ 완료</span><button class="btn btn-ghost btn-sm" data-sign="${i}">다시</button>`
                   : `<button class="btn btn-primary btn-sm" data-sign="${i}">✍️ 서명하기</button>`}
               </div>
-            </div>`).join("") : '<div class="empty">등록된 참석자가 없습니다. 진행자에게 문의하세요.</div>'}
+            </div>`).join("") : '<div class="empty">아직 등록된 참석자가 없습니다. 아래 버튼으로 본인 정보를 입력하고 서명해 주세요.</div>'}
         </div>
+        <button class="btn btn-ghost cn-sign-addbtn" id="cn-sign-new">➕ 명단에 없어요 — 직접 입력 후 서명</button>
         <div class="cn-sign-foot">서명은 저장 즉시 반영됩니다. 완료 후 창을 닫으셔도 됩니다.</div>
       </div>`;
-    $$(".cn-sign-list [data-sign]").forEach(btn => btn.onclick = () => openSignPad(meetingId, Number(btn.dataset.sign)));
+    $$(".cn-sign-list [data-sign]").forEach(btn => btn.onclick = () => personModal(meetingId, Number(btn.dataset.sign)));
+    $("#cn-sign-new").onclick = () => personModal(meetingId, -1);
+  }
+
+  /* 본인 정보 확인·입력 모달 — idx>=0: 명단의 본인(확인·수정), idx<0: 미등록자 직접 입력 */
+  function personModal(meetingId, idx) {
+    const m = all().find(c => c.id === meetingId);
+    if (!m) return;
+    const a = (idx >= 0 && Array.isArray(m.attendees)) ? m.attendees[idx] : null;
+    if (idx >= 0 && !a) return;
+    const dir = knownPeople();
+    const init = a
+      ? { name: String(a.name || ""), org: String(a.org || ""), role: String(a.role || ""), cat: catNorm(a.cat) || orgToCat(a.org) }
+      : { name: "", org: "", role: "", cat: "" };
+    const orgOpts = ORG_PRESETS.slice();
+    dir.forEach(p => { if (p.org && orgOpts.indexOf(p.org) < 0) orgOpts.push(p.org); });
+    if (init.org && orgOpts.indexOf(init.org) < 0) orgOpts.push(init.org);
+    openModal(`
+      <h3>✍️ 참석 서명${idx < 0 ? " — 참석자 등록" : ""}</h3>
+      <div class="form-hint" style="margin-bottom:10px">${idx >= 0
+        ? "아래 정보를 확인하고, 바뀐 내용이 있으면 수정한 뒤 서명을 진행해 주세요."
+        : "본인 이름을 입력하고 소속·직책을 입력해 주세요. 이전에 참석한 적이 있으면 이름 선택 시 자동으로 채워집니다."}</div>
+      <div class="form-row"><label>성명 *</label>
+        <input id="cn-sp-name" value="${esc(init.name)}" maxlength="40" autocomplete="off"${idx < 0 ? ' list="cn-sp-names" placeholder="이름 입력 또는 선택"' : ""}>
+        ${idx < 0 ? `<datalist id="cn-sp-names">${[...dir.values()].map(p =>
+          `<option value="${esc(p.name)}">${esc(p.org || "")}${p.role ? " · " + esc(p.role) : ""}</option>`).join("")}</datalist>` : ""}</div>
+      <div class="form-row"><label>소속 *</label>
+        <select id="cn-sp-org">
+          <option value="">선택하세요</option>
+          ${orgOpts.map(o => `<option value="${esc(o)}"${o === init.org ? " selected" : ""}>${esc(o)}</option>`).join("")}
+          <option value="__etc__">직접 입력…</option>
+        </select>
+        <input id="cn-sp-org-etc" maxlength="60" placeholder="소속 직접 입력" style="display:none;margin-top:6px"></div>
+      <div class="form-row"><label>직책</label>
+        <input id="cn-sp-role" value="${esc(init.role)}" maxlength="40" placeholder="예: 과장 / 팀장"></div>
+      <div class="form-row"><label>구분</label>
+        <div><span id="cn-sp-cat" class="badge ${CAT_BADGE[init.cat] || "badge-gray"}">${esc(init.cat || "자동")}</span>
+        <span class="form-hint" style="display:inline;margin-left:6px">소속에 따라 자동 지정됩니다.</span></div></div>
+      <label class="cn-sp-past" id="cn-sp-past-wrap" style="display:none">
+        <input type="checkbox" id="cn-sp-past-chk"> 지난 회의 명단의 내 소속·직책에도 반영 (<span id="cn-sp-past-n">0</span>건)</label>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="cn-sp-cancel">취소</button>
+        <button class="btn btn-primary" id="cn-sp-go">✍️ 서명 진행</button>
+      </div>`);
+    const nameEl = $("#cn-sp-name"), orgSel = $("#cn-sp-org"), orgEtc = $("#cn-sp-org-etc"), roleEl = $("#cn-sp-role");
+    const catEl = $("#cn-sp-cat"), pastWrap = $("#cn-sp-past-wrap"), pastN = $("#cn-sp-past-n"), pastChk = $("#cn-sp-past-chk");
+    const st = { cat: init.cat };
+    const curName = () => String(nameEl.value || "").trim();
+    const curOrg = () => orgSel.value === "__etc__" ? String(orgEtc.value || "").trim() : orgSel.value;
+    const setCat = (c) => { st.cat = c; catEl.textContent = c || "자동"; catEl.className = "badge " + (CAT_BADGE[c] || "badge-gray"); };
+    const refreshPast = () => {
+      let n = 0; forEachPastEntry(meetingId, curName(), () => n++);
+      pastWrap.style.display = n ? "" : "none"; pastN.textContent = n;
+    };
+    const fillFromDir = () => {
+      const p = dir.get(curName());
+      if (!p) return;
+      if (p.org && orgOpts.indexOf(p.org) >= 0) { orgSel.value = p.org; orgEtc.style.display = "none"; }
+      else if (p.org) { orgSel.value = "__etc__"; orgEtc.style.display = ""; orgEtc.value = p.org; }
+      roleEl.value = p.role || "";
+      setCat(p.cat || orgToCat(p.org));
+    };
+    orgSel.onchange = () => {
+      orgEtc.style.display = orgSel.value === "__etc__" ? "" : "none";
+      setCat(orgToCat(curOrg()));
+    };
+    orgEtc.oninput = () => setCat(orgToCat(curOrg()));
+    nameEl.oninput = () => { if (idx < 0) fillFromDir(); refreshPast(); };
+    refreshPast();
+    $("#cn-sp-cancel").onclick = () => { closeModal(); SeMIS.renderView(); };
+    $("#cn-sp-go").onclick = () => {
+      const nm = curName(), og = curOrg();
+      if (!nm) { toast("성명을 입력해 주세요.", true); return; }
+      if (!og) { toast("소속을 선택하거나 입력해 주세요.", true); return; }
+      const person = { name: nm, org: og, role: String(roleEl.value || "").trim(), cat: st.cat || orgToCat(og) };
+      const alsoPast = !!(pastChk && pastChk.checked);
+      closeModal();
+      openSignPad(person, (val) => {
+        saveSignEntry(meetingId, idx, person, val, alsoPast);
+        closeModal(); toast("서명이 저장되었습니다."); SeMIS.renderView();
+      });
+    };
   }
 
   /* 서명 저장 — 최신 상태(실시간 병합분 포함) 재조회 후 해당 참석자에만 기록 */
@@ -755,14 +909,11 @@
     return true;
   }
 
-  /* 서명 패드 — 캔버스에 손가락/마우스로 그린 뒤 Storage 업로드(실패 시 dataURL) */
-  function openSignPad(meetingId, idx) {
-    const m = all().find(c => c.id === meetingId);
-    if (!m || !Array.isArray(m.attendees) || !m.attendees[idx]) return;
-    const a = m.attendees[idx];
+  /* 서명 패드 — 캔버스에 그린 뒤 Storage 업로드(실패 시 dataURL). 저장 시 onDone(값) 호출 */
+  function openSignPad(p, onDone) {
     openModal(`
-      <h3>✍️ ${esc(a.name || "참석자")} 서명</h3>
-      <div class="form-hint" style="margin-bottom:8px">${a.org ? esc(a.org) : ""}${a.role ? " · " + esc(a.role) : ""} — 아래 칸에 손가락 또는 마우스로 서명해 주세요.</div>
+      <h3>✍️ ${esc(p.name || "참석자")} 서명</h3>
+      <div class="form-hint" style="margin-bottom:8px">${p.org ? esc(p.org) : ""}${p.role ? " · " + esc(p.role) : ""} — 아래 칸에 손가락 또는 마우스로 서명해 주세요.</div>
       <div class="sign-pad-wrap"><canvas id="cn-sign-cv" class="sign-pad"></canvas></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="cn-sign-clear" style="margin-right:auto">지우기</button>
@@ -804,7 +955,7 @@
     $("#cn-sign-cancel").onclick = () => { cleanup(); closeModal(); SeMIS.renderView(); };
     $("#cn-sign-ok").onclick = () => {
       if (!hasDrawn) { toast("서명을 입력해 주세요.", true); return; }
-      const finish = (val) => { cleanup(); setSign(meetingId, idx, val); closeModal(); toast("서명이 저장되었습니다."); SeMIS.renderView(); };
+      const finish = (val) => { cleanup(); onDone(val); };
       const dataFallback = () => { try { finish(cv.toDataURL("image/png")); } catch (e) { toast("서명 저장에 실패했습니다.", true); } };
       try {
         if (cv.toBlob && window.SemisSync && typeof fetch !== "undefined") {
@@ -861,5 +1012,6 @@
 
   /* ══════════ 테스트/외부 노출 ══════════ */
   window.SemisCouncil = { CATS, stats, all, sorted, nextRound, printMinutes, setSign, renderSigning,
-    repairToCase, mergeCaresIntoCases, repairsInPeriod, prevMeetingDate, catNorm };
+    repairToCase, mergeCaresIntoCases, repairsInPeriod, prevMeetingDate, catNorm,
+    ORG_PRESETS, orgToCat, knownPeople, saveSignEntry, propagatePersonInfo };
 })();

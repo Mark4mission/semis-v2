@@ -4485,6 +4485,82 @@ function makeFetchStub(server) {
     ok(m2.cases[0].caresSnap && m2.cases[0].caresSnap.symptom === "알람", "snapshot 저장");
   });
 
+  /* ─ v2.30: 협의회 서명 자가등록 ─ */
+  t("CN23 orgToCat: 소속→구분 자동 매핑 (인씨스=유지보수 포함)", () => {
+    const C = makeEnv().w.SemisCouncil;
+    eq(C.orgToCat("항공보안파트"), "본사", "항공보안파트");
+    eq(C.orgToCat("인천화물팀"), "운영자", "인천화물팀");
+    eq(C.orgToCat("프로에스콤"), "유지보수", "프로에스콤");
+    eq(C.orgToCat("인씨스"), "유지보수", "인씨스=유지보수");
+    eq(C.orgToCat("뉴원에스엔티"), "제조사", "뉴원에스엔티");
+    eq(C.orgToCat("AAP"), "운영자", "AAP");
+    eq(C.orgToCat("국가기관"), "기타", "국가기관");
+    eq(C.orgToCat("뉴원S&T"), "제조사", "변형 표기");
+    eq(C.orgToCat("인천화물터미널"), "운영자", "부분 일치");
+    eq(C.orgToCat("어딘가상사"), "기타", "미지정→기타");
+    eq(C.ORG_PRESETS.length, 7, "프리셋 7종");
+  });
+
+  t("CN24 서명 화면: 본인 확인 모달 + 직접 입력 버튼 + 소속 프리셋", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "cm1", round: 5, date: "2026-07-29", place: "B동",
+      attendees: [{ cat: "본사", org: "항공보안파트", name: "김본사", role: "부장" }],
+      cases: [], actions: [], files: [] }];
+    submitLogin(e, e.S.signCodeFor(e.S.data.council[0]));
+    ok(q(e, "#cn-sign-new"), "직접 입력 버튼 존재");
+    q(e, ".cn-sign-list [data-sign]").click();
+    eq(q(e, "#cn-sp-name").value, "김본사", "이름 자동 채움");
+    eq(q(e, "#cn-sp-org").value, "항공보안파트", "소속 자동 선택");
+    const opts = qa(e, "#cn-sp-org option").map(o => o.value);
+    ["항공보안파트", "인천화물팀", "프로에스콤", "인씨스", "뉴원에스엔티", "AAP", "국가기관"]
+      .forEach(o => ok(opts.indexOf(o) >= 0, "프리셋 " + o));
+    e.S.closeModal();
+    q(e, "#cn-sign-new").click();
+    ok(q(e, "#cn-sp-names"), "이전 참석자 datalist");
+    ok(q(e, "#cn-sp-names option"), "이력 옵션 존재");
+  });
+
+  t("CN25 saveSignEntry: 신규 자가등록·동명 병합·구분 자동·서명 보존", () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "cm1", round: 5, date: "2026-07-29",
+      attendees: [{ cat: "본사", org: "항공보안파트", name: "김본사", role: "부장", note: "주재", sign: "" }],
+      cases: [], actions: [], files: [] }];
+    const C = e.w.SemisCouncil;
+    ok(C.saveSignEntry("cm1", -1, { name: "박신규", org: "프로에스콤", role: "과장" }, "https://ex.com/p.png", false), "신규 저장");
+    const m = e.S.data.council[0];
+    eq(m.attendees.length, 2, "행 추가");
+    eq(m.attendees[1].cat, "유지보수", "구분 자동(프로에스콤)");
+    eq(m.attendees[1].sign, "https://ex.com/p.png", "서명 저장");
+    ok(C.saveSignEntry("cm1", -1, { name: "김본사", org: "항공보안파트", role: "팀장", cat: "본사" }, "https://ex.com/k.png", false), "동명 병합");
+    eq(m.attendees.length, 2, "중복 추가 없음");
+    eq(m.attendees[0].role, "팀장", "직책 갱신");
+    eq(m.attendees[0].sign, "https://ex.com/k.png", "서명 반영");
+    eq(m.attendees[0].note, "주재", "비고 보존");
+    ok(C.saveSignEntry("cm1", 0, { name: "김본사", org: "항공보안파트", role: "실장", cat: "본사" }, "", false), "정보만 갱신");
+    eq(m.attendees[0].role, "실장", "직책 재갱신");
+    eq(m.attendees[0].sign, "https://ex.com/k.png", "빈 서명 전달 시 기존 서명 보존");
+  });
+
+  t("CN26 지난 회 반영: 일괄 갱신·이후 회의 제외·서명 보존 / knownPeople 최신 우선", () => {
+    const e = makeEnv();
+    e.S.data.council = [
+      { id: "m1", round: 1, date: "2026-03-19", attendees: [{ cat: "제조사", org: "인씨스", name: "이정비", role: "대리", sign: "https://ex.com/old.png" }], cases: [], actions: [], files: [] },
+      { id: "m2", round: 2, date: "2026-04-17", attendees: [{ cat: "제조사", org: "인씨스", name: "이정비", role: "대리" }], cases: [], actions: [], files: [] },
+      { id: "m3", round: 3, date: "2026-07-29", attendees: [], cases: [], actions: [], files: [] },
+      { id: "m4", round: 4, date: "2026-09-01", attendees: [{ cat: "제조사", org: "인씨스", name: "이정비", role: "차장" }], cases: [], actions: [], files: [] }
+    ];
+    const C = e.w.SemisCouncil;
+    eq(C.knownPeople().get("이정비").role, "차장", "최신(날짜) 기록 우선");
+    ok(C.saveSignEntry("m3", -1, { name: "이정비", org: "인씨스", role: "과장", cat: "유지보수" }, "https://ex.com/n.png", true), "저장+지난 회 반영");
+    const d = e.S.data.council;
+    eq(d[2].attendees.length, 1, "이번 회의 등록");
+    eq(d[0].attendees[0].role, "과장", "m1 직책 갱신");
+    eq(d[0].attendees[0].cat, "유지보수", "m1 구분 갱신");
+    eq(d[0].attendees[0].sign, "https://ex.com/old.png", "m1 기존 서명 보존");
+    eq(d[1].attendees[0].role, "과장", "m2 갱신");
+    eq(d[3].attendees[0].role, "차장", "이후 회의(m4)는 미변경");
+  });
+
   /* ══════════ [CR*] 부적합·시정조치 (CAR·CAP·FAT) v2.29 ══════════ */
   t("CR01 normalize: cars 배열 + carCfg 객체 + insp-car 메뉴(vis hq, grp-inspect)", () => {
     const e = makeEnv();

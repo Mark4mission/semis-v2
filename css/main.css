@@ -1281,6 +1281,11 @@ a.ct-tel:hover { color: var(--primary); }
 .cn-sign-thumb { height: 34px; max-width: 96px; object-fit: contain; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
 .cn-sign-ok { font-size: .8rem; color: var(--success); font-weight: 700; }
 .cn-sign-foot { text-align: center; font-size: .78rem; color: var(--text-3); margin-top: 16px; }
+/* v2.30 자가등록 */
+.cn-sign-addbtn { display: block; width: 100%; margin-top: 10px; }
+.cn-sp-past { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px;
+  font-size: .85rem; color: var(--text-2); cursor: pointer; user-select: none; }
+.cn-sp-past input { width: auto; margin: 0; }
 
 /* 서명 패드(캔버스) */
 .sign-pad-wrap { display: flex; justify-content: center; margin: 4px 0 8px; }
