@@ -5005,6 +5005,16 @@ function makeFetchStub(server) {
     ok(!q(e, "#view").classList.contains("view-mid"), "mid→wide 전환 시 mid 제거");
   });
 
+  t("W5 index.html 캐시 스탬프가 VERSION과 일치(구버전 CSS/JS 잔존 방지)", () => {
+    const html = read("index.html");
+    const ver = (appJS.match(/const VERSION = "([\d.]+)"/) || [])[1];
+    ok(ver, "app.js VERSION 확인");
+    const refs = html.match(/(?:href|src)="(?:css|js)\/[\w.-]+\.(?:css|js)(?:\?v=[\d.]+)?"/g) || [];
+    ok(refs.length >= 20, "로컬 자원 참조 발견: " + refs.length);
+    const bad = refs.filter(r => !r.includes("?v=" + ver));
+    eq(bad.length, 0, "스탬프 누락/불일치: " + bad.slice(0, 3).join(", ") + " (node tools/bump-version.cjs " + ver + " 실행)");
+  });
+
   t("W4 CSS 폭 규칙 및 가독성 보호", () => {
     const css = read("css/main.css");
     ok(/\.view\.view-wide\s*\{[^}]*max-width:\s*2100px/.test(css), "wide 최대폭");
