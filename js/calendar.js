@@ -4,7 +4,7 @@
    리마인더(2주/1주/1일/1시간 전) · 구글캘린더 연동
    반복 일정(매일/매주/2주/매월/매년 + 종료일) · 리치 메모(링크/이미지/파일)
    구글캘린더식 렌더링: 기간 일정 한 줄 연결(스패닝 바), 시간 일정 투명 칩
-   보기: 일 / 주 / 2주 / 월 / 년 · 드래그앤드롭 이동/기간 조정
+   보기: 일 / 주 / 2주 / 월 / 년 · 포인터 드래그로 일정 이동(고스트 미리보기)
 
    데이터 스키마: { id, title, memo, memoHtml?, start, end, allDay, time, timeEnd,
                     color, done, assignee, vehicle, room, reminders[],
@@ -268,13 +268,13 @@
   let anchor = todayISO();
   let fAssignee = ui().calAssignee || "";
   let fHideDone = !!ui().calHideDone;
-  let dragCtx = null;
   let fullscreen = false; // 전체화면(넓게 보기) 모드 — 세션 내 임시 상태
 
   // 전체화면: Esc 로 해제. 단, 모달(일정 등록/수정 등)이 열려 있으면 모달 닫기가 우선.
   // 캡처 단계에서 처리하여 app.js 의 모달 Esc 핸들러보다 먼저 판단.
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !fullscreen) return;
+    if (dragState) return;                                  // 드래그 취소가 우선
     const modal = document.getElementById("modal-overlay");
     if (modal && !modal.classList.contains("hidden")) return; // 모달 우선
     fullscreen = false;
@@ -350,6 +350,118 @@
     return e.done;
   }
 
+  /* ─────── 일정 드래그 이동 (포인터 기반)
+     HTML5 DnD 대신 pointerdown/move/up 으로 직접 구현 —
+     커서를 따라오는 고스트 + 드롭 대상 셀 하이라이트로 이동이 눈에 보이게 처리.
+     마우스/펜만 대상(터치는 화면 스크롤 보존). ─────── */
+  let dragState = null;
+  let dragEndedAt = 0;                                    // 드래그 직후 click(수정 모달) 억제용
+  const justDragged = () => Date.now() - dragEndedAt < 300;
+
+  function cellAtPoint(body, x, y) {
+    let list = [];
+    try { if (document.elementsFromPoint) list = document.elementsFromPoint(x, y) || []; } catch (e) { list = []; }
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i] && list[i].closest ? list[i].closest(".cal-cell") : null;
+      if (c && body.contains(c)) return c;
+    }
+    const cells = body.querySelectorAll(".cal-cell");   // 폴백: 좌표-사각형 대조
+    for (let i = 0; i < cells.length; i++) {
+      const r = cells[i].getBoundingClientRect();
+      if (r.width > 0 && x >= r.left && x < r.right && y >= r.top && y < r.bottom) return cells[i];
+    }
+    return null;
+  }
+
+  function dragTeardown() {
+    const st = dragState;
+    dragState = null;
+    if (!st) return null;
+    document.removeEventListener("pointermove", onDragMove, true);
+    document.removeEventListener("pointerup", onDragUp, true);
+    document.removeEventListener("pointercancel", onDragCancel, true);
+    document.removeEventListener("keydown", onDragKey, true);
+    if (st.ghost && st.ghost.parentNode) st.ghost.parentNode.removeChild(st.ghost);
+    if (st.cell) st.cell.classList.remove("drop-hover");
+    if (st.el) {
+      st.el.classList.remove("dragging");
+      try { if (st.el.releasePointerCapture) st.el.releasePointerCapture(st.pid); } catch (e) {}
+    }
+    if (st.body) st.body.classList.remove("drag-active");
+    document.body.classList.remove("cal-dragging");
+    return st;
+  }
+
+  function onDragMove(ev) {
+    const st = dragState;
+    if (!st) return;
+    if (!st.moved) {
+      if (Math.abs(ev.clientX - st.x0) + Math.abs(ev.clientY - st.y0) < 5) return;  // 클릭과 구분
+      st.moved = true;
+      st.el.classList.add("dragging");
+      st.body.classList.add("drag-active");
+      document.body.classList.add("cal-dragging");
+      const r = st.el.getBoundingClientRect();
+      const g = st.el.cloneNode(true);
+      g.removeAttribute("data-ev"); g.removeAttribute("data-drag");
+      g.className = st.el.className.replace(/\bdragging\b/g, "").trim() + " cal-ghost";
+      g.style.cssText = "position:fixed;left:0;top:0;margin:0;z-index:9000;pointer-events:none;" +
+        (r.width ? "width:" + Math.min(r.width, 260) + "px;" : "");
+      st.ox = (r.left || ev.clientX) - st.x0;
+      st.oy = (r.top || ev.clientY) - st.y0;
+      st.ghost = g;
+      document.body.appendChild(g);
+    }
+    if (ev.cancelable) ev.preventDefault();
+    st.ghost.style.transform = "translate(" + (ev.clientX + st.ox) + "px," + (ev.clientY + st.oy) + "px)";
+    const cell = cellAtPoint(st.body, ev.clientX, ev.clientY);
+    if (cell !== st.cell) {
+      if (st.cell) st.cell.classList.remove("drop-hover");
+      st.cell = cell;
+      if (cell) cell.classList.add("drop-hover");
+    }
+  }
+
+  function onDragUp(ev) {
+    const st = dragState;
+    if (!st) return;
+    const moved = st.moved, cell = st.cell, from = st.from, id = st.id;
+    dragTeardown();
+    if (moved) { dragEndedAt = Date.now(); if (ev.stopPropagation) ev.stopPropagation(); }
+    if (!moved || !cell) return;
+    const day = cell.dataset.day;
+    if (!day || day === from) return;
+    const e = D().schedules.find(x => x.id === id);
+    if (!e) return;
+    if (moveEvent(id, addDays(e.start, diffDays(from, day))))
+      toast(isRepeat(e) ? "반복 일정 전체가 이동되었습니다." : "일정이 이동되었습니다.");
+  }
+
+  function onDragCancel() { dragTeardown(); }
+  function onDragKey(ev) {
+    if (ev.key !== "Escape" || !dragState) return;
+    ev.stopPropagation();
+    dragTeardown();
+  }
+
+  function wireDragMove(body) {
+    $$("[data-drag]", body).forEach(el => {
+      el.addEventListener("pointerdown", (ev) => {
+        if (ev.button !== 0) return;
+        if (ev.pointerType && ev.pointerType !== "mouse" && ev.pointerType !== "pen") return;
+        if (ev.target && ev.target.closest && ev.target.closest("[data-donetoggle]")) return;
+        if (dragState) dragTeardown();
+        dragState = { id: el.dataset.ev, from: el.dataset.from, el, body, pid: ev.pointerId,
+                      x0: ev.clientX, y0: ev.clientY, ox: 0, oy: 0, moved: false, cell: null, ghost: null };
+        try { if (el.setPointerCapture) el.setPointerCapture(ev.pointerId); } catch (e) {}
+        document.addEventListener("pointermove", onDragMove, true);
+        document.addEventListener("pointerup", onDragUp, true);
+        document.addEventListener("pointercancel", onDragCancel, true);
+        document.addEventListener("keydown", onDragKey, true);
+      });
+    });
+  }
+
   /* ─────── 제목/이동 ─────── */
   function rangeTitle() {
     const a = fromISO(anchor);
@@ -392,8 +504,8 @@
         <span class="chip-title">${esc(e.title)}</span></div>`;
     }
     return `<div class="cal-bar ev-${esc(e.color || "blue")}${e.done ? " done" : ""}${it.contL ? " cont-l" : ""}${it.contR ? " cont-r" : ""}"
-        style="${style}" data-ev="${esc(e.id)}" data-from="${esc(it.from)}" ${canWrite ? 'draggable="true"' : ""}
-        title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}">
+        style="${style}" data-ev="${esc(e.id)}" data-from="${esc(it.from)}" ${canWrite ? 'data-drag="1"' : ""}
+        title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}${canWrite ? "\n(드래그하여 날짜 이동)" : ""}">
       ${checkHTML(e, canWrite)}
       ${!e.allDay && e.time ? `<span class="chip-time">${esc(e.time)}</span>` : ""}
       <span class="chip-title">${evIcons(e)}${esc(e.title)}</span>
@@ -409,8 +521,8 @@
         <span class="chip-title">${esc(e.title)}</span></div>`;
     }
     return `<div class="cal-tchip ev-${esc(e.color || "blue")}${e.done ? " done" : ""}" style="${style}"
-        data-ev="${esc(e.id)}" data-from="${esc(it.from)}" ${canWrite ? 'draggable="true"' : ""}
-        title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}">
+        data-ev="${esc(e.id)}" data-from="${esc(it.from)}" ${canWrite ? 'data-drag="1"' : ""}
+        title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}${canWrite ? "\n(드래그하여 날짜 이동)" : ""}">
       ${checkHTML(e, canWrite)}
       <span class="chip-dot"></span>
       <span class="chip-time">${esc(e.time || "")}</span>
@@ -502,7 +614,7 @@
         <span class="chip-title">${cont}${esc(e.title)}${cont2}</span></div>`;
     }
     return `<div class="cal-chip ev-${esc(e.color || "blue")}${e.done ? " done" : ""}"
-        data-ev="${esc(e.id)}" data-from="${esc(dayIso)}" ${canWrite ? 'draggable="true"' : ""} title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}">
+        data-ev="${esc(e.id)}" data-from="${esc(dayIso)}" title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}">
       ${checkHTML(e, canWrite)}
       ${timeTxt}
       <span class="chip-title">${cont}${evIcons(e)}${esc(e.title)}${cont2}</span>
@@ -858,6 +970,7 @@
         ev.stopPropagation(); toggleDone(el.dataset.donetoggle);
       });
       $$("[data-ev]", body).forEach(el => el.onclick = (ev) => {
+        if (justDragged()) return;                 // 드래그로 이동한 직후의 클릭은 무시
         if (ev.target.closest("[data-donetoggle]")) return;
         canWrite ? eventForm(el.dataset.ev) : eventDetail(el.dataset.ev);
       });
@@ -875,39 +988,13 @@
 
       /* ── 빈 칸 클릭 → 신규 등록 ── */
       if (canWrite) $$(".cal-cell", body).forEach(cell => cell.onclick = (ev) => {
+        if (justDragged()) return;
         if (ev.target.closest(".cal-more,[data-ev],[data-gcal]")) return;
         eventForm(null, cell.dataset.day);
       });
 
-      /* ── 드래그앤드롭 (이동 / 기간 조정) ── */
-      if (canWrite) {
-        $$("[data-ev][draggable]", body).forEach(el => {
-          el.addEventListener("dragstart", (ev) => {
-            dragCtx = { id: el.dataset.ev, from: el.dataset.from, mode: "move" };
-            el.classList.add("dragging");
-            body.classList.add("drag-active"); // 오버레이 요소 통과(pointer-events)용
-            if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = "move"; try { ev.dataTransfer.setData("text/plain", el.dataset.ev); } catch (e) {} }
-          });
-          el.addEventListener("dragend", () => { el.classList.remove("dragging"); body.classList.remove("drag-active"); dragCtx = null; });
-        });
-        $$(".cal-cell", body).forEach(cell => {
-          cell.addEventListener("dragover", (ev) => { ev.preventDefault(); cell.classList.add("drop-hover"); });
-          cell.addEventListener("dragleave", () => cell.classList.remove("drop-hover"));
-          cell.addEventListener("drop", (ev) => {
-            ev.preventDefault();
-            cell.classList.remove("drop-hover");
-            body.classList.remove("drag-active");
-            if (!dragCtx) return;
-            const day = cell.dataset.day;
-            const e = D().schedules.find(x => x.id === dragCtx.id);
-            if (e) {
-              moveEvent(dragCtx.id, addDays(e.start, diffDays(dragCtx.from, day)));
-              toast(isRepeat(e) ? "반복 일정 전체가 이동되었습니다." : "일정이 이동되었습니다.");
-            }
-            dragCtx = null;
-          });
-        });
-      }
+      /* ── 드래그 이동 (포인터 기반) ── */
+      if (canWrite) wireDragMove(body);
 
       /* ── 구글캘린더 새로고침 (백그라운드) ── */
       fetchGcal(false);

@@ -445,6 +445,17 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .cal-week-ev > * { pointer-events: auto; min-width: 0; }
 #cal-body.drag-active .cal-week-ev > * { pointer-events: none; } /* 드래그 중 셀로 통과 */
 
+/* 드래그 이동: 커서를 따라오는 고스트 */
+body.cal-dragging { cursor: grabbing !important; user-select: none; }
+body.cal-dragging .cal-cell { cursor: grabbing !important; }
+.cal-ghost {
+  position: fixed; z-index: 9000; pointer-events: none; opacity: .95;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .3); will-change: transform;
+  max-width: 260px; white-space: nowrap;
+}
+.cal-ghost.cal-tchip { background: var(--surface) !important; padding: 2px 8px; border-radius: 4px; }
+@media (hover: hover) { .cal-bar[data-drag], .cal-tchip[data-drag] { cursor: grab; } }
+
 /* 기간/종일 일정: 한 줄 연결 바 */
 .cal-bar {
   margin: 0 3px; display: flex; align-items: center; gap: 3px;

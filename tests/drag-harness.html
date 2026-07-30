@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SeMIS · 일정 드래그 이동 수동 검증 하네스</title>
+<link rel="stylesheet" href="../css/main.css">
+<style>
+  body { padding: 16px; }
+  #log { font: 12px/1.6 ui-monospace, monospace; background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 8px; margin-top: 12px; max-height: 200px; overflow: auto; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<!-- 실제 js/calendar.js 를 그대로 로드하여 드래그 이동만 격리 검증하는 수동 테스트 페이지.
+     사용법: 브라우저에서 이 파일을 열고, 일정 막대를 마우스로 다른 날짜 칸에 끌어놓는다. -->
+<h3 style="margin:0 0 10px">일정 드래그 이동 — 수동 검증</h3>
+<div id="app"></div>
+<div id="log">준비됨. 일정 막대를 다른 날짜로 드래그하세요.</div>
+
+<script>
+(() => {
+  const log = (m) => { const el = document.getElementById("log"); el.textContent = m + "\n" + el.textContent; };
+  const $  = (sel, el) => (el || document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el || document).querySelectorAll(sel));
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const today = new Date();
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const day = (n) => { const d = new Date(today); d.setDate(d.getDate() + n); return iso(d); };
+  const modules = {};
+
+  window.SeMIS = {
+    $, $$, esc,
+    toast: (m) => log("toast: " + m),
+    openModal: () => {}, closeModal: () => {}, confirmModal: () => {},
+    canEdit: () => true,
+    registerModule: (id, def) => { modules[id] = def; },
+    renderView: () => modules.schedule.render(document.getElementById("app")),
+    save: () => log("save() 호출 — 일정: " + SeMIS.data.schedules.map(e => e.title + "→" + e.start).join(", ")),
+    data: {
+      schedules: [
+        { id: "d1", title: "기간 일정 (막대)", memo: "", start: day(1), end: day(3), allDay: true,  time: "",      timeEnd: "", color: "orange", done: false, assignee: "최상일" },
+        { id: "d2", title: "시간 일정 (칩)",   memo: "", start: day(2), end: day(2), allDay: false, time: "14:00", timeEnd: "", color: "blue",   done: false, assignee: "이은우" },
+        { id: "d3", title: "단일 종일",        memo: "", start: day(5), end: day(5), allDay: true,  time: "",      timeEnd: "", color: "green",  done: false, assignee: "" }
+      ]
+    }
+  };
+  window.addEventListener("error", (e) => log("ERROR: " + e.message));
+})();
+</script>
+<script src="../js/calendar.js"></script>
+<script>SeMIS.renderView();</script>
+</body>
+</html>

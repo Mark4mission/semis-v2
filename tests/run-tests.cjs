@@ -720,15 +720,46 @@ function makeFetchStub(server) {
       q(e, "#modal-box [data-act=ok]").click();
       ok(!D.schedules.some(x => x.id === ev.id));
     });
-    t("C32 드래그앤드롭 배선: dragstart→drop으로 이동", () => {
-      C.setAnchor("2026-07-15"); e.S.renderView();
+    t("C32 포인터 드래그: pointerdown→move→up 으로 일정 이동", () => {
+      C.setAnchor("2026-07-15"); C.setView("month"); e.S.renderView();
       const chip = qa(e, '[data-ev="ev1"]')[0];
       ok(chip, "칩 존재");
-      chip.dispatchEvent(new e.w.Event("dragstart", { bubbles: true, cancelable: true }));
+      ok(chip.hasAttribute("data-drag"), "쓰기 권한 시 드래그 대상 표시");
       const target = qa(e, ".cal-cell").find(c => c.dataset.day === "2026-07-22");
-      target.dispatchEvent(new e.w.Event("drop", { bubbles: true, cancelable: true }));
+      e.w.document.elementsFromPoint = () => [target];      // jsdom 히트테스트 대체
+      const pev = (type, x, y) => new e.w.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y });
+      chip.dispatchEvent(pev("pointerdown", 100, 100));
+      chip.dispatchEvent(pev("pointermove", 102, 101));     // 임계값(5px) 미만 → 드래그 미개시
+      ok(!e.w.document.querySelector(".cal-ghost"), "임계값 이하에서는 고스트 없음");
+      chip.dispatchEvent(pev("pointermove", 300, 140));
+      ok(e.w.document.querySelector(".cal-ghost"), "드래그 시작 시 고스트 생성");
+      ok(target.className.includes("drop-hover"), "드롭 대상 셀 하이라이트");
+      chip.dispatchEvent(pev("pointerup", 300, 140));
+      ok(!e.w.document.querySelector(".cal-ghost"), "종료 시 고스트 제거");
       eq(D.schedules.find(x => x.id === "ev1").start, "2026-07-22");
       C.moveEvent("ev1", "2026-07-15"); // 원복
+    });
+    t("C32a 포인터 드래그: 이동 없이 놓으면(클릭) 일정 유지", () => {
+      C.setAnchor("2026-07-15"); C.setView("month"); e.S.renderView();
+      const chip = qa(e, '[data-ev="ev1"]')[0];
+      const pev = (type, x, y) => new e.w.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y });
+      chip.dispatchEvent(pev("pointerdown", 100, 100));
+      chip.dispatchEvent(pev("pointerup", 100, 100));
+      eq(D.schedules.find(x => x.id === "ev1").start, "2026-07-15");
+      ok(!e.w.document.querySelector(".cal-ghost"), "고스트 잔존 없음");
+    });
+    t("C32b 포인터 드래그: Esc 로 취소", () => {
+      C.setAnchor("2026-07-15"); C.setView("month"); e.S.renderView();
+      const chip = qa(e, '[data-ev="ev1"]')[0];
+      const target = qa(e, ".cal-cell").find(c => c.dataset.day === "2026-07-22");
+      e.w.document.elementsFromPoint = () => [target];
+      const pev = (type, x, y) => new e.w.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y });
+      chip.dispatchEvent(pev("pointerdown", 100, 100));
+      chip.dispatchEvent(pev("pointermove", 300, 140));
+      e.w.document.dispatchEvent(new e.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      ok(!e.w.document.querySelector(".cal-ghost"), "취소 시 고스트 제거");
+      chip.dispatchEvent(pev("pointerup", 300, 140));
+      eq(D.schedules.find(x => x.id === "ev1").start, "2026-07-15", "취소 후 이동 없음");
     });
     t("C33 년 보기 → 월 이동 내비게이션", () => {
       C.setView("year"); e.S.renderView();
@@ -794,7 +825,7 @@ function makeFetchStub(server) {
       ok(!q(e, "#cal-add"), "등록 버튼 없음");
       e.Cal.setAnchor("2026-07-15"); e.Cal.setView("month"); e.S.renderView();
       const chip = qa(e, '[data-ev="ro1"]')[0];
-      ok(chip && !chip.hasAttribute("draggable"), "드래그 불가");
+      ok(chip && !chip.hasAttribute("data-drag"), "드래그 불가");
     });
     t("C38 일반 사용자: 칩 클릭 → 읽기 전용 상세", () => {
       qa(e, '[data-ev="ro1"]')[0].click();
