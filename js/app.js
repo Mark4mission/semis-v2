@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.32.2";
+  const VERSION = "2.33.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -351,6 +351,10 @@ const SeMIS = (() => {
       if (!Array.isArray(s.reminders)) s.reminders = [];    // v2.2: 리마인더
       if (!s.repeat || typeof s.repeat !== "object" || !s.repeat.freq)
         s.repeat = { freq: "none", until: "" };             // v2.5: 반복
+      // v2.33: 반복 일정 회차별 완료 (doneFrom: 이후 모두 / doneDates: 개별 완료 / undoneDates: 개별 해제)
+      s.doneFrom = typeof s.doneFrom === "string" ? s.doneFrom : "";
+      if (!Array.isArray(s.doneDates)) s.doneDates = [];
+      if (!Array.isArray(s.undoneDates)) s.undoneDates = [];
       delete s.date;
       return s;
     }).filter(Boolean);

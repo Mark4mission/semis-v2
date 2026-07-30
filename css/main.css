@@ -506,6 +506,9 @@ body.cal-dragging .cal-cell { cursor: grabbing !important; }
 .cal-chip.done { opacity: .45; filter: saturate(.4); }
 .cal-chip.done .chip-title { text-decoration: line-through; }
 .cal-more { border: none; background: none; font-size: 0.75rem; color: var(--primary); font-weight: 700; text-align: left; padding: 1px 4px; margin-top: auto; align-self: flex-start; pointer-events: auto; }
+/* 반복 일정 완료 범위 선택 */
+.scope-picker .btn { padding: 11px 14px; font-size: .87rem; }
+.scope-picker .btn:hover { border-color: var(--primary); color: var(--primary); }
 .nb-toolbar.nb-mini button { font-size: .78rem; padding: 3px 8px; }
 .nb-memo { min-height: 110px; }
 

@@ -47,8 +47,14 @@
       d.schedules.forEach(s => {
         const rep = s.repeat && s.repeat.freq && s.repeat.freq !== "none";
         if (rep && window.SemisCalendar) {
-          const occ = SemisCalendar.nextOccurrence(s, todayISO());
-          if (occ) upcoming.push(Object.assign({}, s, { start: occ.start, end: occ.end }));
+          // v2.33: 회차별 완료 반영 — 미완료 회차 우선, 없으면 다음 회차(완료 표시)
+          const open = SemisCalendar.nextOpenOccurrence
+            ? SemisCalendar.nextOpenOccurrence(s, todayISO()) : null;
+          const occ = open || SemisCalendar.nextOccurrence(s, todayISO());
+          if (occ) upcoming.push(Object.assign({}, s, {
+            start: occ.start, end: occ.end,
+            done: SemisCalendar.occDone ? SemisCalendar.occDone(s, occ.start) : !!s.done
+          }));
         } else if ((s.end || s.start) >= todayISO()) upcoming.push(s);
       });
       upcoming.sort((a, b) => String(a.start).localeCompare(String(b.start)));

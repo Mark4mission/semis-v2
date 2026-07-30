@@ -3,12 +3,14 @@
    기간(시작-종료) · 종일/시간 · 14색 · 완료/차량/회의실 · 팀 태그
    리마인더(2주/1주/1일/1시간 전) · 구글캘린더 연동
    반복 일정(매일/매주/2주/매월/매년 + 종료일) · 리치 메모(링크/이미지/파일)
+   반복 일정 완료는 회차별 처리: 이 일정만 / 이후의 일정 모두 / 전체 일정 (범위 선택 모달)
    구글캘린더식 렌더링: 기간 일정 한 줄 연결(스패닝 바), 시간 일정 투명 칩
    보기: 일 / 주 / 2주 / 월 / 년 · 포인터 드래그로 일정 이동(고스트 미리보기)
 
    데이터 스키마: { id, title, memo, memoHtml?, start, end, allDay, time, timeEnd,
                     color, done, assignee, vehicle, room, reminders[],
-                    repeat?: { freq: none|daily|weekly|2week|monthly|yearly, until }, gcalId? }
+                    repeat?: { freq: none|daily|weekly|2week|monthly|yearly, until },
+                    doneFrom?: ISO, doneDates?: ISO[], undoneDates?: ISO[], gcalId? }
    ═══════════════════════════════════════════════════════ */
 "use strict";
 
@@ -129,6 +131,142 @@
     return null;
   }
 
+  /* ─────── 반복 회차 열거 (start 기준 스텝 전개) ─────── */
+  function stepOccurrence(e, occ) {
+    const freq = e.repeat.freq;
+    if (freq === "daily")  return addDays(occ, 1);
+    if (freq === "weekly") return addDays(occ, 7);
+    if (freq === "2week")  return addDays(occ, 14);
+    if (freq === "monthly") {
+      const day = Number(e.start.slice(8, 10));
+      let y = Number(occ.slice(0, 4)), m = Number(occ.slice(5, 7));
+      for (let k = 0; k < 60; k++) {                       // 해당 날짜가 없는 달은 건너뜀
+        m++; if (m > 12) { m = 1; y++; }
+        if (day <= new Date(y, m, 0).getDate()) return y + "-" + p2(m) + "-" + p2(day);
+      }
+      return null;
+    }
+    if (freq === "yearly") {
+      const md = e.start.slice(5);
+      let y = Number(occ.slice(0, 4));
+      for (let k = 0; k < 12; k++) {                        // 2/29 등 없는 해는 건너뜀
+        y++;
+        const cand = y + "-" + md;
+        if (toISO(fromISO(cand)) === cand) return cand;
+      }
+      return null;
+    }
+    return null;
+  }
+
+  /* [fromIso, toIso] 구간에 시작하는 occurrence 시작일 목록 (유한, cap 제한) */
+  function occurrenceStarts(e, fromIso, toIso, cap) {
+    const out = [];
+    if (!e || !toIso || toIso < fromIso) return out;
+    if (!isRepeat(e)) {
+      if (e.start >= fromIso && e.start <= toIso) out.push(e.start);
+      return out;
+    }
+    const lim = cap || 3000;
+    const until = e.repeat.until || "";
+    let occ = e.start, n = 0;
+    while (occ && occ <= toIso && (!until || occ <= until) && n++ < lim) {
+      if (occ >= fromIso) out.push(occ);
+      occ = stepOccurrence(e, occ);
+    }
+    return out;
+  }
+
+  /* ─────── 회차별 완료 처리 ───────
+     반복 일정은 마스터 1건으로 저장되므로 완료 상태를 3중 구조로 관리:
+       done            : 전체 회차 완료(기준선)
+       doneFrom(ISO)   : 해당 일자 이후 회차 완료(기준선)
+       doneDates[]     : 개별 완료 회차
+       undoneDates[]   : 기준선 완료를 개별로 해제한 회차
+     판정 우선순위: undoneDates > doneDates > done > doneFrom            */
+  const dList = (e, k) => (Array.isArray(e[k]) ? e[k] : []);
+  function occDone(e, occIso) {
+    if (!e) return false;
+    if (!isRepeat(e)) return !!e.done;
+    const iso = occIso || e.start;
+    if (dList(e, "undoneDates").indexOf(iso) >= 0) return false;
+    if (dList(e, "doneDates").indexOf(iso) >= 0) return true;
+    if (e.done) return true;
+    return !!(e.doneFrom && iso >= e.doneFrom);
+  }
+
+  const DONE_SCOPES = [
+    { id: "one",    label: "이 일정만" },
+    { id: "future", label: "이후의 일정 모두" },
+    { id: "all",    label: "전체 일정" }
+  ];
+  const uniqSort = (a) => Array.from(new Set(a)).sort().slice(0, 2000);
+
+  /* scope: one | future | all , flag: true(완료) / false(해제) — 저장/렌더 포함 */
+  function setOccDone(id, occIso, scope, flag) {
+    const e = D().schedules.find(x => x.id === id);
+    if (!e) return false;
+    applyOccDone(e, occIso, scope, flag);
+    SeMIS.save(); SeMIS.renderView();
+    return true;
+  }
+
+  /* 순수 변경(저장/렌더 없음) */
+  function applyOccDone(e, occIso, scope, flag) {
+    if (!e) return false;
+    flag = !!flag;
+    if (!isRepeat(e)) {
+      e.done = flag;
+      e.doneDates = []; e.undoneDates = []; e.doneFrom = "";
+      return true;
+    }
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(String(occIso)) ? occIso : e.start;
+    let dl = dList(e, "doneDates").slice();
+    let ul = dList(e, "undoneDates").slice();
+    if (scope === "all") {
+      e.done = flag; e.doneFrom = ""; dl = []; ul = [];
+    } else if (scope === "future") {
+      if (flag) {
+        e.doneFrom = (e.doneFrom && e.doneFrom < iso) ? e.doneFrom : iso;
+        dl = dl.filter(d => d < iso);                       // 이후는 기준선이 덮음
+        ul = ul.filter(d => d < iso);
+      } else {
+        // 과거 완료 상태는 개별 목록으로 보존한 뒤 기준선 해제
+        const past = occurrenceStarts(e, e.start, addDays(iso, -1)).filter(d => occDone(e, d));
+        e.done = false; e.doneFrom = "";
+        dl = past; ul = [];
+      }
+    } else {                                                // one
+      if (flag) { dl.push(iso); ul = ul.filter(d => d !== iso); }
+      else      { ul.push(iso); dl = dl.filter(d => d !== iso); }
+    }
+    e.doneDates = uniqSort(dl);
+    e.undoneDates = uniqSort(ul);
+    return true;
+  }
+
+  /* 완료 상태 저장값이 start 이동에 따라 어긋나지 않도록 함께 시프트 */
+  function shiftDoneMarks(e, delta) {
+    if (!delta) return;
+    const sh = (arr) => uniqSort(dList(e, arr).map(d => addDays(d, delta)));
+    e.doneDates = sh("doneDates");
+    e.undoneDates = sh("undoneDates");
+    if (e.doneFrom) e.doneFrom = addDays(e.doneFrom, delta);
+  }
+  function clearDoneMarks(e) { e.doneDates = []; e.undoneDates = []; e.doneFrom = ""; }
+
+  /* fromIso 이후 완료되지 않은 가장 가까운 occurrence */
+  function nextOpenOccurrence(e, fromIso, horizon) {
+    const dur = diffDays(e.start, e.end || e.start);
+    if (!isRepeat(e)) return nextOccurrence(e, fromIso, horizon);
+    const H = horizon || 400;
+    for (let d = 0; d <= H; d++) {
+      const occ = occursOn(e, addDays(fromIso, d));
+      if (occ && !occDone(e, occ)) return { start: occ, end: addDays(occ, dur) };
+    }
+    return null;
+  }
+
   /* ─────── 리마인더 ─────── */
   const REMINDER_DEFS = [
     { id: "2w", label: "2주일 전", ms: 14 * 86400000 },
@@ -162,7 +300,8 @@
     const fired = firedMap();
     const out = [];
     D().schedules.forEach(e => {
-      if (e.done || !Array.isArray(e.reminders) || !e.reminders.length) return;
+      if (!Array.isArray(e.reminders) || !e.reminders.length) return;
+      if (!isRepeat(e) && e.done) return;
       const cands = [];
       if (!isRepeat(e)) cands.push(e.start);
       else for (let d = 0; d <= 15; d++) { // 최대 오프셋(2주)을 덮는 창
@@ -170,6 +309,7 @@
         if (occursOn(e, iso) === iso) cands.push(iso);
       }
       cands.forEach(occStart => {
+        if (occDone(e, occStart)) return;                    // 완료된 회차는 알림 제외
         const startMs = eventStartMsFor(e, occStart);
         e.reminders.forEach(r => {
           const def = REMINDER_DEFS.find(x => x.id === r);
@@ -291,8 +431,9 @@
 
   /* ─────── 이벤트 질의 (반복 occurrence 전개 포함) ─────── */
   function filteredEvents() {
+    // 반복 일정은 회차별 완료 상태가 다르므로 완료 숨기기는 eventsOnDay 에서 회차 단위로 판정
     return D().schedules.filter(e =>
-      (!fAssignee || e.assignee === fAssignee) && (!fHideDone || !e.done));
+      (!fAssignee || e.assignee === fAssignee) && (!fHideDone || isRepeat(e) || !e.done));
   }
   function evCompare(a, b) {
     const am = (a.allDay || a.end !== a.start) ? 0 : 1;
@@ -313,9 +454,11 @@
     filteredEvents().forEach(e => {
       const occ = occursOn(e, iso);
       if (!occ) return;
-      if (occ === e.start && !isRepeat(e)) { native.push(e); return; }
+      if (!isRepeat(e)) { native.push(e); return; }
+      const dn = occDone(e, occ);
+      if (fHideDone && dn) return;
       const dur = diffDays(e.start, e.end || e.start);
-      native.push(Object.assign({}, e, { start: occ, end: addDays(occ, dur) }));
+      native.push(Object.assign({}, e, { start: occ, end: addDays(occ, dur), done: dn, occStart: occ }));
     });
     return native.concat(gcalOnDay(iso)).sort(evCompare);
   }
@@ -330,8 +473,10 @@
     const e = D().schedules.find(x => x.id === id);
     if (!e || !/^\d{4}-\d{2}-\d{2}$/.test(String(newStart))) return false;
     const dur = diffDays(e.start, e.end || e.start);
+    const delta = diffDays(e.start, newStart);
     e.start = newStart;
     e.end = addDays(newStart, dur);
+    if (isRepeat(e)) shiftDoneMarks(e, delta);              // 회차별 완료 표시도 함께 이동
     SeMIS.save(); SeMIS.renderView();
     return true;
   }
@@ -342,12 +487,49 @@
     SeMIS.save(); SeMIS.renderView();
     return true;
   }
-  function toggleDone(id) {
+  /* 완료 토글 — 반복 일정은 occIso 회차만(scope 기본 one) 처리 */
+  function toggleDone(id, occIso, scope) {
     const e = D().schedules.find(x => x.id === id);
     if (!e) return false;
-    e.done = !e.done;
-    SeMIS.save(); SeMIS.renderView();
-    return e.done;
+    if (!isRepeat(e)) {
+      e.done = !e.done;
+      SeMIS.save(); SeMIS.renderView();
+      return e.done;
+    }
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(String(occIso)) ? occIso : e.start;
+    const next = !occDone(e, iso);
+    setOccDone(id, iso, DONE_SCOPES.some(s => s.id === scope) ? scope : "one", next);
+    return next;
+  }
+
+  /* 반복 일정 완료/해제 시 적용 범위를 묻는 모달 */
+  function askDoneScope(id, occIso) {
+    const e = D().schedules.find(x => x.id === id);
+    if (!e) return;
+    if (!isRepeat(e)) { toggleDone(id); return; }
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(String(occIso)) ? occIso : e.start;
+    const flag = !occDone(e, iso);
+    const verb = flag ? "완료" : "완료 해제";
+    openModal(`
+      <h3>🔁 반복 일정 ${esc(verb)}</h3>
+      <p style="font-size:.92rem;color:var(--text-2);margin:0 0 4px">
+        <b>${esc(e.title)}</b> — ${esc(iso)} (${esc(dowName(iso))})</p>
+      <p style="font-size:.86rem;color:var(--text-3);margin:0 0 12px">
+        ${esc(repeatLabel(e))} 반복 일정입니다. ${esc(verb)} 범위를 선택하세요.</p>
+      <div class="scope-picker" style="display:flex;flex-direction:column;gap:8px">
+        ${DONE_SCOPES.map(s => `<button type="button" class="btn btn-ghost" data-scope="${s.id}"
+          style="justify-content:flex-start;text-align:left">${s.label} ${esc(verb)}${
+            s.id === "one" ? ` — ${esc(iso)}` :
+            s.id === "future" ? ` — ${esc(iso)} 이후` : " — 지난 회차 포함"}</button>`).join("")}
+      </div>
+      <div class="modal-actions"><button class="btn btn-ghost" id="sc-cancel">취소</button></div>`);
+    $("#sc-cancel").onclick = closeModal;
+    $$("#modal-box [data-scope]").forEach(b => b.onclick = () => {
+      closeModal();
+      setOccDone(id, iso, b.dataset.scope, flag);
+      const sc = DONE_SCOPES.find(s => s.id === b.dataset.scope);
+      toast((sc ? sc.label : "") + " " + verb + " 처리되었습니다.");
+    });
   }
 
   /* ─────── 일정 드래그 이동 (포인터 기반)
@@ -489,10 +671,14 @@
   const evIcons = (e) => (e.vehicle ? "🚗" : "") + (e.room ? "🏢" : "") +
     ((e.reminders || []).length ? "⏰" : "") + (isRepeat(e) ? "🔁" : "");
 
-  /* 완료 체크: 완료 시 ✓(항상 표시) / 미완료 시 ○(호버 시에만 노출, 클릭으로 완료 처리) */
-  function checkHTML(e, canWrite) {
-    if (e.done) return `<span class="chip-check done"${canWrite ? ` data-donetoggle="${esc(e.id)}"` : ""} title="완료 — 클릭 시 해제">✓</span>`;
-    return canWrite ? `<span class="chip-check todo" data-donetoggle="${esc(e.id)}" title="완료 표시">○</span>` : "";
+  /* 완료 체크: 완료 시 ✓(항상 표시) / 미완료 시 ○(호버 시에만 노출, 클릭으로 완료 처리)
+     반복 일정은 회차(occ) 단위로 판정·토글 */
+  function checkHTML(e, canWrite, occIso) {
+    const occ = occIso || e.start;
+    const rep = isRepeat(e);
+    const attr = ` data-donetoggle="${esc(e.id)}" data-occ="${esc(occ)}"`;
+    if (e.done) return `<span class="chip-check done"${canWrite ? attr : ""} title="완료 — 클릭 시 ${rep ? "범위 선택 후 " : ""}해제">✓</span>`;
+    return canWrite ? `<span class="chip-check todo"${attr} title="완료 표시${rep ? " (범위 선택)" : ""}">○</span>` : "";
   }
 
   function barHTML(it, canWrite, style) {
@@ -504,9 +690,9 @@
         <span class="chip-title">${esc(e.title)}</span></div>`;
     }
     return `<div class="cal-bar ev-${esc(e.color || "blue")}${e.done ? " done" : ""}${it.contL ? " cont-l" : ""}${it.contR ? " cont-r" : ""}"
-        style="${style}" data-ev="${esc(e.id)}" data-from="${esc(it.from)}" ${canWrite ? 'data-drag="1"' : ""}
+        style="${style}" data-ev="${esc(e.id)}" data-from="${esc(it.from)}" data-occ="${esc(e.start)}" ${canWrite ? 'data-drag="1"' : ""}
         title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}${canWrite ? "\n(드래그하여 날짜 이동)" : ""}">
-      ${checkHTML(e, canWrite)}
+      ${checkHTML(e, canWrite, e.start)}
       ${!e.allDay && e.time ? `<span class="chip-time">${esc(e.time)}</span>` : ""}
       <span class="chip-title">${evIcons(e)}${esc(e.title)}</span>
       ${e.assignee ? `<span class="chip-tag" title="${esc(e.assignee)}">${esc(tagOf(e.assignee))}</span>` : ""}
@@ -521,9 +707,9 @@
         <span class="chip-title">${esc(e.title)}</span></div>`;
     }
     return `<div class="cal-tchip ev-${esc(e.color || "blue")}${e.done ? " done" : ""}" style="${style}"
-        data-ev="${esc(e.id)}" data-from="${esc(it.from)}" ${canWrite ? 'data-drag="1"' : ""}
+        data-ev="${esc(e.id)}" data-from="${esc(it.from)}" data-occ="${esc(e.start)}" ${canWrite ? 'data-drag="1"' : ""}
         title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}${canWrite ? "\n(드래그하여 날짜 이동)" : ""}">
-      ${checkHTML(e, canWrite)}
+      ${checkHTML(e, canWrite, e.start)}
       <span class="chip-dot"></span>
       <span class="chip-time">${esc(e.time || "")}</span>
       <span class="chip-title">${evIcons(e)}${esc(e.title)}</span>
@@ -614,8 +800,8 @@
         <span class="chip-title">${cont}${esc(e.title)}${cont2}</span></div>`;
     }
     return `<div class="cal-chip ev-${esc(e.color || "blue")}${e.done ? " done" : ""}"
-        data-ev="${esc(e.id)}" data-from="${esc(dayIso)}" title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}">
-      ${checkHTML(e, canWrite)}
+        data-ev="${esc(e.id)}" data-from="${esc(dayIso)}" data-occ="${esc(e.start)}" title="${esc(e.title)}${e.assignee ? " · " + esc(e.assignee) : ""}${e.memo ? "\n" + esc(e.memo) : ""}">
+      ${checkHTML(e, canWrite, e.start)}
       ${timeTxt}
       <span class="chip-title">${cont}${evIcons(e)}${esc(e.title)}${cont2}</span>
       ${!noTag && e.assignee ? `<span class="chip-tag" title="${esc(e.assignee)}">${esc(tagOf(e.assignee))}</span>` : ""}
@@ -669,13 +855,16 @@
   }
 
   /* ─────── 일정 등록/수정 폼 ─────── */
-  function eventForm(id, presetDay) {
+  function eventForm(id, presetDay, occIso) {
     const e = id ? D().schedules.find(x => x.id === id) : null;
     const start = e ? e.start : (presetDay || todayISO());
     const end = e ? (e.end || e.start) : start;
     const allDay = e ? !!e.allDay : true;
     const rems = e && Array.isArray(e.reminders) ? e.reminders : [];
     const rep = (e && e.repeat) || { freq: "none", until: "" };
+    const wasRepeat = !!(e && isRepeat(e));
+    const occ = (wasRepeat && /^\d{4}-\d{2}-\d{2}$/.test(String(occIso))) ? occIso : (e ? e.start : start);
+    const occWasDone = e ? occDone(e, occ) : false;
     openModal(`
       <h3>${e ? "일정 수정" : "일정 등록"}</h3>
       <div class="form-row"><label>일정명</label>
@@ -727,7 +916,14 @@
         <input type="file" id="m-anyfile" style="display:none" multiple>
         <div class="form-hint">링크·이미지·파일 지원 — 붙여넣기/드래그앤드롭으로도 추가됩니다.</div></div>
       <div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" id="f-done" style="width:auto" ${e && e.done ? "checked" : ""}> 완료된 일정</label></div>
+        <input type="checkbox" id="f-done" style="width:auto" ${occWasDone ? "checked" : ""}> 완료된 일정${
+          wasRepeat ? ` <span style="color:var(--text-3);font-weight:500">(이 회차: ${esc(occ)})</span>` : ""}</label>
+        ${wasRepeat ? `<div id="row-donescope" style="display:none;margin-top:8px">
+          <label>적용 범위</label>
+          <select id="f-donescope">${DONE_SCOPES.map(s =>
+            `<option value="${s.id}">${s.label}</option>`).join("")}</select>
+          <div class="form-hint">🔁 반복 일정입니다. 완료/해제를 어느 회차까지 적용할지 선택하세요.</div>
+        </div>` : ""}</div>
       <div class="modal-actions">
         ${e ? '<button class="btn btn-danger" id="f-del" style="margin-right:auto">삭제</button>' : ""}
         <button class="btn btn-ghost" id="f-cancel">취소</button>
@@ -745,7 +941,17 @@
     };
     $("#f-repeat").onchange = () => {
       $("#row-until").style.display = $("#f-repeat").value === "none" ? "none" : "";
+      if (wasRepeat) syncDoneScope();
     };
+
+    /* 반복 일정: 완료 체크 상태가 바뀌면 적용 범위 선택을 노출 */
+    function syncDoneScope() {
+      const row = $("#row-donescope");
+      if (!row) return;
+      const changed = $("#f-done").checked !== occWasDone;
+      row.style.display = (changed && $("#f-repeat").value !== "none") ? "" : "none";
+    }
+    if (wasRepeat) { $("#f-done").onchange = syncDoneScope; syncDoneScope(); }
 
     /* 메모 리치 에디터 */
     const med = $("#f-memo");
@@ -796,15 +1002,32 @@
         start: s, end: en, allDay: allday,
         time: allday ? "" : ($("#f-time").value || "09:00"),
         timeEnd: allday ? "" : ($("#f-timeend").value || ""),
-        color, done: $("#f-done").checked,
+        color,
         assignee: $("#f-assignee").value.trim(),
         vehicle: $("#f-vehicle").checked,
         room: $("#f-room").checked,
         reminders,
         repeat: { freq, until: freq === "none" ? "" : runtil }
       };
-      if (e) Object.assign(e, rec);
-      else D().schedules.push(Object.assign({ id: uid("s") }, rec));
+      const wantDone = $("#f-done").checked;
+      const scEl = $("#f-donescope");
+      const scope = (scEl && DONE_SCOPES.some(x => x.id === scEl.value)) ? scEl.value : "one";
+      if (e) {
+        const structChanged = e.start !== s || ((e.repeat && e.repeat.freq) || "none") !== freq;
+        Object.assign(e, rec);
+        if (freq === "none") {                                // 반복 해제 → 단일 일정 완료 상태
+          e.done = wantDone; clearDoneMarks(e);
+        } else if (structChanged) {                           // 시작일/주기 변경 → 회차 기준 재설정
+          e.done = false; clearDoneMarks(e);
+          if (wantDone) applyOccDone(e, s, scope === "one" ? "all" : scope, true);
+        } else if (wantDone !== occWasDone) {
+          applyOccDone(e, occ, scope, wantDone);
+        }
+      } else {
+        D().schedules.push(Object.assign({ id: uid("s") }, rec, {
+          done: wantDone, doneFrom: "", doneDates: [], undoneDates: []
+        }));
+      }
       try {
         if (reminders.length && typeof Notification !== "undefined" && Notification.permission === "default")
           Notification.requestPermission();
@@ -814,15 +1037,19 @@
   }
 
   /* ─────── 일정 상세 (읽기 전용) ─────── */
-  function eventDetail(id) {
+  function eventDetail(id, occIso) {
     const e = D().schedules.find(x => x.id === id);
     if (!e) return;
     const sanitize = window.SemisNotice ? SemisNotice.sanitizeHtml : (h) => esc(h);
     const remTxt = (e.reminders || []).map(r => (REMINDER_DEFS.find(d => d.id === r) || {}).label).filter(Boolean).join(", ");
+    const occ = (isRepeat(e) && /^\d{4}-\d{2}-\d{2}$/.test(String(occIso))) ? occIso : e.start;
+    const dn = occDone(e, occ);
+    const dur = diffDays(e.start, e.end || e.start);
+    const occEnd = addDays(occ, dur);
     openModal(`
-      <h3><span class="cal-dot ev-${esc(e.color || "blue")}"></span> ${esc(e.title)} ${e.done ? '<span class="badge badge-green">완료</span>' : ""}</h3>
+      <h3><span class="cal-dot ev-${esc(e.color || "blue")}"></span> ${esc(e.title)} ${dn ? '<span class="badge badge-green">완료</span>' : ""}</h3>
       <table class="tbl" style="font-size:.88rem">
-        <tr><td style="width:90px;color:var(--text-2)">기간</td><td>${esc(e.start)}${e.end && e.end !== e.start ? " ~ " + esc(e.end) : ""}</td></tr>
+        <tr><td style="width:90px;color:var(--text-2)">기간</td><td>${esc(occ)}${occEnd !== occ ? " ~ " + esc(occEnd) : ""}</td></tr>
         <tr><td style="color:var(--text-2)">시간</td><td>${e.allDay ? "종일" : esc(e.time || "") + (e.timeEnd ? " ~ " + esc(e.timeEnd) : "")}</td></tr>
         ${isRepeat(e) ? `<tr><td style="color:var(--text-2)">반복</td><td>🔁 ${esc(repeatLabel(e))}</td></tr>` : ""}
         ${e.vehicle || e.room ? `<tr><td style="color:var(--text-2)">예약</td><td>${e.vehicle ? "🚗 차량 " : ""}${e.room ? "🏢 회의실" : ""}</td></tr>` : ""}
@@ -967,12 +1194,13 @@
 
       /* ── 클릭: 완료 토글 · 수정/상세 · 더보기 · 년뷰 이동 ── */
       $$("[data-donetoggle]", body).forEach(el => el.onclick = (ev) => {
-        ev.stopPropagation(); toggleDone(el.dataset.donetoggle);
+        ev.stopPropagation(); askDoneScope(el.dataset.donetoggle, el.dataset.occ);
       });
       $$("[data-ev]", body).forEach(el => el.onclick = (ev) => {
         if (justDragged()) return;                 // 드래그로 이동한 직후의 클릭은 무시
         if (ev.target.closest("[data-donetoggle]")) return;
-        canWrite ? eventForm(el.dataset.ev) : eventDetail(el.dataset.ev);
+        canWrite ? eventForm(el.dataset.ev, null, el.dataset.occ)
+                 : eventDetail(el.dataset.ev, el.dataset.occ);
       });
       $$("[data-gcal]", body).forEach(el => el.onclick = () => gcalDetail(el.dataset.gcal));
       $$("[data-more]", body).forEach(el => el.onclick = (ev) => {
@@ -1007,6 +1235,8 @@
     setAnchor, getAnchor: () => anchor,
     setFilter, getFilter: () => ({ assignee: fAssignee, hideDone: fHideDone }),
     moveEvent, resizeEvent, toggleDone,
+    occDone, setOccDone, applyOccDone, askDoneScope, occurrenceStarts, stepOccurrence,
+    shiftDoneMarks, clearDoneMarks, nextOpenOccurrence, DONE_SCOPES,
     eventsOnDay, filteredEvents, assigneeList,
     addDays, diffDays, startOfWeek, rangeTitle,
     COLORS, VIEWS, TEAM, tagOf,

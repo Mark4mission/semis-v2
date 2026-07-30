@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SeMIS · 반복 일정 회차별 완료 수동 검증 하네스</title>
+<link rel="stylesheet" href="../css/main.css">
+<style>
+  body { padding: 16px; }
+  #log { font: 12px/1.6 ui-monospace, monospace; background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 8px; margin-top: 12px; max-height: 220px; overflow: auto; white-space: pre-wrap; }
+  #modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; z-index: 9500; }
+  #modal-overlay.hidden { display: none; }
+  #modal-box { background: #fff; border-radius: 12px; padding: 20px; width: min(520px, 92vw); max-height: 86vh; overflow: auto; }
+  #modal-box.wide { width: min(760px, 94vw); }
+</style>
+</head>
+<body>
+<!-- 실제 js/calendar.js 를 그대로 로드하여 "반복 일정 회차별 완료"만 격리 검증하는 수동 테스트 페이지.
+     사용법: 반복 일정(🔁)의 체크(○)를 클릭 → 범위 선택 모달에서 항목을 고른 뒤 그리드 반영 확인. -->
+<h3 style="margin:0 0 10px">반복 일정 회차별 완료 — 수동 검증</h3>
+<div id="app"></div>
+<div id="log">준비됨. 반복 일정 막대의 ○ 를 클릭하세요.</div>
+<div id="modal-overlay" class="hidden"><div id="modal-box"></div></div>
+<div id="toast-wrap"></div>
+
+<script>
+(() => {
+  const log = (m) => { const el = document.getElementById("log"); el.textContent = m + "\n" + el.textContent; };
+  const $  = (sel, el) => (el || document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el || document).querySelectorAll(sel));
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const modules = {};
+  const state = () => SeMIS.data.schedules[0];
+
+  window.SeMIS = {
+    $, $$, esc,
+    toast: (m) => log("toast: " + m),
+    openModal: (html, opts) => {
+      const box = $("#modal-box");
+      box.classList.toggle("wide", !!(opts && opts.wide));
+      box.innerHTML = html;
+      $("#modal-overlay").classList.remove("hidden");
+    },
+    closeModal: () => {
+      $("#modal-overlay").classList.add("hidden");
+      $("#modal-box").innerHTML = "";
+      $("#modal-box").classList.remove("wide");
+    },
+    confirmModal: (msg, onOk) => onOk(),
+    canEdit: () => true,
+    registerModule: (id, def) => { modules[id] = def; },
+    renderView: () => modules.schedule.render(document.getElementById("app")),
+    save: () => {
+      const s = state();
+      log("save() — done=" + s.done + " doneFrom=" + (s.doneFrom || "-") +
+          " doneDates=[" + (s.doneDates || []).join(" ") + "]" +
+          " undoneDates=[" + (s.undoneDates || []).join(" ") + "]");
+    },
+    data: {
+      schedules: [
+        { id: "r1", title: "주간 보안회의(반복)", memo: "", start: "2026-07-06", end: "2026-07-06",
+          allDay: true, time: "", timeEnd: "", color: "blue", done: false, assignee: "최상일",
+          vehicle: false, room: false, reminders: [],
+          repeat: { freq: "weekly", until: "" }, doneFrom: "", doneDates: [], undoneDates: [] }
+      ]
+    }
+  };
+  window.addEventListener("error", (e) => log("ERROR: " + e.message));
+})();
+</script>
+<script src="../js/calendar.js"></script>
+<script>
+  SemisCalendar.setView("month");
+  SemisCalendar.setAnchor("2026-07-15");
+  SeMIS.renderView();
+</script>
+</body>
+</html>

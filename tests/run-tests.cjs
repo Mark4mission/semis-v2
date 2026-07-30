@@ -2116,6 +2116,240 @@ function makeFetchStub(server) {
     });
   }
 
+  /* ══════════ [RD] 반복 일정 회차별 완료 (v2.33) ══════════ */
+  {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const C = e.Cal;
+    const D = e.S.data;
+    const base = { memo: "", allDay: true, time: "", timeEnd: "", color: "blue", done: false,
+      assignee: "", vehicle: false, room: false, reminders: [], doneFrom: "", doneDates: [], undoneDates: [] };
+    const mk = (id, patch) => {
+      const ev = Object.assign({}, base, { id, title: id, start: "2026-07-06", end: "2026-07-06",
+        repeat: { freq: "weekly", until: "" } }, patch || {});
+      D.schedules.length = 0;                                 // 회차 표시 검증을 위해 단일 일정만 유지
+      D.schedules.push(ev);
+      e.S.saveSilent();
+      return ev;
+    };
+    const get = (id) => D.schedules.find(x => x.id === id);
+    // 매주 월요일: 7/06, 7/13, 7/20, 7/27, 8/03 …
+
+    t("RD01 occDone: 비반복은 done, 반복은 회차별 판정", () => {
+      const single = mk("rd_s", { repeat: { freq: "none", until: "" }, done: true });
+      ok(C.occDone(single), "비반복 완료");
+      const rep = mk("rd_a");
+      ok(!C.occDone(rep, "2026-07-13"), "초기 전 회차 미완료");
+    });
+
+    t("RD02 '이 일정만 완료' — 해당 회차만 완료", () => {
+      mk("rd_b");
+      C.setOccDone("rd_b", "2026-07-13", "one", true);
+      const ev = get("rd_b");
+      ok(C.occDone(ev, "2026-07-13"), "선택 회차 완료");
+      ok(!C.occDone(ev, "2026-07-06"), "이전 회차 미완료");
+      ok(!C.occDone(ev, "2026-07-20"), "이후 회차 미완료(미래 일정 보존)");
+      eq(ev.done, false, "마스터 done 플래그 미변경");
+      eq(ev.doneDates.join(","), "2026-07-13");
+    });
+
+    t("RD03 '이후의 일정 모두 완료' — 기준일 이후만 완료", () => {
+      mk("rd_c");
+      C.setOccDone("rd_c", "2026-07-20", "future", true);
+      const ev = get("rd_c");
+      ok(!C.occDone(ev, "2026-07-06") && !C.occDone(ev, "2026-07-13"), "이전 회차 미완료 유지");
+      ok(C.occDone(ev, "2026-07-20") && C.occDone(ev, "2026-07-27") && C.occDone(ev, "2026-12-28"),
+        "기준일 이후 전부 완료");
+      eq(ev.doneFrom, "2026-07-20");
+      eq(ev.done, false);
+    });
+
+    t("RD04 '전체 일정 완료' — 모든 회차 완료", () => {
+      mk("rd_d");
+      C.setOccDone("rd_d", "2026-07-20", "all", true);
+      const ev = get("rd_d");
+      ok(C.occDone(ev, "2026-07-06") && C.occDone(ev, "2026-08-03"), "과거·미래 전부 완료");
+      eq(ev.done, true);
+      eq(ev.doneFrom, ""); eq(ev.doneDates.length, 0);
+    });
+
+    t("RD05 개별 해제: 전체 완료 상태에서 한 회차만 해제", () => {
+      mk("rd_e", { done: true });
+      C.setOccDone("rd_e", "2026-07-13", "one", false);
+      const ev = get("rd_e");
+      ok(!C.occDone(ev, "2026-07-13"), "선택 회차만 해제");
+      ok(C.occDone(ev, "2026-07-06") && C.occDone(ev, "2026-07-20"), "나머지 완료 유지");
+      eq(ev.undoneDates.join(","), "2026-07-13");
+    });
+
+    t("RD06 '이후 모두 해제' — 지난 완료 회차는 보존", () => {
+      mk("rd_f", { done: true });
+      C.setOccDone("rd_f", "2026-07-20", "future", false);
+      const ev = get("rd_f");
+      ok(C.occDone(ev, "2026-07-06") && C.occDone(ev, "2026-07-13"), "지난 완료 보존");
+      ok(!C.occDone(ev, "2026-07-20") && !C.occDone(ev, "2026-07-27"), "이후 해제");
+      eq(ev.done, false);
+      eq(ev.doneDates.join(","), "2026-07-06,2026-07-13");
+    });
+
+    t("RD07 toggleDone(반복): occ 인자 없으면 첫 회차만 토글", () => {
+      mk("rd_g");
+      eq(C.toggleDone("rd_g", "2026-07-13"), true);
+      ok(C.occDone(get("rd_g"), "2026-07-13") && !C.occDone(get("rd_g"), "2026-07-20"));
+      eq(C.toggleDone("rd_g", "2026-07-13"), false, "재토글 해제");
+      ok(!C.occDone(get("rd_g"), "2026-07-13"));
+    });
+
+    t("RD08 occurrenceStarts: 회차 열거 (매월 없는 날짜 건너뜀)", () => {
+      const w = mk("rd_h");
+      eq(C.occurrenceStarts(w, "2026-07-01", "2026-07-31").join(","),
+        "2026-07-06,2026-07-13,2026-07-20,2026-07-27");
+      const m = mk("rd_i", { start: "2026-01-31", end: "2026-01-31", repeat: { freq: "monthly", until: "2026-06-30" } });
+      eq(C.occurrenceStarts(m, "2026-01-01", "2026-12-31").join(","),
+        "2026-01-31,2026-03-31,2026-05-31", "2·4·6월 31일 없음 → 건너뜀");
+    });
+
+    t("RD09 체크 클릭 → 범위 선택 모달 (3개 선택지)", () => {
+      mk("rd_j");
+      go(e, "schedule");
+      C.setView("month"); C.setAnchor("2026-07-15"); e.S.renderView();
+      const tog = qa(e, '[data-donetoggle="rd_j"][data-occ="2026-07-13"]')[0];
+      ok(tog, "회차(data-occ) 정보가 붙은 완료 토글");
+      tog.click();
+      const opts = qa(e, "#modal-box [data-scope]");
+      eq(opts.length, 3, "이 일정만 / 이후 모두 / 전체");
+      eq(opts.map(x => x.dataset.scope).join(","), "one,future,all");
+      ok(q(e, "#modal-box").textContent.includes("2026-07-13"), "대상 회차 표시");
+      opts[0].click();                                        // 이 일정만
+      const ev = get("rd_j");
+      ok(C.occDone(ev, "2026-07-13") && !C.occDone(ev, "2026-07-20"), "이 회차만 완료 적용");
+    });
+
+    t("RD10 그리드 표시: 완료 회차만 done/✓, 나머지 미완료", () => {
+      e.S.renderView();
+      const bars = qa(e, '[data-ev="rd_j"]');
+      ok(bars.length >= 3, "월 보기 다수 회차");
+      const d13 = bars.filter(x => x.dataset.occ === "2026-07-13")[0];
+      const d20 = bars.filter(x => x.dataset.occ === "2026-07-20")[0];
+      ok(d13 && d13.className.includes("done"), "7/13 완료 스타일");
+      ok(d13.querySelector(".chip-check").textContent.includes("✓"), "✓ 표시");
+      ok(d20 && !d20.className.includes("done"), "7/20 미완료 유지");
+    });
+
+    t("RD11 '완료 숨기기' 필터: 완료 회차만 숨김", () => {
+      const has = (iso) => C.eventsOnDay(iso).some(x => x.id === "rd_j");
+      C.setFilter(undefined, true);
+      ok(!has("2026-07-13"), "완료 회차 숨김");
+      ok(has("2026-07-20"), "미완료 회차 표시");
+      C.setFilter(undefined, false);
+      ok(has("2026-07-13"), "필터 해제 시 복원");
+    });
+
+    t("RD12 리마인더: 완료된 회차는 알림 제외", () => {
+      const now = Date.now();
+      const st = new Date(now + 30 * 60000);
+      const pp = (n) => String(n).padStart(2, "0");
+      const iso = st.getFullYear() + "-" + pp(st.getMonth() + 1) + "-" + pp(st.getDate());
+      const hm = pp(st.getHours()) + ":" + pp(st.getMinutes());
+      mk("rd_k", { start: C.addDays(iso, -7), end: C.addDays(iso, -7), allDay: false, time: hm,
+        reminders: ["1h"], repeat: { freq: "weekly", until: "" } });
+      eq(C.dueReminders(now).filter(d => d.event.id === "rd_k").length, 1, "미완료 회차 알림");
+      C.setOccDone("rd_k", iso, "one", true);
+      eq(C.dueReminders(now).filter(d => d.event.id === "rd_k").length, 0, "완료 회차 알림 제외");
+    });
+
+    t("RD13 드래그 이동: 완료 표시도 함께 이동", () => {
+      mk("rd_l");
+      C.setOccDone("rd_l", "2026-07-13", "one", true);
+      C.setOccDone("rd_l", "2026-07-27", "future", true);
+      ok(C.moveEvent("rd_l", "2026-07-08"));                  // +2일
+      const ev = get("rd_l");
+      eq(ev.doneDates.join(","), "2026-07-15");
+      eq(ev.doneFrom, "2026-07-29");
+      ok(C.occDone(ev, "2026-07-15") && !C.occDone(ev, "2026-07-22"), "이동 후에도 회차 대응 유지");
+    });
+
+    t("RD14 수정 폼: 완료 체크 시 적용 범위 선택 노출 + 이 회차만 저장", () => {
+      mk("rd_m");
+      go(e, "schedule");
+      C.setView("month"); C.setAnchor("2026-07-15"); e.S.renderView();
+      const bar = qa(e, '[data-ev="rd_m"]').filter(x => x.dataset.occ === "2026-07-20")[0];
+      ok(bar, "7/20 회차 바");
+      bar.click();
+      ok(q(e, "#f-done"), "완료 체크박스");
+      eq(q(e, "#row-donescope").style.display, "none", "변경 전에는 범위 선택 숨김");
+      q(e, "#f-done").checked = true;
+      q(e, "#f-done").onchange();
+      ok(q(e, "#row-donescope").style.display !== "none", "체크 시 범위 선택 노출");
+      eq(q(e, "#f-donescope").value, "one", "기본값: 이 일정만");
+      q(e, "#f-save").click();
+      const ev = get("rd_m");
+      ok(C.occDone(ev, "2026-07-20"), "선택 회차 완료");
+      ok(!C.occDone(ev, "2026-07-27") && !C.occDone(ev, "2026-08-03"), "미래 회차 완료 안 됨");
+      eq(ev.done, false, "마스터 done 미변경");
+    });
+
+    t("RD15 수정 폼: 범위 '전체 일정' 선택 시 전 회차 완료", () => {
+      mk("rd_n");
+      e.S.renderView();
+      const bar = qa(e, '[data-ev="rd_n"]').filter(x => x.dataset.occ === "2026-07-20")[0];
+      bar.click();
+      q(e, "#f-done").checked = true;
+      q(e, "#f-done").onchange();
+      q(e, "#f-donescope").value = "all";
+      q(e, "#f-save").click();
+      const ev = get("rd_n");
+      eq(ev.done, true);
+      ok(C.occDone(ev, "2026-07-06") && C.occDone(ev, "2026-08-03"));
+    });
+
+    t("RD16 반복 해제(반복 안 함) 시 단일 완료로 정리", () => {
+      mk("rd_o", { done: true });
+      e.S.renderView();
+      const bar = qa(e, '[data-ev="rd_o"]')[0];
+      bar.click();
+      q(e, "#f-repeat").value = "none";
+      q(e, "#f-repeat").onchange();
+      q(e, "#f-save").click();
+      const ev = get("rd_o");
+      eq(ev.repeat.freq, "none");
+      eq(ev.done, true, "완료 상태 유지");
+      eq(ev.doneDates.length + ev.undoneDates.length, 0);
+      eq(ev.doneFrom, "");
+    });
+
+    t("RD17 대시보드 '다가오는 일정': 미완료 회차 우선 표시", () => {
+      const today = localToday();
+      mk("rd_p", { title: "회차완료테스트", start: C.addDays(today, -7), end: C.addDays(today, -7),
+        repeat: { freq: "weekly", until: "" } });
+      C.setOccDone("rd_p", today, "one", true);
+      const nx = C.nextOpenOccurrence(get("rd_p"), today);
+      eq(nx.start, C.addDays(today, 7), "완료 회차 건너뜀");
+      go(e, "dashboard");
+      ok(q(e, "#upcoming-box").innerHTML.includes("회차완료테스트"), "대시보드 표시");
+    });
+
+    t("RD18 상세(읽기전용) 모달: 회차 기준 기간·완료 표시", () => {
+      const ro = makeEnv();
+      loginAs(ro, "manager");
+      ro.S.data.schedules.length = 0;
+      ro.S.data.schedules.push(Object.assign({}, base, { id: "rd_q", title: "읽기전용반복",
+        start: "2026-07-06", end: "2026-07-06", repeat: { freq: "weekly", until: "" },
+        doneDates: ["2026-07-20"] }));
+      ro.S.saveSilent();
+      go(ro, "schedule");
+      ro.Cal.setView("month"); ro.Cal.setAnchor("2026-07-15"); ro.S.renderView();
+      const bar = qa(ro, '[data-ev="rd_q"]').filter(x => x.dataset.occ === "2026-07-20")[0];
+      ok(bar, "회차 바");
+      ok(!qa(ro, '[data-donetoggle="rd_q"]').length, "읽기 권한은 완료 토글 없음");
+      bar.click();
+      const html = q(ro, "#modal-box").innerHTML;
+      ok(html.includes("2026-07-20"), "회차 일자 표시");
+      ok(html.includes("완료"), "완료 배지");
+      ro.S.closeModal();
+    });
+  }
+
   /* ══════════ [S] Supabase 동기화 신규 ══════════ */
   await ta("S01 오프라인(fetch 거부) → 폴백 + 데이터 보존", async () => {
     const server = { rows: [], fail: true };
@@ -2183,7 +2417,7 @@ function makeFetchStub(server) {
     const server = { rows: [], fail: false };
     const e = makeEnv({ fetch: makeFetchStub(server) });
     await e.Sync.init();
-    const remote = [{ id: "rt1", title: "실시간일정", memo: "", start: "2026-09-10", end: "2026-09-10", allDay: true, time: "", timeEnd: "", color: "green", done: false, assignee: "", vehicle: false, room: false, reminders: [], repeat: { freq: "none", until: "" } }];
+    const remote = [{ id: "rt1", title: "실시간일정", memo: "", start: "2026-09-10", end: "2026-09-10", allDay: true, time: "", timeEnd: "", color: "green", done: false, assignee: "", vehicle: false, room: false, reminders: [], repeat: { freq: "none", until: "" }, doneFrom: "", doneDates: [], undoneDates: [] }];
     const changed = e.Sync.applyRemote("schedules", remote);
     eq(changed, true);
     eq(e.S.data.schedules[0].id, "rt1");
