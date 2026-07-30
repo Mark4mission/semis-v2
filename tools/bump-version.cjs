@@ -15,9 +15,10 @@ if (!/^\d+\.\d+\.\d+$/.test(ver || "")) {
 
 const appPath = path.join(ROOT, "js/app.js");
 let app = fs.readFileSync(appPath, "utf8");
-const before = app;
-app = app.replace(/const VERSION = "\d+\.\d+\.\d+";/, `const VERSION = "${ver}";`);
-if (app === before) { console.error("js/app.js 의 VERSION 선언을 찾지 못했습니다."); process.exit(1); }
+if (!/const VERSION = "\d+\.\d+\.\d+";/.test(app)) {
+  console.error("js/app.js 의 VERSION 선언을 찾지 못했습니다."); process.exit(1);
+}
+app = app.replace(/const VERSION = "\d+\.\d+\.\d+";/, `const VERSION = "${ver}";`); // 같은 버전 재실행도 허용(멱등)
 fs.writeFileSync(appPath, app);
 
 const htmlPath = path.join(ROOT, "index.html");

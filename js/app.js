@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.31.3";
+  const VERSION = "2.31.4";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -707,11 +707,11 @@ const SeMIS = (() => {
      mid(1560px)  = 목록/표 중간 밀도
      (미지정 = 기본 1180px) — 폭 조정은 이 표만 수정하면 됩니다. */
   const VIEW_WIDTH = {
-    schedule: "wide", inspection: "wide", carcap: "wide", equipment: "wide",
-    kpi: "wide", settings: "wide", policy: "wide", dashboard: "wide",
+    schedule: "wide", inspection: "wide", carcap: "wide",
+    kpi: "wide", policy: "wide", dashboard: "wide",
     passes: "mid", branches: "mid", "contracts-mgmt": "mid", training: "mid",
     certs: "mid", contacts: "mid", council: "mid", billing: "mid",
-    "regs-intl": "mid", "regs-own": "mid", vault: "mid"
+    equipment: "mid", settings: "mid", "regs-intl": "mid", "regs-own": "mid", vault: "mid"
   };
   function applyViewWidth(view, route) {
     const tier = String(route).indexOf("embed/") === 0 ? "wide" : (VIEW_WIDTH[route] || "");

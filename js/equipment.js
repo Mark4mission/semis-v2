@@ -496,8 +496,12 @@
     const items = filtered();
     const extras = stFilter === "전체" && !query ? caresOnlyEquips() : [];
     if (!items.length && !extras.length) return '<div class="empty">해당하는 장비가 없습니다.</div>';
-    return `<div class="table-wrap"><table class="tbl"><thead><tr>
-        <th style="width:82px">유형</th><th>장비명 / 배치</th><th style="width:96px">기산일</th>
+    return `<div class="table-wrap"><table class="tbl tbl-cap" style="--cap:1480px"><thead><tr>
+        <th style="width:82px">유형</th><th style="width:200px;min-width:180px">장비명<span class="col-sub"> / 배치</span></th>
+        <th class="col-ext" style="width:150px">S/N</th>
+        <th class="col-ext" style="min-width:220px">배치</th>
+        <th class="col-ext" style="width:120px">업체</th>
+        <th style="width:96px">기산일</th>
         <th style="width:150px">내용연수</th><th style="width:84px">이력</th><th style="width:76px">상태</th></tr></thead><tbody>
       ${items.map(x => {
         const c = caresLinkOf(x);
@@ -507,7 +511,10 @@
         return `<tr data-eq-row="${esc(x.id)}" style="cursor:pointer" class="${x.status === "폐기" ? "insp-cancel" : ""}">
         <td style="white-space:nowrap" title="${esc(x.type)}">${esc(TYPE_ICON[x.type] || "▪")} ${esc(TYPE_SHORT[x.type] || x.type)}</td>
         <td><b>${esc(x.name)}</b>${c ? ' <span class="badge badge-blue" style="font-size:.64rem" title="CARES 연동 (S/N 매칭)">C</span>' : ""}
-          ${loc ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(loc)}</div>` : ""}</td>
+          ${loc ? `<div class="col-sub" style="font-size:.76rem;color:var(--text-3)">${esc(loc)}</div>` : ""}</td>
+        <td class="col-ext" style="font-size:.78rem;color:var(--text-2)">${esc(x.serial || "-")}</td>
+        <td class="col-ext" style="font-size:.8rem">${esc(loc || "-")}</td>
+        <td class="col-ext" style="font-size:.8rem">${esc(x.vendor || "-")}</td>
         <td style="font-size:.8rem">${esc(lifeBase(x) || "-")}</td>
         <td>${lifeBadge(x)}${lifeYearsOf(x) ? `<div style="font-size:.7rem;color:var(--text-3)">${lifeYearsOf(x)}년 · ${esc(replaceDue(x) || "")}</div>` : ""}</td>
         <td style="font-size:.8rem">${repN ? `<span class="badge badge-red" style="font-size:.66rem">고장 ${repN}</span>` : ""}${(x.logs || []).length ? ` <span style="color:var(--text-3)">메모 ${(x.logs || []).length}</span>` : (repN ? "" : "-")}</td>
@@ -516,7 +523,10 @@
       ${extras.map((c, i) => `<tr data-cares-only="${i}" style="cursor:pointer;opacity:.78">
         <td style="white-space:nowrap">📡 ${esc(c.type || "-")}</td>
         <td><b>${esc(c.name)}</b> <span class="badge badge-blue" style="font-size:.64rem">CARES만</span>
-          ${c.location ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(c.location)}</div>` : ""}</td>
+          ${c.location ? `<div class="col-sub" style="font-size:.76rem;color:var(--text-3)">${esc(c.location)}</div>` : ""}</td>
+        <td class="col-ext" style="font-size:.78rem;color:var(--text-2)">${esc(c.serial || "-")}</td>
+        <td class="col-ext" style="font-size:.8rem">${esc(c.location || "-")}</td>
+        <td class="col-ext" style="font-size:.8rem">-</td>
         <td style="font-size:.8rem">-</td><td><span class="badge badge-gray">대장 미등록</span></td><td>-</td>
         <td><span class="badge ${c.status === "safe" ? "badge-green" : c.status === "warning" ? "badge-amber" : "badge-red"}">${ST_FROM_CARES[c.status] || "-"}</span></td>
       </tr>`).join("")}
@@ -802,7 +812,7 @@
         <span style="font-size:.88rem">연간 합계 <b style="color:var(--primary)">${fmtWon(yc.total)}원</b></span>
       </div>
       ${costChartHTML(yc)}
-      <div class="table-wrap"><table class="tbl" style="font-size:.84rem"><thead><tr>
+      <div class="table-wrap"><table class="tbl tbl-cap" style="font-size:.84rem;--cap:1000px"><thead><tr>
         <th style="width:56px">월</th><th style="text-align:right">정기 유지보수</th>
         <th style="text-align:right">수리/부품</th><th style="text-align:right">기타</th><th style="text-align:right">계</th></tr></thead>
         <tbody>${monthRows.join("")}
@@ -841,7 +851,7 @@
           <td style="text-align:right;color:var(--danger)">${s.deduct ? "− " + fw(s.deduct) : "-"}</td>
           <td style="text-align:right"><b>${fw(s.net)}</b></td></tr>`;
       }).join("");
-      body = `<div class="table-wrap"><table class="tbl" style="font-size:.8rem"><thead><tr>
+      body = `<div class="table-wrap"><table class="tbl tbl-cap" style="font-size:.8rem;--cap:1100px"><thead><tr>
           <th style="width:48px">월</th><th style="width:96px">업체</th>
           <th style="text-align:right">장비 유지보수</th><th style="text-align:right">보안검색&경비</th>
           <th style="text-align:right">기타 수익 차감</th><th style="text-align:right">실청구액</th></tr></thead>

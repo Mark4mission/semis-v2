@@ -662,6 +662,11 @@
         <span>${esc(m.icon || (m.type === "group" ? "📂" : "▪"))}</span>
         <span class="mt-label">${esc(m.label)}
           ${m.quick ? '<span class="badge badge-amber mt-type">바로가기</span>' : ""}</span>
+        ${m.type === "link" && m.url
+          ? `<span class="mt-url col-ext" title="${esc(m.url)}">${esc(m.url)}</span>`
+          : m.type === "module" && m.module
+            ? `<span class="mt-url col-ext mt-url-mod" title="라우트 #/${esc(m.module)}">#/${esc(m.module)}</span>`
+            : ""}
         ${typeBadge(m)}
         <span class="badge badge-gray mt-type">${esc(SeMIS.VIS_LABEL[m.vis || "all"] || "전체")}</span>
         <span class="mt-actions">

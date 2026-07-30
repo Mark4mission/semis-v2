@@ -4970,8 +4970,8 @@ function makeFetchStub(server) {
 
   /* ══════════ [W] 콘텐츠 폭 티어 (v2.31.2) ══════════ */
 
-  const WIDE_EXPECT = ["schedule", "inspection", "carcap", "equipment", "kpi", "settings", "policy", "dashboard"];
-  const MID_EXPECT = ["passes", "branches", "contracts-mgmt", "training", "certs", "contacts", "council", "billing", "regs-intl", "regs-own", "vault"];
+  const WIDE_EXPECT = ["schedule", "inspection", "carcap", "kpi", "policy", "dashboard"];
+  const MID_EXPECT = ["passes", "branches", "contracts-mgmt", "training", "certs", "contacts", "council", "billing", "equipment", "regs-intl", "regs-own", "vault"];
 
   t("W1 밀집형 모듈은 view-wide", () => {
     const e = makeEnv();
@@ -5003,6 +5003,75 @@ function makeFetchStub(server) {
     ok(!q(e, "#view").classList.contains("view-wide"), "wide→mid 전환 시 wide 제거");
     go(e, "schedule");
     ok(!q(e, "#view").classList.contains("view-mid"), "mid→wide 전환 시 mid 제거");
+  });
+
+  t("W6 확장 컬럼 CSS 규칙(1500px 이상 노출 + 보조줄 숨김)", () => {
+    const css = read("css/main.css");
+    ok(/\.col-ext\s*\{\s*display:\s*none/.test(css), "col-ext 기본 숨김");
+    ok(/@media \(min-width: 1560px\)[\s\S]{0,320}td\.col-ext[^}]*display:\s*table-cell/.test(css), "1500px 이상에서 열 노출");
+    ok(/@media \(min-width: 1560px\)[\s\S]{0,400}\.col-sub\s*\{\s*display:\s*none/.test(css), "확장 시 보조줄 숨김");
+  });
+
+  t("W7 목록 표 열 벌어짐 방지(tbl-cap) — 장비·협의회·이수증", () => {
+    const css = read("css/main.css");
+    ok(/\.tbl-cap\s*\{[^}]*max-width:\s*var\(--cap/.test(css), "tbl-cap max-width 규칙");
+    ok(/\.tbl-cap tbody tr:hover td/.test(css), "줄무늬보다 뒤에 hover 규칙(우선순위)");
+    const zebraAt = css.indexOf(".tbl-cap tbody tr:nth-child(even)");
+    const hoverAt = css.indexOf(".tbl-cap tbody tr:hover");
+    ok(zebraAt >= 0 && hoverAt > zebraAt, "hover가 줄무늬 뒤에 선언됨");
+    ok(/tbl-cap" style="--cap:1480px"/.test(eqJS), "장비 대장 표 cap");
+    ok(/tbl-cap" style="--cap:1480px"/.test(cnclJS), "협의회 목록 표 cap");
+    ok(/tbl-cap" style="--cap:1480px"/.test(ctcJS), "이수증 목록 표 cap");
+  });
+
+  t("W9 확장 컬럼 마크업 — 장비(S/N·배치·업체)·협의회(주재·작성)·이수증(소속·비고)·설정(주소)", () => {
+    const e = makeEnv();
+    loginAs(e, "admin");
+    // 장비 대장
+    e.S.data.equipment = [{
+      id: "eq-t1", type: "ETD", name: "테스트장비", serial: "SN-777", location: "B동 1층",
+      vendor: "프로에스콤", installed: "2024-01-02", status: "정상", logs: []
+    }];
+    e.S.data.certs = [{ id: "ct-t2", certNo: "T-2", name: "홍길동", dept: "화물팀", role: "보안감독자", kind: "정기", org: "교육원", issued: "2026-02-02", expire: "2027-03-01", note: "재교육 예정" }];
+    e.S.data.council = [{ id: "cn-t1", round: 9, date: "2026-05-05", place: "B동", chair: "최상일", scribe: "김작성", attendees: [], cases: [], actions: [], files: [], updated: "2026-05-06T00:00:00.000Z", by: "tester" }];
+    e.S.saveSilent();
+
+    go(e, "equipment");
+    const eqExt = qa(e, "#view thead th.col-ext").map(th => th.textContent.trim());
+    eq(eqExt.join("|"), "S/N|배치|업체", "장비 확장 헤더");
+    ok(q(e, "#view tbody td.col-ext").textContent.includes("SN-777"), "S/N 값 렌더");
+    ok(q(e, "#view .col-sub"), "좁은 화면용 배치 보조줄 유지");
+
+    go(e, "certs");
+    const ctExt = qa(e, "#view thead th.col-ext").map(th => th.textContent.trim());
+    eq(ctExt.join("|"), "소속|비고", "이수증 확장 헤더");
+    ok(qa(e, "#view tbody td.col-ext").some(td => td.textContent.includes("화물팀")), "소속 열 렌더");
+    ok(qa(e, "#view tbody td.col-ext").some(td => td.textContent.includes("재교육 예정")), "비고 열 렌더");
+
+    go(e, "council");
+    const cnExt = qa(e, "#view thead th.col-ext").map(th => th.textContent.trim());
+    eq(cnExt.join("|"), "장소|주재|작성|최근 수정", "협의회 확장 헤더");
+    ok(qa(e, "#view tbody td.col-ext").some(td => td.textContent.includes("최상일")), "주재 열 렌더");
+
+    go(e, "settings");
+    const urls = qa(e, "#view .mt-url");
+    ok(urls.length >= 5, "메뉴 트리 주소/라우트 표시: " + urls.length);
+    ok(urls.some(u => u.textContent.trim().indexOf("#/") === 0), "모듈 라우트 표기");
+    ok(urls.some(u => /^https?:\/\//.test(u.textContent.trim())), "링크 메뉴 주소 표기");
+  });
+
+  t("W8 tbl-cap 표가 실제 렌더에 적용됨(이수증)", () => {
+    const e = makeEnv();
+    loginAs(e, "admin");
+    e.S.data.certs = [{
+      id: "ct-t1", certNo: "T-1", name: "테스트", dept: "항공보안팀", role: "보안감독자",
+      kind: "초기", org: "한국항공안전교육원", issued: "2026-01-05", expire: "2027-02-04"
+    }];
+    e.S.saveSilent();
+    go(e, "certs");
+    const tb = q(e, "#view .tbl-cap");
+    ok(tb, "이수증 목록 표에 tbl-cap 클래스");
+    ok((tb.getAttribute("style") || "").includes("--cap"), "--cap 인라인 지정");
   });
 
   t("W5 index.html 캐시 스탬프가 VERSION과 일치(구버전 CSS/JS 잔존 방지)", () => {

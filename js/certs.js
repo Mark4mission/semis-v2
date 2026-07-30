@@ -334,19 +334,25 @@
   function tableHTML() {
     const items = filtered();
     if (!items.length) return '<div class="empty">해당하는 이수증이 없습니다.</div>';
-    return `<div class="table-wrap"><table class="tbl"><thead><tr>
-        <th>성명 / 소속</th><th style="width:170px">과정</th><th style="width:150px">수료번호</th>
+    return `<div class="table-wrap"><table class="tbl tbl-cap" style="--cap:1480px"><thead><tr>
+        <th style="width:130px;min-width:110px">성명<span class="col-sub"> / 소속</span></th>
+        <th class="col-ext" style="width:150px">소속</th>
+        <th style="width:170px">과정</th><th style="width:150px">수료번호</th>
         <th style="width:150px">수료기관</th><th style="width:106px">수료일</th>
-        <th style="width:150px">유효만료</th><th style="width:90px">이수증</th></tr></thead><tbody>
+        <th style="width:150px">유효만료</th>
+        <th class="col-ext" style="min-width:140px">비고</th>
+        <th style="width:90px">이수증</th></tr></thead><tbody>
       ${items.map(c => { const st = stateOf(c); return `
       <tr data-ct-row="${esc(c.id)}"${SeMIS.canEdit() ? ' style="cursor:pointer" title="클릭하여 수정"' : ""} class="${st === "만료" ? "insp-cancel" : ""}">
-        <td><b>${esc(c.name)}</b>${c.dept ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(c.dept)}</div>` : ""}</td>
+        <td><b>${esc(c.name)}</b>${c.dept ? `<div class="col-sub" style="font-size:.76rem;color:var(--text-3)">${esc(c.dept)}</div>` : ""}</td>
+        <td class="col-ext" style="font-size:.8rem;color:var(--text-2)">${esc(c.dept || "-")}</td>
         <td style="white-space:nowrap"><span class="badge ${ROLE_BADGE[c.role] || "badge-gray"}">${esc(c.role)}</span>
           <span class="badge badge-gray">${esc(c.kind || "")}</span></td>
         <td style="font-size:.78rem">${esc(c.certNo || "-")}</td>
         <td style="font-size:.78rem">${esc(c.org || "-")}</td>
         <td style="font-size:.82rem;white-space:nowrap">${esc(c.issued || "-")}</td>
         <td style="white-space:nowrap"><span style="font-size:.82rem">${esc(c.expire || "-")}</span><div style="margin-top:2px">${ddayBadge(c)}</div></td>
+        <td class="col-ext" style="font-size:.78rem;color:var(--text-2)">${esc(c.note || "")}</td>
         <td>${c.fileUrl ? `<button class="btn btn-ghost btn-sm" data-ct-pdf="${esc(c.id)}">📄 보기</button>` : '<span style="font-size:.76rem;color:var(--text-3)">미첨부</span>'}</td>
       </tr>`; }).join("")}</tbody></table></div>`;
   }

@@ -244,6 +244,21 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .tbl tr:last-child td { border-bottom: none; }
 .tbl tr:hover td { background: var(--surface-2); }
 
+/* v2.31.4: 넓은 화면에서 열이 과도하게 벌어지는 목록 표 — 자연 폭(--cap)까지만 확장.
+   좁은 화면에서는 max-width가 가용 폭보다 커서 아무 영향 없음(기존 동작 유지). */
+.tbl-cap { max-width: var(--cap, 1200px); }
+
+/* v2.31.4: 확장 컬럼(넓은 화면 전용) — 남는 폭을 여백 대신 정보로 채운다.
+   .col-ext = 1500px 이상에서만 노출되는 열 / .col-sub = 좁은 화면에서 요약해 보여주던 보조줄(확장 시 중복이라 숨김) */
+.col-ext { display: none; }
+@media (min-width: 1560px) {
+  th.col-ext, td.col-ext { display: table-cell; }
+  span.col-ext, div.col-ext { display: inline; }
+  .col-sub { display: none; }
+}
+.tbl-cap tbody tr:nth-child(even) td { background: rgba(148,163,184,.07); } /* 행 추적용 옅은 줄무늬 */
+.tbl-cap tbody tr:hover td { background: var(--primary-soft); }
+
 .badge { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; }
 .badge-blue { background: var(--primary-soft); color: var(--primary); }
 .badge-gray { background: #f1f5f9; color: var(--text-2); }
@@ -322,6 +337,18 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .menu-tree-item.is-child { margin-left: 26px; }
 .menu-tree-item .mt-label { flex: 1; font-size: .88rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-tree-item .mt-type { font-size: 0.75rem; }
+/* v2.31.4: 넓은 화면에서 라벨↔버튼 사이 빈 공간에 대상 주소·라우트 표시 */
+.menu-tree-item .mt-url {
+  flex: 0 1 auto; max-width: 42%; min-width: 0; font-size: 0.75rem; color: var(--text-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr;
+}
+.menu-tree-item .mt-url-mod { color: #94a3b8; }
+@media (min-width: 1560px) {
+  /* 주소가 있는 행은 라벨을 내용 폭으로 줄이고 주소가 남는 폭을 흡수 — 라벨과 버튼이 멀어지지 않게 */
+  .menu-tree-item:has(.mt-url) .mt-label { flex: 0 1 auto; }
+  .menu-tree-item .mt-url { flex: 1 1 auto; max-width: none; }
+}
 .menu-tree-item .mt-actions { display: flex; gap: 2px; }
 .mt-btn { background: none; border: none; font-size: .85rem; padding: 4px 6px; border-radius: 4px; color: var(--text-2); }
 .mt-btn:hover { background: var(--surface-2); color: var(--text); }
