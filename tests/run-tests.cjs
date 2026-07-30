@@ -3454,7 +3454,7 @@ function makeFetchStub(server) {
     eq(q(e, "#nav-menu .nav-item.active").dataset.route, "billing", "현재 메뉴 표시");
   });
 
-  t("VD03 프로에스콤: 확대 메뉴 실제 렌더 + 편집 불가 + 대외비 차단", () => {
+  t("VD03 프로에스콤: 확대 메뉴 렌더 + 편집 권한(hq 동등) + 삭제만 차단", () => {
     const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
       d.equipment = [{ id: "vq1", type: "ETD(폭발물흔적)", name: "ETD-1", serial: "S1", location: "검색장",
         vendor: "프로에스콤", mfgDate: "2024-01-01", installed: "2024-01-01", status: "정상", logs: [], note: "" }];
@@ -3467,24 +3467,97 @@ function makeFetchStub(server) {
       return d; })();
     const e = makeEnv({ preData: pre });
     loginVendor(e, "프로에스콤", "tvd03");
-    // 규정 열람 (개정 아이디어는 rank<2 → 미노출)
+    eq(e.S.roleRank(), 3, "편집 업체 = hq 동등 등급");
+    ok(e.S.canEdit(), "편집 권한 있음");
+    ok(!e.S.canDelete(), "삭제 권한 없음");
+    // 규정: 열람 + 편집(등록/수정), 삭제 버튼 없음
     go(e, "regs-intl");
     ok(/ICAO Annex 17/.test(q(e, "#view").textContent), "규정 목록 열람");
-    ok(!/개정검토메모/.test(q(e, "#view").textContent), "개정 아이디어 미노출");
-    // 장비 열람 (계약/비용 탭 = 대외비 차단, 등록 버튼 없음)
+    e.w.SemisRegs.regForm("intl", "vr1");
+    ok(q(e, "#rg-save"), "규정 저장 버튼(수정 가능)");
+    ok(!q(e, "#rg-del"), "규정 삭제 버튼 없음");
+    e.S.closeModal();
+    // 장비: 대장 편집 + 계약/비용(대외비) 열람·편집, 삭제만 차단
     go(e, "equipment");
     ok(/ETD-1/.test(q(e, "#view").textContent), "장비 대장 열람");
-    ok(!q(e, "#eq-add"), "장비 등록 버튼 없음(편집 불가)");
-    ok(!/유지보수 계약/.test(q(e, "#view").textContent), "유지보수 계약 탭 미노출(대외비)");
-    ok(!/2,610,000/.test(q(e, "#view").textContent), "유지보수 비용 미노출(대외비)");
-    // 협의회 열람 (편집·KPI 링크 없음)
+    ok(q(e, "#eq-add"), "장비 등록 버튼(편집 가능)");
+    ok(/유지보수 계약/.test(q(e, "#view").textContent), "유지보수 계약 탭 노출");
+    q(e, '[data-eq-row="vq1"]').click();
+    ok(q(e, "#e-save"), "장비 저장 버튼");
+    ok(!q(e, "#e-del"), "장비 삭제 버튼 없음");
+    e.S.closeModal();
+    e.w.SemisEquipment.setTab("contracts");
+    go(e, "equipment");
+    ok(q(e, "#mc-add"), "계약 등록 버튼");
+    q(e, "#mc-add").click();
+    ok(q(e, "#mc-save") && !q(e, "#mc-del"), "계약 등록 가능·신규는 삭제 없음");
+    e.S.closeModal();
+    e.w.SemisEquipment.setTab("costs");
+    go(e, "equipment");
+    ok(q(e, "#ct-add"), "비용 등록 버튼(대외비 편집)");
+    e.w.SemisEquipment.setTab("list");
+    // 협의회: 회의록 작성/수정 가능, 삭제 불가
     go(e, "council");
-    ok(!q(e, "#cn-kpi"), "KPI 링크 없음(hq 전용)");
-    ok(!e.S.canEdit(), "편집 권한 없음");
+    q(e, '[data-cn-row="vm1"]').click();
+    ok(q(e, "#cn-edit"), "상세: 수정 버튼");
+    ok(!q(e, "#cn-del"), "상세: 삭제 버튼 없음");
+    q(e, "#cn-edit").click();
+    ok(q(e, "#cn-save"), "회의록 저장 버튼");
+    ok(!q(e, "#cn-fdel"), "회의록 삭제 버튼 없음");
+    e.S.closeModal();
     // 청구는 자기 업체만
     go(e, "billing");
     ok(/프로에스콤/.test(q(e, ".page-title").textContent), "청구 화면 자기 업체");
     ok(!qa(e, "[data-bl-vendor]").length, "인씨스 탭 숨김");
+  });
+
+  t("VD05 편집 업체도 타 업체 청구는 작성 불가 (격리 유지)", () => {
+    const e = makeEnv();
+    loginVendor(e, "프로에스콤", "tvd05");
+    const B = e.w.SemisBilling;
+    e.S.data.billing = [blSeed({ vendor: "인씨스", category: "X-ray 유지보수", title: "타사내역", amount: 1000 })];
+    e.S.saveSilent();
+    ok(!B.visible().length, "타 업체 내역 미노출");
+    B.setMonth("2026-07");
+    go(e, "billing");
+    ok(/프로에스콤/.test(q(e, ".page-title").textContent), "자기 업체 화면 고정");
+    ok(!/타사내역/.test(q(e, "#view").textContent), "타 업체 내역 화면 미표시");
+    B.itemForm("인씨스", "2026-07", "X-ray 유지보수", null);
+    ok(!q(e, "#bl-save"), "타 업체 청구 폼 차단");
+  });
+
+  t("VD07 내부 계정(hq)은 삭제 버튼 유지 (회귀)", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.equipment = [{ id: "hq1", type: "ETD(폭발물흔적)", name: "ETD-H", serial: "", location: "",
+        vendor: "", mfgDate: "2024-01-01", installed: "", status: "정상", logs: [], note: "" }];
+      d.council = [{ id: "hm1", round: 1, date: "2026-06-01", place: "회의실", vis: "mgr",
+        attendees: [], agendas: [], cases: [], decisions: [], files: [], body: "", updated: "" }];
+      d.regulations = [{ id: "hr1", scope: "intl", title: "ICAO Annex 17", org: "ICAO", ver: "12판",
+        date: "2026-01-01", url: "", fileName: "", note: "", ideas: [] }];
+      return d; })();
+    const e = makeEnv({ preData: pre });
+    loginAs(e, "hq");
+    ok(e.S.canDelete(), "hq 삭제 권한");
+    go(e, "equipment");
+    q(e, '[data-eq-row="hq1"]').click();
+    ok(q(e, "#e-del"), "장비 삭제 버튼");
+    e.S.closeModal();
+    go(e, "council");
+    q(e, '[data-cn-row="hm1"]').click();
+    ok(q(e, "#cn-del"), "회의록 삭제 버튼");
+    e.S.closeModal();
+    e.w.SemisRegs.regForm("intl", "hr1");
+    ok(q(e, "#rg-del"), "규정 삭제 버튼");
+    e.S.closeModal();
+  });
+
+  t("VD06 비편집 업체(인씨스)는 종전대로 등급 1 + 청구만", () => {
+    const e = makeEnv();
+    loginVendor(e, "인씨스", "tvd06");
+    eq(e.S.roleRank(), 1, "등급 1 유지");
+    ok(!e.S.canEdit(), "타 모듈 편집 권한 없음");
+    go(e, "billing");
+    ok(q(e, "[data-bl-add]"), "자기 업체 청구 입력은 가능");
   });
 
   t("VD04 확대 계정도 검색·시스템설정 차단 유지", () => {

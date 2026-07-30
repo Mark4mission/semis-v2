@@ -121,7 +121,7 @@
       <div class="form-row"><label>비고</label>
         <input id="rg-note" value="${esc(x ? x.note || "" : "")}" maxlength="200" placeholder="적용 범위, 관련 근거 등"></div>
       <div class="modal-actions">
-        ${x ? '<button class="btn btn-danger" id="rg-del" style="margin-right:auto">삭제</button>' : ""}
+        ${x && SeMIS.canDelete() ? '<button class="btn btn-danger" id="rg-del" style="margin-right:auto">삭제</button>' : ""}
         <button class="btn btn-ghost" id="rg-cancel">취소</button>
         <button class="btn btn-primary" id="rg-save">저장</button>
       </div>`, { wide: true });
@@ -148,7 +148,7 @@
     };
 
     $("#rg-cancel").onclick = closeModal;
-    if (x) $("#rg-del").onclick = () =>
+    if (x && $("#rg-del")) $("#rg-del").onclick = () =>
       confirmModal(`규정 "${x.title}"을(를) 삭제하시겠습니까? 개정 아이디어 노트도 함께 삭제됩니다.`, () => {
         D().regulations = list().filter(r => r.id !== x.id);
         SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");

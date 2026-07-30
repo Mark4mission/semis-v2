@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.32.0";
+  const VERSION = "2.32.1";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -80,23 +80,25 @@ const SeMIS = (() => {
   const ROLE_RANK  = { admin: 4, hq: 3, manager: 2, user: 1, vendor: 1, signer: 0 };
 
   /* ─────── v2.32: 협력업체(vendor) 계정 접근 범위 — 업체명별 화이트리스트 ───────
-     기본값은 대금 청구 입력 전용. 위탁 운영 업체(프로에스콤)는 업무 수행에 필요한
-     범위까지 확대 열람. 편집 권한은 없음(canEdit=hq 이상) — 대금 청구만 자기 업체 입력 가능.
-     대외비(장비 구입가/유지보수 계약·비용, 규정 개정 아이디어)는 rank 기준으로 자동 차단.
-     업체별 메뉴 조정은 이 표만 수정하면 됩니다. */
+     기본값은 대금 청구 입력 전용(edit 없음). 위탁 운영 업체(프로에스콤)는 업무 수행에
+     필요한 메뉴를 열고, edit:true면 해당 메뉴 안에서 항공보안HQ와 동등한 편집 권한
+     (rank 3 — 장비 대장·유지보수 계약/비용·구입가, 협의회 회의록, 규정 등록/수정)을 가짐.
+     단 레코드 삭제는 항상 내부 계정 전용(canDelete) — 자료 유실 방지.
+     업체별 메뉴·편집 권한 조정은 이 표만 수정하면 됩니다. */
   const VENDOR_ACCESS = {
     "프로에스콤": {
       routes: ["regs-intl", "equipment", "council", "billing"],
-      links: [{ label: "CARES (보안장비 관제)", icon: "🛰", url: "https://airzeta-security-system.web.app" }]
+      links: [{ label: "CARES (보안장비 관제)", icon: "🛰", url: "https://airzeta-security-system.web.app" }],
+      edit: true
     }
   };
-  const VENDOR_DEFAULT = { routes: ["billing"], links: [] };
+  const VENDOR_DEFAULT = { routes: ["billing"], links: [], edit: false };
   const VENDOR_NAV_LABEL = { billing: { label: "대금 청구 입력", icon: "🧾" } };
   function vendorAccess(u) {
     const a = VENDOR_ACCESS[String((u && u.vendor) || "").trim()] || VENDOR_DEFAULT;
     const routes = (a.routes || []).slice();
     if (!routes.length) routes.push("billing");
-    return { routes, links: (a.links || []).slice() };
+    return { routes, links: (a.links || []).slice(), edit: !!a.edit };
   }
   /* 협력업체 계정의 기본 화면 (허용 목록 밖의 라우트 요청 시 이동) */
   function vendorHome(u) {
@@ -654,8 +656,16 @@ const SeMIS = (() => {
     location.reload();
   }
   const isAdmin = () => currentUser && currentUser.role === "admin";
-  const roleRank = () => currentUser ? (ROLE_RANK[currentUser.role] || 1) : 0;
+  /* v2.32.1: 협력업체 중 VENDOR_ACCESS.edit 업체는 허용 메뉴 안에서만 hq 동등(3) 등급.
+     접근 가능한 라우트가 화이트리스트로 제한되므로 등급 상승 영향은 그 메뉴에 한정됨. */
+  const roleRank = () => {
+    if (!currentUser) return 0;
+    if (currentUser.role === "vendor") return vendorAccess(currentUser).edit ? 3 : 1;
+    return ROLE_RANK[currentUser.role] || 1;
+  };
   const canEdit = () => roleRank() >= 3; // 편집 권한: hq 이상 (v2.11)
+  /* v2.32.1: 레코드 삭제 — 편집 권한 + 내부 계정만 (협력업체는 등록·수정만) */
+  const canDelete = () => canEdit() && !(currentUser && currentUser.role === "vendor");
   function canSee(menu) {
     const vis = menu.vis || "all";
     if (vis === "all") return true;
@@ -1047,7 +1057,7 @@ const SeMIS = (() => {
     get data() { return DATA; },
     save, load, onSave, saveSilent, normalizeData,
     get user() { return currentUser; },
-    allUsers, isAdmin, roleRank, canEdit, canSee,
+    allUsers, isAdmin, roleRank, canEdit, canDelete, canSee,
     VENDOR_ACCESS, vendorAccess, vendorHome,
     pwHash, sha256, signCodeFor, signCarFor,
     renderNav, renderHeader, renderSecBadge, renderView,

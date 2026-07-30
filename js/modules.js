@@ -820,7 +820,7 @@
         <label>업체명 (협력업체 계정)</label>
         <input id="f-uvendor" maxlength="30" list="f-vendors" value="${esc(u && u.vendor ? u.vendor : "")}" placeholder="예: 프로에스콤">
         <datalist id="f-vendors">${VENDOR_NAMES.map(v => `<option value="${v}">`).join("")}</datalist>
-        <div class="form-hint">협력업체 계정은 자기 업체의 대금 청구 화면(편집)과 업체별로 허용된 메뉴(열람 전용)만 접근합니다.${vendorScopeHint()}</div></div>`;
+        <div class="form-hint">협력업체 계정은 자기 업체의 대금 청구 화면과 업체별로 허용된 메뉴만 접근합니다. 레코드 삭제는 항상 차단(등록·수정만).${vendorScopeHint()}</div></div>`;
   /* v2.32: 업체별 허용 메뉴 안내 — app.js VENDOR_ACCESS 표에서 자동 생성 (표기 불일치 방지) */
   function vendorScopeHint() {
     const acc = SeMIS.VENDOR_ACCESS || {};
@@ -830,7 +830,7 @@
         const mn = D().menus.find(m => m && m.type === "module" && m.module === r);
         return (mn && mn.label) || r;
       }).concat((a.links || []).map(l => l.label));
-      return `<br>· ${esc(name)}: ${esc(names.join(" · "))}`;
+      return `<br>· ${esc(name)}: ${esc(names.join(" · "))} <b>${a.edit ? "[편집 가능]" : "[열람 전용]"}</b>`;
     });
     return rows.length ? rows.join("") + "<br>· (그 외 업체: 대금 청구 입력만)" : "";
   }

@@ -330,7 +330,7 @@
           `<a class="nb-file" href="${esc(f.url)}" target="_blank" rel="noopener">📄 ${esc(f.name)}</a>`).join("")}</div></div>` : ""}
       ${x.updated ? `<div class="form-hint" style="margin-top:10px">최종 수정 ${esc(String(x.updated).slice(0, 10))}${x.by ? " · " + esc(x.by) : ""}</div>` : ""}
       <div class="modal-actions">
-        ${canWrite() ? '<button class="btn btn-danger" id="cn-del" style="margin-right:auto">삭제</button>' : ""}
+        ${SeMIS.canDelete() ? '<button class="btn btn-danger" id="cn-del" style="margin-right:auto">삭제</button>' : ""}
         <button class="btn btn-ghost" id="cn-print">🖨 인쇄</button>
         ${canWrite() ? '<button class="btn btn-ghost" id="cn-edit">✎ 수정</button>' : ""}
         <button class="btn btn-primary" id="cn-close">닫기</button>
@@ -343,7 +343,7 @@
     wireCopies("#modal-box");     // 서명 코드 복사 + 본문 링크 복사 버튼 배선
     if (canWrite()) {
       $("#cn-edit").onclick = () => form(x.id);
-      $("#cn-del").onclick = () => confirmModal(`"${meetTitle(x)}" 회의록을 삭제하시겠습니까?`, () => {
+      if ($("#cn-del")) $("#cn-del").onclick = () => confirmModal(`"${meetTitle(x)}" 회의록을 삭제하시겠습니까?`, () => {
         D().council = all().filter(c => c.id !== x.id);
         SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
       });
@@ -419,7 +419,7 @@
       </fieldset>
 
       <div class="modal-actions">
-        ${x ? '<button class="btn btn-danger" id="cn-fdel" style="margin-right:auto">삭제</button>' : ""}
+        ${x && SeMIS.canDelete() ? '<button class="btn btn-danger" id="cn-fdel" style="margin-right:auto">삭제</button>' : ""}
         <button class="btn btn-ghost" id="cn-cancel">취소</button>
         <button class="btn btn-primary" id="cn-save">저장</button>
       </div>
@@ -592,7 +592,7 @@
 
     /* ─ 저장/취소/삭제 ─ */
     $("#cn-cancel").onclick = () => (x ? detail(x.id) : (closeModal(), SeMIS.renderView()));
-    if (x) $("#cn-fdel").onclick = () => confirmModal(`"${meetTitle(x)}" 회의록을 삭제하시겠습니까?`, () => {
+    if (x && $("#cn-fdel")) $("#cn-fdel").onclick = () => confirmModal(`"${meetTitle(x)}" 회의록을 삭제하시겠습니까?`, () => {
       D().council = all().filter(c => c.id !== x.id);
       SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
     });

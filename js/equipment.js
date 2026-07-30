@@ -337,7 +337,7 @@
       <div class="form-row"><label>비고</label><input id="e-note" value="${esc(x ? x.note || "" : "")}" maxlength="200"></div>
       <div class="modal-actions">
         ${x ? '<button class="btn btn-ghost" id="e-detail" style="margin-right:auto">상세/이력 보기</button>' : ""}
-        ${x ? '<button class="btn btn-danger" id="e-del">삭제</button>' : ""}
+        ${x && SeMIS.canDelete() ? '<button class="btn btn-danger" id="e-del">삭제</button>' : ""}
         <button class="btn btn-ghost" id="e-cancel">취소</button>
         <button class="btn btn-primary" id="e-save">저장</button>
       </div>`, { wide: true });
@@ -370,7 +370,7 @@
 
     $("#e-cancel").onclick = closeModal;
     if (x) $("#e-detail").onclick = () => { closeModal(); eqDetail(x.id); };
-    if (x) $("#e-del").onclick = () =>
+    if (x && $("#e-del")) $("#e-del").onclick = () =>
       confirmModal(`장비 "${x.name}"을(를) 삭제하시겠습니까?`, () => {
         D().equipment = list().filter(e => e.id !== x.id);
         SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
@@ -554,12 +554,12 @@
       <div class="form-row"><label>계약 조건 상세</label><textarea id="mc-terms" rows="3" maxlength="600" placeholder="정기 점검 및 수리 조건, 리스 조건 등">${esc(x ? x.terms || "" : "")}</textarea></div>
       <div class="form-row"><label>비고</label><input id="mc-note" value="${esc(x ? x.note || "" : "")}" maxlength="200"></div>
       <div class="modal-actions">
-        ${x ? '<button class="btn btn-danger" id="mc-del" style="margin-right:auto">삭제</button>' : ""}
+        ${x && SeMIS.canDelete() ? '<button class="btn btn-danger" id="mc-del" style="margin-right:auto">삭제</button>' : ""}
         <button class="btn btn-ghost" id="mc-cancel">취소</button>
         <button class="btn btn-primary" id="mc-save">저장</button>
       </div>`);
     $("#mc-cancel").onclick = closeModal;
-    if (x) $("#mc-del").onclick = () => confirmModal(`계약 "${x.vendor}"을(를) 삭제하시겠습니까?`, () => {
+    if (x && $("#mc-del")) $("#mc-del").onclick = () => confirmModal(`계약 "${x.vendor}"을(를) 삭제하시겠습니까?`, () => {
       m.contracts = m.contracts.filter(c => c.id !== x.id);
       SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
     });
@@ -626,12 +626,12 @@
         <div class="form-hint">프로에스콤·인씨스는 대금 청구 관리 입력이 비용 기록에 자동 반영됩니다.
           같은 달 유지보수 청구가 있으면 이 수동 기록은 중복 계상 방지를 위해 집계에서 자동 제외되며, 별개 비용이면 체크하세요.</div></div>
       <div class="modal-actions">
-        ${x ? '<button class="btn btn-danger" id="ct-del" style="margin-right:auto">삭제</button>' : ""}
+        ${x && SeMIS.canDelete() ? '<button class="btn btn-danger" id="ct-del" style="margin-right:auto">삭제</button>' : ""}
         <button class="btn btn-ghost" id="ct-cancel">취소</button>
         <button class="btn btn-primary" id="ct-save">저장</button>
       </div>`);
     $("#ct-cancel").onclick = closeModal;
-    if (x) $("#ct-del").onclick = () => confirmModal("이 비용 기록을 삭제하시겠습니까?", () => {
+    if (x && $("#ct-del")) $("#ct-del").onclick = () => confirmModal("이 비용 기록을 삭제하시겠습니까?", () => {
       m.costs = m.costs.filter(c => c.id !== x.id);
       SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
     });

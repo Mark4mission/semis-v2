@@ -70,7 +70,8 @@
   /* 접근 컨텍스트: vendor 계정 → 자기 업체 고정, hq+ → 전체 */
   const isVendorUser = () => !!(SeMIS.user && SeMIS.user.role === "vendor");
   const myVendor = () => (isVendorUser() ? String(SeMIS.user.vendor || "") : null);
-  const canWriteFor = (vendor) => SeMIS.canEdit() || (isVendorUser() && myVendor() === vendor);
+  /* v2.32.1: 업체 계정은 편집 등급(VENDOR_ACCESS.edit)이 있어도 자기 업체 청구만 작성 가능 */
+  const canWriteFor = (vendor) => (isVendorUser() ? myVendor() === vendor : SeMIS.canEdit());
   /* 조회 가능한 레코드 (vendor는 자기 업체만 — 타 업체 격리) */
   function visible() {
     if (isVendorUser()) return list().filter(r => r && r.vendor === myVendor());
