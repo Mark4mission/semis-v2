@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.31.4";
+  const VERSION = "2.32.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -75,9 +75,34 @@ const SeMIS = (() => {
      - manager: 지점·유관부서 보안감독자/담당자 — 보안사항 열람 가능, 편집 불가,
                 대외비(유지보수 비용·계약·암호 등)는 열람 불가
      - user:    일반 직원 — 일반사항·홍보사항 수준만 열람 */
-  /* vendor(협력업체, v2.16): 대금 청구 입력 화면(billing)만 접근 — 자기 업체 내역 한정 */
+  /* vendor(협력업체, v2.16): 자기 업체 대금 청구 입력 + 업체별 허용 메뉴 열람 (VENDOR_ACCESS, v2.32) */
   /* signer(서명 참석자, v2.26): 회의일(YYYYMMDD) 코드 로그인 — 해당 협의회 서명 화면만 접근 */
   const ROLE_RANK  = { admin: 4, hq: 3, manager: 2, user: 1, vendor: 1, signer: 0 };
+
+  /* ─────── v2.32: 협력업체(vendor) 계정 접근 범위 — 업체명별 화이트리스트 ───────
+     기본값은 대금 청구 입력 전용. 위탁 운영 업체(프로에스콤)는 업무 수행에 필요한
+     범위까지 확대 열람. 편집 권한은 없음(canEdit=hq 이상) — 대금 청구만 자기 업체 입력 가능.
+     대외비(장비 구입가/유지보수 계약·비용, 규정 개정 아이디어)는 rank 기준으로 자동 차단.
+     업체별 메뉴 조정은 이 표만 수정하면 됩니다. */
+  const VENDOR_ACCESS = {
+    "프로에스콤": {
+      routes: ["regs-intl", "equipment", "council", "billing"],
+      links: [{ label: "CARES (보안장비 관제)", icon: "🛰", url: "https://airzeta-security-system.web.app" }]
+    }
+  };
+  const VENDOR_DEFAULT = { routes: ["billing"], links: [] };
+  const VENDOR_NAV_LABEL = { billing: { label: "대금 청구 입력", icon: "🧾" } };
+  function vendorAccess(u) {
+    const a = VENDOR_ACCESS[String((u && u.vendor) || "").trim()] || VENDOR_DEFAULT;
+    const routes = (a.routes || []).slice();
+    if (!routes.length) routes.push("billing");
+    return { routes, links: (a.links || []).slice() };
+  }
+  /* 협력업체 계정의 기본 화면 (허용 목록 밖의 라우트 요청 시 이동) */
+  function vendorHome(u) {
+    const r = vendorAccess(u).routes;
+    return r.indexOf("billing") >= 0 ? "billing" : r[0];
+  }
   const VIS_LABEL  = { all: "전체", mgr: "보안관리자 이상", hq: "항공보안HQ 이상", admin: "시스템관리자" };
 
   /* ─────────── 국가 항공보안등급 (5단계) ─────────── */
@@ -725,10 +750,11 @@ const SeMIS = (() => {
     view.innerHTML = "";
     applyViewWidth(view, route);
     if (currentUser && currentUser.role === "vendor") {
-      // v2.16: 협력업체 계정은 대금 청구 화면만 접근 가능 (다른 모든 라우트 차단)
-      route = "billing";
+      // v2.16/v2.32: 협력업체 계정은 업체별 허용 목록의 라우트만 접근 (그 외는 기본 화면으로)
+      const allow = vendorAccess(currentUser).routes;
+      if (allow.indexOf(route) < 0) route = vendorHome(currentUser);
       applyViewWidth(view, route);
-      const def = modules.billing || modules.dashboard;
+      const def = modules[route] || modules.billing || modules.dashboard;
       def.render(view);
       highlightNav(route);
       $("#sidebar").classList.remove("open");
@@ -801,14 +827,34 @@ const SeMIS = (() => {
     const box = $("#nav-menu");
     box.innerHTML = "";
     if (currentUser && currentUser.role === "vendor") {
-      // v2.16: 협력업체 계정 — 대금 청구 메뉴만 표시
-      const b = document.createElement("button");
-      b.className = "nav-item";
-      b.dataset.route = "billing";
-      b.innerHTML = '<span class="nav-ico">🧾</span><span>대금 청구 입력</span>';
-      b.onclick = () => navigate("billing");
-      box.appendChild(b);
-      highlightNav("billing");
+      // v2.16/v2.32: 협력업체 계정 — 업체별 허용 메뉴 + 외부 링크(CARES 등)만 표시
+      const acc = vendorAccess(currentUser);
+      acc.routes.forEach(r => {
+        const mn = menuForModule(r);
+        const ov = VENDOR_NAV_LABEL[r] || {};
+        const label = ov.label || (mn && mn.label) || r;
+        const b = document.createElement("button");
+        b.className = "nav-item";
+        b.dataset.route = r;
+        b.title = label;
+        b.innerHTML = '<span class="nav-ico">' + esc(ov.icon || (mn && mn.icon) || "▪") +
+          '</span><span>' + esc(label) + '</span>';
+        b.onclick = () => navigate(r);
+        box.appendChild(b);
+      });
+      acc.links.forEach(l => {
+        const a = document.createElement("a");
+        a.className = "nav-item";
+        a.href = l.url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.title = l.label;
+        a.innerHTML = '<span class="nav-ico">' + esc(l.icon || "🔗") + '</span><span>' +
+          esc(l.label) + '</span><span class="ext-mark">↗</span>';
+        box.appendChild(a);
+      });
+      const cur = currentRoute();
+      highlightNav(acc.routes.indexOf(cur) >= 0 ? cur : vendorHome(currentUser));
       return;
     }
     if (currentUser && currentUser.role === "signer") {
@@ -1002,6 +1048,7 @@ const SeMIS = (() => {
     save, load, onSave, saveSilent, normalizeData,
     get user() { return currentUser; },
     allUsers, isAdmin, roleRank, canEdit, canSee,
+    VENDOR_ACCESS, vendorAccess, vendorHome,
     pwHash, sha256, signCodeFor, signCarFor,
     renderNav, renderHeader, renderSecBadge, renderView,
     openModal, closeModal, confirmModal, toast,

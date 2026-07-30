@@ -3414,13 +3414,88 @@ function makeFetchStub(server) {
     ok(/프로에스콤/.test(q(e, ".page-title").textContent), "자기 업체 화면");
     ok(!qa(e, "[data-bl-vendor]").length, "업체 전환 버튼 없음");
     ok(!/인씨스전용내역/.test(q(e, "#view").textContent), "타 업체 내역 미표시");
-    // 라우팅 격리: 다른 모듈 접근 시도 → billing 강제
+    // 라우팅 격리: 허용 목록 밖 모듈 접근 시도 → billing 강제
     go(e, "dashboard");
     ok(/대금 청구/.test(q(e, ".page-title").textContent), "dashboard 접근 → billing 강제");
     go(e, "settings");
     ok(/대금 청구/.test(q(e, ".page-title").textContent), "settings 접근 → billing 강제");
-    // 네비: billing 하나만
+    go(e, "vault");
+    ok(/대금 청구/.test(q(e, ".page-title").textContent), "vault(암호) 접근 → billing 강제");
+  });
+
+  /* ══════════ [VD] 협력업체 계정 접근 범위 (v2.32) ══════════ */
+  t("VD01 기본 업체(인씨스): 대금 청구 전용 — 네비 1개 + 타 라우트 차단", () => {
+    const e = makeEnv();
+    loginVendor(e, "인씨스", "tvd01");
+    eq(e.S.vendorAccess(e.S.user).routes.join(","), "billing", "허용 라우트 billing만");
+    eq(e.S.vendorHome(e.S.user), "billing", "기본 화면 billing");
+    go(e, "billing");
     eq(qa(e, "#nav-menu .nav-item").length, 1, "네비 메뉴 1개");
+    go(e, "equipment");
+    ok(/대금 청구/.test(q(e, ".page-title").textContent), "장비 접근 → billing 강제");
+  });
+
+  t("VD02 프로에스콤: 확대 메뉴 4개 + CARES 링크, 순서/라벨 확인", () => {
+    const e = makeEnv();
+    loginVendor(e, "프로에스콤", "tvd02");
+    eq(e.S.vendorAccess(e.S.user).routes.join(","), "regs-intl,equipment,council,billing", "허용 라우트 4종");
+    go(e, "billing");
+    const items = qa(e, "#nav-menu .nav-item");
+    eq(items.length, 5, "네비 4개 모듈 + CARES 링크");
+    eq(items.map(n => n.dataset.route || "").slice(0, 4).join(","),
+      "regs-intl,equipment,council,billing", "메뉴 순서");
+    ok(/국제\/국가 보안규정/.test(items[0].textContent), "규정 라벨");
+    ok(/대금 청구 입력/.test(items[3].textContent), "청구 라벨(업체용)");
+    const link = items[4];
+    eq(link.tagName, "A", "CARES는 외부 링크");
+    eq(link.getAttribute("target"), "_blank", "새 탭");
+    eq(link.getAttribute("href"), "https://airzeta-security-system.web.app", "CARES URL");
+    ok(/CARES/.test(link.textContent), "CARES 라벨");
+    eq(q(e, "#nav-menu .nav-item.active").dataset.route, "billing", "현재 메뉴 표시");
+  });
+
+  t("VD03 프로에스콤: 확대 메뉴 실제 렌더 + 편집 불가 + 대외비 차단", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.equipment = [{ id: "vq1", type: "ETD(폭발물흔적)", name: "ETD-1", serial: "S1", location: "검색장",
+        vendor: "프로에스콤", mfgDate: "2024-01-01", installed: "2024-01-01", status: "정상", logs: [], note: "" }];
+      d.equipMaint = { contracts: [{ id: "vc1", vendor: "인씨스", amount: 12000000, note: "" }],
+        costs: [{ id: "vt1", ym: "2026-01", kind: "정기 유지보수", vendor: "인씨스", amount: 2610000 }] };
+      d.council = [{ id: "vm1", round: 1, date: "2026-06-01", place: "회의실", vis: "mgr",
+        attendees: [], agendas: [], cases: [], decisions: [], files: [], body: "", updated: "" }];
+      d.regulations = [{ id: "vr1", scope: "intl", title: "ICAO Annex 17", org: "ICAO", ver: "12판",
+        date: "2026-01-01", url: "", fileName: "", note: "", ideas: [{ id: "vi1", text: "개정검토메모" }] }];
+      return d; })();
+    const e = makeEnv({ preData: pre });
+    loginVendor(e, "프로에스콤", "tvd03");
+    // 규정 열람 (개정 아이디어는 rank<2 → 미노출)
+    go(e, "regs-intl");
+    ok(/ICAO Annex 17/.test(q(e, "#view").textContent), "규정 목록 열람");
+    ok(!/개정검토메모/.test(q(e, "#view").textContent), "개정 아이디어 미노출");
+    // 장비 열람 (계약/비용 탭 = 대외비 차단, 등록 버튼 없음)
+    go(e, "equipment");
+    ok(/ETD-1/.test(q(e, "#view").textContent), "장비 대장 열람");
+    ok(!q(e, "#eq-add"), "장비 등록 버튼 없음(편집 불가)");
+    ok(!/유지보수 계약/.test(q(e, "#view").textContent), "유지보수 계약 탭 미노출(대외비)");
+    ok(!/2,610,000/.test(q(e, "#view").textContent), "유지보수 비용 미노출(대외비)");
+    // 협의회 열람 (편집·KPI 링크 없음)
+    go(e, "council");
+    ok(!q(e, "#cn-kpi"), "KPI 링크 없음(hq 전용)");
+    ok(!e.S.canEdit(), "편집 권한 없음");
+    // 청구는 자기 업체만
+    go(e, "billing");
+    ok(/프로에스콤/.test(q(e, ".page-title").textContent), "청구 화면 자기 업체");
+    ok(!qa(e, "[data-bl-vendor]").length, "인씨스 탭 숨김");
+  });
+
+  t("VD04 확대 계정도 검색·시스템설정 차단 유지", () => {
+    const e = makeEnv();
+    loginVendor(e, "프로에스콤", "tvd04");
+    go(e, "council");
+    ok(q(e, "#hdr-search-wrap").classList.contains("vendor-hide"), "전역 검색 미노출");
+    go(e, "settings");
+    ok(/대금 청구/.test(q(e, ".page-title").textContent), "시스템 설정 차단 → billing");
+    go(e, "kpi");
+    ok(/대금 청구/.test(q(e, ".page-title").textContent), "KPI 차단 → billing");
   });
 
   t("BL04 vendor 입력: 항목 추가/수정 + 자기 업체 저장", () => {

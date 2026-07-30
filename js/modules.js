@@ -812,7 +812,7 @@
     ["user", "일반사용자 (일반·홍보 열람)"],
     ["manager", "보안관리자 (보안사항 열람 전용)"],
     ["hq", "항공보안HQ (파트원 · 편집 가능)"],
-    ["vendor", "협력업체 (대금 청구 입력 전용)"],
+    ["vendor", "협력업체 (대금 청구 입력 + 업체별 허용 메뉴)"],
     ["admin", "시스템관리자"]];
   const VENDOR_NAMES = ["프로에스콤", "인씨스"];
   const vendorRowHTML = (u) => `
@@ -820,7 +820,20 @@
         <label>업체명 (협력업체 계정)</label>
         <input id="f-uvendor" maxlength="30" list="f-vendors" value="${esc(u && u.vendor ? u.vendor : "")}" placeholder="예: 프로에스콤">
         <datalist id="f-vendors">${VENDOR_NAMES.map(v => `<option value="${v}">`).join("")}</datalist>
-        <div class="form-hint">협력업체 계정은 로그인 시 자기 업체의 대금 청구 화면만 접근합니다.</div></div>`;
+        <div class="form-hint">협력업체 계정은 자기 업체의 대금 청구 화면(편집)과 업체별로 허용된 메뉴(열람 전용)만 접근합니다.${vendorScopeHint()}</div></div>`;
+  /* v2.32: 업체별 허용 메뉴 안내 — app.js VENDOR_ACCESS 표에서 자동 생성 (표기 불일치 방지) */
+  function vendorScopeHint() {
+    const acc = SeMIS.VENDOR_ACCESS || {};
+    const rows = Object.keys(acc).map(name => {
+      const a = acc[name] || {};
+      const names = (a.routes || []).map(r => {
+        const mn = D().menus.find(m => m && m.type === "module" && m.module === r);
+        return (mn && mn.label) || r;
+      }).concat((a.links || []).map(l => l.label));
+      return `<br>· ${esc(name)}: ${esc(names.join(" · "))}`;
+    });
+    return rows.length ? rows.join("") + "<br>· (그 외 업체: 대금 청구 입력만)" : "";
+  }
   function wireVendorRow() {
     const sel = $("#f-urole");
     if (!sel) return;
