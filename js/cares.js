@@ -47,8 +47,9 @@
   const deviceName  = (id) => DEVICE_NAMES[id] || id;
   const deviceShort = (id) => { const n = DEVICE_NAMES[id]; return n ? n.split(" · ")[0] : id; };
   const DEVICE = { id: DEFAULT_DEVICE_ID, name: deviceName(DEFAULT_DEVICE_ID) }; // 하위호환 export
-  // 오프라인 판정: online:false 또는 3분 무수신(캐시 옛값이므로 값 표시 안 함)
-  const OFFLINE_MS = 3 * 60 * 1000;
+  // 오프라인 판정: online:false 또는 8분 무수신(캐시 옛값이므로 값 표시 안 함)
+  // 8분 = CARES 백엔드 폴링 3분 × 2회 미수신 + 여유 (functions/src/index.ts POLL_MINUTES 연동)
+  const OFFLINE_MS = 8 * 60 * 1000;
   function isOffline(last) {
     if (!last) return true;
     if (last.online === false) return true;
@@ -197,7 +198,7 @@
           </div>`;
         }).join("")}
       </div>`
-      : `<div class="cares-allok">${multi ? "임계값 이내" : "모든 지표가 임계값 이내입니다."} <span style="color:var(--text-3)">(1분마다 자동 갱신)</span></div>`;
+      : `<div class="cares-allok">${multi ? "임계값 이내" : "모든 지표가 임계값 이내입니다."} <span style="color:var(--text-3)">(3분마다 자동 갱신)</span></div>`;
     return multi ? `<div class="cares-device">${header}${body}</div>` : body;
   }
 
@@ -275,7 +276,7 @@
             ${a.type === "max" ? "상한" : "하한"} ${esc(String(a.threshold))}${esc(a.unit || "")} 초과 진행 중
             <span style="color:var(--text-3)">(최고 ${esc(String(a.peakValue))}${esc(a.unit || "")})</span></div>`).join("")}</div>` : ""}
         ${presentIds.map(id => deviceBlockHTML(id, byDevice.get(id), thByDevice[id], showAll, multi, offlineById[id])).join("")}
-        <div class="form-hint" style="margin-top:6px">최근 추이 · 점선=임계값 · 1분마다 자동 갱신</div>`;
+        <div class="form-hint" style="margin-top:6px">최근 추이 · 점선=임계값 · 3분마다 자동 갱신</div>`;
       $("#cares-refresh", box).onclick = () => renderInto(box, canWrite);
       $("#cares-mode", box).onclick = () => {
         setCfg(Object.assign(cfg(), { showAll: !showAll }));
@@ -287,7 +288,7 @@
         const el = document.getElementById("cares-box");
         if (!el) { clearInterval(refreshTimer); refreshTimer = null; return; }
         renderInto(el, canWrite);
-      }, 60000);
+      }, 180000); // CARES 백엔드 폴링 3분과 동일
       return true;
     } catch (e) {
       clearKeyCache(); // 키 회전/오류 대비 — 재시도 시 공용 DB에서 재조회
