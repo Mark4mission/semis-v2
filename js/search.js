@@ -221,6 +221,18 @@ const SemisSearch = (() => {
   register({ id: "regs-own", group: "자체 보안규정", icon: "📘", module: "regs-own",
     items: () => regItems("own") });
 
+  register({ id: "supervisors", group: "보안감독자 현황", icon: "👥", module: "supervisors", minRank: 2,
+    items: () => A(D().supervisors).map(x => ({
+      title: (x.name || x.duty || "-") + (x.role ? " · " + x.role : ""),
+      sub: [x.div, x.dept, x.duty, x.empNo].filter(Boolean).join(" · "),
+      text: [x.name, x.div, x.dept, x.rank, x.duty, x.empNo, x.role, x.note] })) });
+
+  register({ id: "stn-officers", group: "지점 보안담당자", icon: "🛫", module: "stn-officers", minRank: 2,
+    items: () => A(D().stationOfficers).map(x => ({
+      title: (x.station || "-") + " · " + (x.name || ""),
+      sub: [x.region, x.uniworks, x.note].filter(Boolean).join(" · "),
+      text: [x.name, x.region, x.station, x.empNo, x.uniworks, x.note] })) });
+
   register({ id: "billing", group: "대금 청구 (대외비)", icon: "🧾", module: "billing", minRank: 3,
     items: () => A(D().billing).map(b => ({
       title: "[" + (b.month || "") + "] " + (b.title || ""),

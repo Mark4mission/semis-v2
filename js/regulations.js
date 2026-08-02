@@ -256,24 +256,37 @@
     const own = scope === "own";
     const showIdeas = own && canSeeIdeas();
     if (!items.length) return '<div class="empty">등록된 규정이 없습니다.</div>';
-    return `<div class="table-wrap"><table class="tbl"><thead><tr>
-        <th>규정명</th><th style="width:190px">버전</th><th style="width:130px">제·개정일자</th>
-        <th style="width:${own ? 190 : 160}px">열람</th>
-        ${own ? '<th style="width:110px">신구대조표</th>' : ""}
-        ${showIdeas ? '<th style="width:90px">노트</th>' : ""}</tr></thead><tbody>
+    const canWrite = SeMIS.canEdit();
+    /* v2.34: 열람 우선 배치 — 규정명 자체가 '열람'(PDF 우선, 없으면 링크) 동작.
+       수정은 행의 빈 영역 클릭 또는 우측 ✏️ 버튼. */
+    return `<div class="table-wrap"><table class="tbl tbl-cap" style="--cap:1260px"><thead><tr>
+        <th style="min-width:260px">규정명 <span class="th-hint">(클릭 → 열람)</span></th>
+        <th style="width:${own ? 168 : 150}px;white-space:nowrap">열람</th>
+        ${own ? '<th style="width:104px">신구대조표</th>' : ""}
+        <th style="width:170px">버전</th><th style="width:118px">제·개정일자</th>
+        ${showIdeas ? '<th style="width:86px">노트</th>' : ""}
+        ${canWrite ? '<th style="width:52px">수정</th>' : ""}</tr></thead><tbody>
       ${items.map(r => {
         const openCnt = ideasOf(r).filter(i => i.status === "검토중").length;
+        const sub = r.org || r.note
+          ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(r.org || "")}${r.org && r.note ? " · " : ""}${esc(r.note || "")}</div>` : "";
+        const titleCell = r.fileUrl
+          ? `<button class="tbl-open" data-rg-pdf="${esc(r.id)}" title="원문 PDF 열람">📄 ${esc(r.title)}</button>`
+          : (r.linkUrl
+            ? `<a class="tbl-open" href="${esc(r.linkUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="원문 링크 열기">🔗 ${esc(r.title)}</a>`
+            : `<b>${esc(r.title)}</b>`);
         return `
-      <tr data-rg-row="${esc(r.id)}"${SeMIS.canEdit() ? ' style="cursor:pointer" title="클릭하여 수정"' : ""}>
-        <td><b>${esc(r.title)}</b>${r.org || r.note ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(r.org || "")}${r.org && r.note ? " · " : ""}${esc(r.note || "")}</div>` : ""}</td>
-        <td>${r.rev ? `<span class="badge badge-blue" style="white-space:nowrap">${esc(r.rev)}</span>` : "-"}</td>
-        <td style="font-size:.82rem;white-space:nowrap">${esc(r.date || "-")}</td>
+      <tr data-rg-row="${esc(r.id)}"${canWrite ? ' style="cursor:pointer" title="행 클릭 → 수정 / 제목 클릭 → 열람"' : ""}>
+        <td>${titleCell}${sub}</td>
         <td style="white-space:nowrap">
-          ${r.linkUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(r.linkUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">링크 ↗</a>` : ""}
           ${r.fileUrl ? `<button class="btn btn-ghost btn-sm" data-rg-pdf="${esc(r.id)}">📄 PDF</button>` : ""}
+          ${r.linkUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(r.linkUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">링크 ↗</a>` : ""}
           ${!r.linkUrl && !r.fileUrl ? "-" : ""}</td>
         ${own ? `<td>${r.diffUrl ? `<button class="btn btn-ghost btn-sm" data-rg-diff="${esc(r.id)}">📑 보기</button>` : "-"}</td>` : ""}
+        <td>${r.rev ? `<span class="badge badge-blue" style="white-space:nowrap">${esc(r.rev)}</span>` : "-"}</td>
+        <td style="font-size:.82rem;white-space:nowrap">${esc(r.date || "-")}</td>
         ${showIdeas ? `<td><button class="btn btn-ghost btn-sm" data-rg-idea="${esc(r.id)}" title="개정 아이디어 노트">💡 ${ideasOf(r).length}${openCnt ? `<span class="reg-idea-open">${openCnt}</span>` : ""}</button></td>` : ""}
+        ${canWrite ? `<td><button class="btn btn-ghost btn-sm" data-rg-edit="${esc(r.id)}" title="규정 수정">✏️</button></td>` : ""}
       </tr>`; }).join("")}</tbody></table></div>`;
   }
 
@@ -323,6 +336,10 @@
       $$("#rg-body [data-rg-idea]").forEach(b => b.onclick = (ev) => {
         ev.stopPropagation();
         ideaList(b.dataset.rgIdea);
+      });
+      if (canWrite) $$("#rg-body [data-rg-edit]").forEach(b => b.onclick = (ev) => {
+        ev.stopPropagation();
+        regForm(scope, b.dataset.rgEdit);
       });
     };
     $("#rg-search").oninput = () => {

@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.33.1";
+  const VERSION = "2.34.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -153,8 +153,8 @@ const SeMIS = (() => {
       m("contracts-mgmt", "계약서 관리", "💼", "contracts-mgmt", "hq", "grp-branch"),
       lk("br-sys", "지점보안시스템", "💻", "https://sites.google.com/view/kjsemis/%EC%A7%80%EC%A0%90%ED%98%91%EB%A0%A5%EC%97%85%EC%B2%B4/%EC%A7%80%EC%A0%90%EB%B3%B4%EC%95%88%EC%8B%9C%EC%8A%A4%ED%85%9C", "grp-branch", { quick: true }),
       lk("br-contract", "계약서 관리 (구버전)", "💼", "https://sites.google.com/view/kjsemis/%EC%A7%80%EC%A0%90%ED%98%91%EB%A0%A5%EC%97%85%EC%B2%B4/%EA%B3%84%EC%95%BD%EC%84%9C-%EA%B4%80%EB%A6%AC", "grp-branch", { vis: "mgr" }),
-      lk("br-supervisor", "보안감독자 현황", "👥", "https://docs.google.com/spreadsheets/d/1RlxvnrjDWMy4lSTDdbF6JTKCgL45EuTW0O1mjGd8RtQ/edit?usp=sharing", "grp-branch", { vis: "mgr" }),
-      lk("br-officer", "지점 보안담당자", "👥", "https://docs.google.com/spreadsheets/d/15Qvf5NgdeyfIBBLzFc3BtTGE6kQse-_HTb9u4PvzHt0/edit?usp=sharing", "grp-branch", { vis: "mgr" }),
+      m("supervisors", "보안감독자 현황", "👥", "supervisors", "mgr", "grp-branch"),
+      m("stn-officers", "지점 보안담당자", "🛫", "stn-officers", "mgr", "grp-branch"),
 
       g("grp-inspect", "보안 점검"),
       m("insp-mgmt", "보안점검 일정관리", "🕵️", "inspection", "mgr", "grp-inspect"),
@@ -233,8 +233,117 @@ const SeMIS = (() => {
       certs: [],                      // v2.15: 교육 이수증 관리 (외부기관 보안책임자/감독자 등)
       certOpts: { roles: [], orgs: [] }, // v2.17: 이수증 선택지(과정/수료기관 — 사용자 관리, 빈 배열이면 normalize가 기본값 시드)
       billing: [],                    // v2.16: 대금 청구 (협력업체 월별 입력 — 프로에스콤/인씨스)
+      supervisors: seedSupervisors(),        // v2.34: 보안감독자 현황 (구글시트 이관)
+      stationOfficers: seedStationOfficers(), // v2.34: 지점 보안담당자 (구글시트 이관)
       vault: { v: 1, members: [], data: null, updated: "" } // v2.9: 암호 관리 (암호문만 저장)
     };
+  }
+
+  /* ─────── 보안감독자 현황 시드 (구글시트 이관, 2026 발령) ───────
+     id 고정 — 여러 브라우저가 동시에 시드해도 동일 데이터가 되어 병합 충돌 없음 */
+  function seedSupervisors() {
+    const T0 = "2026-01-01", T1 = "2026-12-31";
+    const S = "항공사보안감독자";
+    // [사번접미, 본부, 부서, 직위, 직책, 성명, 사번, 발령내용, 시작, 종료]
+    const rows = [
+      ["01", "안전보안실", "안전보안실", "실장", "안전보안실장", "", "", "항공사보안책임자(정)", "", ""],
+      ["02", "안전보안실", "항공보안팀", "팀장", "항공보안팀장", "박철성", "100128", "항공사보안책임자(부)", T0, T1],
+      ["03", "안전보안실", "항공보안팀", "프로", "팀원", "최상일", "100046", S, T0, T1],
+      ["04", "안전보안실", "항공보안팀", "프로", "팀원", "이은우", "100080", S, T0, T1],
+      ["05", "안전보안실", "항공보안팀", "프로", "팀원", "이윤민", "", "", "", ""],
+      ["06", "영업본부", "인천화물팀", "팀장", "팀장", "박기복", "100127", S, T0, T1],
+      ["07", "영업본부", "인천화물팀", "파트장", "수출화물파트장", "고현태", "100172", S, T0, T1],
+      ["08", "영업본부", "인천화물팀", "파트장", "운영파트장", "윤동원", "100220", S, T0, T1],
+      ["09", "영업본부", "인천화물팀", "프로", "팀원", "옥정훈", "100200", S, T0, T1],
+      ["10", "영업본부", "인천화물팀", "프로", "팀원", "김상범", "100146", S, T0, T1],
+      ["11", "영업본부", "인천화물팀", "프로", "팀원", "김홍석", "100161", S, T0, T1],
+      ["12", "영업본부", "인천화물팀", "프로", "팀원", "김종우", "100244", S, T0, T1],
+      ["13", "영업본부", "화물서비스팀", "팀장", "화물서비스팀장", "김문평", "100193", S, T0, T1],
+      ["14", "영업본부", "화물서비스팀", "프로", "팀원", "박범훈", "100239", S, T0, T1],
+      ["15", "영업본부", "화물서비스팀", "프로", "팀원", "유준상", "100330", S, T0, T1],
+      ["16", "영업본부", "화물서비스팀", "프로", "팀원", "황원경", "100299", S, T0, T1],
+      ["17", "운항본부", "운항품질팀", "팀장", "운항품질팀장", "신민식", "500148", S, T0, T1],
+      ["18", "운항본부", "운항품질팀", "부기장", "팀원", "최성철", "500241", S, T0, T1],
+      ["19", "운항본부", "운항지원팀", "팀장", "운항지원팀장", "이진주", "500031", S, T0, T1],
+      ["20", "운항본부", "운항지원팀", "프로", "팀원", "김가영", "100067", S, T0, T1],
+      ["21", "정비본부", "운항정비팀", "팀장", "운항정비팀장", "이혁제", "300116", S, T0, T1],
+      ["22", "정비본부", "정비통제팀", "프로", "팀원", "정태기", "300173", S, T0, T1],
+      ["23", "정비본부", "정비품질팀", "파트장", "품질보증파트장", "노갑성", "300135", S, T0, T1],
+      ["24", "정비본부", "정비지원팀", "프로", "팀원", "이제호", "300029", S, T0, T1],
+      ["25", "정비본부", "정비지원팀", "프로", "팀원", "박미라", "300036", S, T0, T1],
+      ["26", "종합통제실", "통제지원팀", "팀장", "통제지원팀장", "김정육", "600110", S, T0, T1],
+      ["27", "종합통제실", "통제지원팀", "프로", "팀원", "이재희", "600003", S, T0, T1],
+      ["28", "종합통제실", "통제지원팀", "프로", "팀원", "강대원", "600002", S, T0, T1],
+      ["29", "종합통제실", "종합통제팀", "프로", "팀원", "이은주", "600008", S, T0, T1]
+    ];
+    return rows.map((r, i) => ({
+      id: "sv26" + r[0], seq: i,
+      div: r[1], dept: r[2], rank: r[3], duty: r[4], name: r[5], empNo: r[6],
+      role: r[7], from: r[8], to: r[9], note: ""
+    }));
+  }
+
+  /* ─────── 지점 보안담당자 시드 (구글시트 이관, '26.07.01 SFZ/KKF 권한 부여) ─────── */
+  function seedStationOfficers() {
+    // [지역, 지점, 이름, 사번, 유니웍스 ID, 비고]
+    const rows = [
+      ["미주", "LAX", "박정훈", "100269", "laxsfz", "지점장"],
+      ["미주", "LAX", "Junghui Noh(노정휘)", "700241", "junghuinoh", ""],
+      ["미주", "LAX", "Woosung Cho(조우성)", "700114", "terrycho", ""],
+      ["미주", "NYC", "양승덕", "100271", "nycsfz", "지점장"],
+      ["미주", "NYC", "TAEMIN HUH(허태민)", "700121", "tmhuh", ""],
+      ["미주", "NYC", "HYOUNG WOO LEE(이형우)", "700195", "hwoolee", ""],
+      ["미주", "NYC", "STEVEN SON(손상혁)", "700166", "sanghyukson", ""],
+      ["미주", "CHI", "김건태", "100262", "chisfz", "KKF 부재 / 지점장"],
+      ["미주", "ATL", "신은호", "100169", "atlsfz", "지점장"],
+      ["미주", "ATL", "Kwangho Kim(김광호)", "700237", "kwanghokim", ""],
+      ["미주", "DFW", "장재원", "100237", "dfwsfz", "지점장"],
+      ["미주", "DFW", "HWANHWI CHO(조환휘)", "700198", "hughcho", ""],
+      ["미주", "DFW", "YONG MIN CHO(조용민)", "700259", "yongmin", ""],
+      ["미주", "SFO", "김세훈", "100279", "sfosfz", "지점장"],
+      ["미주", "SFO", "Changsoo Park(박창수)", "700201", "changsoo", ""],
+      ["미주", "ANC", "박기준", "600112", "ancsfz", "지점장"],
+      ["미주", "ANC", "김홍석", "100161", "hskim3", ""],
+      ["미주", "SEA", "송보경", "100223", "seakkf", "KKF"],
+      ["유럽", "FRA", "최종배", "100214", "frasfz", "지점장"],
+      ["유럽", "FRA", "유장석", "100190", "frakkf", "KKF"],
+      ["유럽", "BRU", "이재원", "100253", "brusfz", "지점장"],
+      ["유럽", "BRU", "민네보 선숙", "700152", "sunsook", ""],
+      ["유럽", "VIE", "이재일", "100259", "viesfz", "지점장"],
+      ["유럽", "VIE", "김송", "700266", "skim", ""],
+      ["유럽", "MIL", "김준태", "100270", "milsfz", "지점장"],
+      ["유럽", "MIL", "정재윤", "700170", "jychung10", ""],
+      ["유럽", "LON", "김정기", "100311", "lonsfz", "지점장"],
+      ["유럽", "LON", "강승균", "700255", "leokang", ""],
+      ["일본", "일본총괄", "안휘성", "100264", "tyosfz", "지점장"],
+      ["일본", "TYO", "FURUKAWA SEIJI(후루카와세지)", "700270", "sfurukawa", ""],
+      ["일본", "KIX", "KIMOTO YUKA(키모토유카)", "700106", "ykimoto", ""],
+      ["일본", "NGO", "YATO TAKASHI", "700124", "yato", ""],
+      ["중국", "TSN", "김태우", "100208", "tsnsfz", "지점장"],
+      ["중국", "TSN", "손위", "700172", "sunwei", ""],
+      ["중국", "SHA", "여현동", "100224", "shasfz", "지점장"],
+      ["중국", "SHA", "황해초", "700154", "hchuang", ""],
+      ["중국", "CAN,CTU", "여음호(뤼인하오)", "100286", "cansfz", "지점장"],
+      ["중국", "CAN", "진이첩", "700180", "ljchen", ""],
+      ["중국", "CAN", "황택총", "700198", "700198", ""],
+      ["중국", "CTU", "진이첩", "700180", "ljchen", ""],
+      ["중국", "CTU", "황택총", "700198", "700198", ""],
+      ["중국", "YNT", "송배녕", "700135", "yntsfz", "지점장"],
+      ["중국", "YNT", "왕굉위", "700130", "hwwang", ""],
+      ["중국", "TAO", "왕굉위", "700130", "hwwang", ""],
+      ["아시아", "HKG", "김진표", "100197", "hkgsfz", "지점장"],
+      ["아시아", "HKG", "김희석", "100210", "hkgkkf", "KKF"],
+      ["아시아", "HAN", "이태용", "100192", "hansfz", "지점장"],
+      ["아시아", "HAN", "황원경", "100299", "hankkf", "26.7.1부"],
+      ["아시아", "SIN", "고유경", "100156", "sinsfz", "지점장"],
+      ["아시아", "SIN", "Alex Yew Khin Leong(렁유킨)", "700113", "alyk", ""],
+      ["아시아", "BKK", "CHATREE CHUANPRASONG(차트리)", "700184", "bkksuz", "영업소장"],
+      ["아시아", "BKK", "ANUWAT NARONG(아누왓나롱)", "700239", "anuwat", ""]
+    ];
+    return rows.map((r, i) => ({
+      id: "so26" + String(i + 1).padStart(2, "0"), seq: i,
+      region: r[0], station: r[1], name: r[2], empNo: r[3], uniworks: r[4], note: r[5]
+    }));
   }
 
   /* ─────── 보안점검 2026 계획 시드 (기존 구글시트 이관) ───────
@@ -537,6 +646,27 @@ const SeMIS = (() => {
       const mn = DATA.menus.find(m => m && m.id === "equip-council" && m.type === "link");
       if (mn && mn.label === "보안장비 협의체") mn.label = "보안장비 협의체 (구버전)";
     }
+    /* v2.34: 보안감독자 현황 / 지점 보안담당자 — 구글시트 링크 → 내부 모듈 이관.
+       최초 사용 시 시트 내용 시드 + 메뉴 교체(기존 링크 메뉴 제거, idempotent). */
+    if (!Array.isArray(DATA.supervisors)) DATA.supervisors = seedSupervisors();
+    if (!Array.isArray(DATA.stationOfficers)) DATA.stationOfficers = seedStationOfficers();
+    {
+      const cn = DATA.menus.find(m => m && m.type === "module" && m.module === "contracts-mgmt");
+      const baseSeq = cn ? (cn.seq || 0) : null;
+      if (!DATA.menus.some(m => m && m.type === "module" && m.module === "supervisors")) {
+        if (baseSeq !== null) DATA.menus.push({ id: "supervisors", seq: baseSeq + 0.1, type: "module",
+          label: "보안감독자 현황", icon: "👥", module: "supervisors", vis: "mgr", parent: "grp-branch" });
+        else ensureModuleMenu("supervisors", "grp-branch", "보안감독자 현황", "👥", "supervisors", "mgr");
+      }
+      if (!DATA.menus.some(m => m && m.type === "module" && m.module === "stn-officers")) {
+        if (baseSeq !== null) DATA.menus.push({ id: "stn-officers", seq: baseSeq + 0.15, type: "module",
+          label: "지점 보안담당자", icon: "🛫", module: "stn-officers", vis: "mgr", parent: "grp-branch" });
+        else ensureModuleMenu("stn-officers", "grp-branch", "지점 보안담당자", "🛫", "stn-officers", "mgr");
+      }
+      // 구버전 구글시트 링크 메뉴 제거 (모듈로 완전 대체 — 원본 시트는 모듈 상단에서 접근)
+      DATA.menus = DATA.menus.filter(m => !(m && m.type === "link" &&
+        (m.id === "br-supervisor" || m.id === "br-officer")));
+    }
     return JSON.stringify(DATA) !== before;
   }
   const saveHooks = [];
@@ -749,6 +879,7 @@ const SeMIS = (() => {
     schedule: "wide", inspection: "wide", carcap: "wide",
     kpi: "wide", policy: "wide", dashboard: "wide",
     passes: "mid", branches: "mid", "contracts-mgmt": "mid", training: "mid",
+    supervisors: "mid", "stn-officers": "mid",
     certs: "mid", contacts: "mid", council: "mid", billing: "mid",
     equipment: "mid", settings: "mid", "regs-intl": "mid", "regs-own": "mid", vault: "mid"
   };

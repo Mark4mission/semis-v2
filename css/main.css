@@ -259,6 +259,28 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .tbl-cap tbody tr:nth-child(even) td { background: rgba(148,163,184,.07); } /* 행 추적용 옅은 줄무늬 */
 .tbl-cap tbody tr:hover td { background: var(--primary-soft); }
 
+/* v2.34: 목록의 '제목' 자체를 열람(문서 열기) 동작으로 — 수정은 행 클릭/✏️ 버튼.
+   제목을 무의식적으로 먼저 누르는 실제 사용 패턴에 맞춘 배치. */
+.tbl-open {
+  display: inline; padding: 0; margin: 0; border: 0; background: none; text-align: left;
+  font: inherit; font-weight: 700; color: var(--primary); cursor: pointer;
+  text-decoration: none; border-bottom: 1px solid transparent;
+}
+.tbl-open:hover, .tbl-open:focus-visible { border-bottom-color: currentColor; }
+.th-hint { font-weight: 500; color: var(--text-3); font-size: .72rem; }
+
+/* v2.34: 목록 내 그룹 구분행 (본부별 · 지역별) */
+.tbl .grp-row td {
+  background: var(--surface-2); font-size: .82rem; padding: 6px 12px;
+  border-top: 1.5px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.tbl .grp-row:hover td { background: var(--surface-2); }
+.tbl-cap tbody tr.grp-row td, .tbl-cap tbody tr.grp-row:hover td { background: var(--surface-2); }
+.so-uw {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .82rem; background: var(--surface-2); border-radius: 4px; padding: 1px 6px;
+}
+
 .badge { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; }
 .badge-blue { background: var(--primary-soft); color: var(--primary); }
 .badge-gray { background: #f1f5f9; color: var(--text-2); }

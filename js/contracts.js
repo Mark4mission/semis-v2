@@ -144,18 +144,27 @@
   function tableHTML() {
     const items = filtered();
     if (!items.length) return '<div class="empty">해당하는 계약이 없습니다.</div>';
-    return `<div class="table-wrap"><table class="tbl"><thead><tr>
-        <th>계약명 / 상대방</th><th style="width:80px">분류</th><th style="width:180px">계약 기간</th>
-        <th style="width:96px">잔여</th><th>금액 / 담당</th><th style="width:66px">상태</th><th style="width:56px">파일</th></tr></thead><tbody>
+    const canWrite = SeMIS.canEdit();
+    /* v2.34: 계약서 파일을 계약명 바로 옆으로 이동(계약명 클릭 = 파일 열기),
+       분류·계약기간 폭 확대로 줄바꿈 방지. 수정은 행 클릭 또는 ✏️ 버튼. */
+    return `<div class="table-wrap"><table class="tbl tbl-cap" style="--cap:1320px"><thead><tr>
+        <th style="min-width:230px">계약명 / 상대방 <span class="th-hint">(클릭 → 계약서 열기)</span></th>
+        <th style="width:84px">파일</th>
+        <th style="width:100px">분류</th><th style="width:200px">계약 기간</th>
+        <th style="width:92px">잔여</th><th style="width:210px">금액 / 담당</th><th style="width:74px">상태</th>
+        ${canWrite ? '<th style="width:56px">수정</th>' : ""}</tr></thead><tbody>
       ${items.map(x => { const st = stateOf(x); return `
-      <tr data-cn-row="${esc(x.id)}" style="cursor:pointer" class="${st !== "유효" ? "insp-cancel" : ""}">
-        <td><b>${esc(x.name)}</b>${x.party ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(x.party)}${x.autoRenew ? " · 🔄 자동갱신" : ""}</div>` : ""}</td>
-        <td><span class="badge ${CAT_BADGE[x.category] || "badge-gray"}">${esc(x.category)}</span></td>
-        <td style="font-size:.82rem">${esc(x.start || "?")} ~ ${esc(x.end || "기한없음")}</td>
+      <tr data-cn-row="${esc(x.id)}" style="cursor:pointer" title="${canWrite ? "행 클릭 → 수정 / 계약명 클릭 → 계약서 열기" : ""}" class="${st !== "유효" ? "insp-cancel" : ""}">
+        <td>${x.fileUrl
+            ? `<a class="tbl-open" href="${esc(x.fileUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="계약서 파일 열기">📎 ${esc(x.name)}</a>`
+            : `<b>${esc(x.name)}</b>`}${x.party ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(x.party)}${x.autoRenew ? " · 🔄 자동갱신" : ""}</div>` : ""}</td>
+        <td style="white-space:nowrap">${x.fileUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(x.fileUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="계약서 파일 열기" style="white-space:nowrap">열기 ↗</a>` : "-"}</td>
+        <td><span class="badge ${CAT_BADGE[x.category] || "badge-gray"}" style="white-space:nowrap">${esc(x.category)}</span></td>
+        <td style="font-size:.82rem;white-space:nowrap">${esc(x.start || "?")} ~ ${esc(x.end || "기한없음")}</td>
         <td>${ddayBadge(x)}</td>
         <td style="font-size:.82rem">${esc(x.amount || "-")}${x.owner ? `<div style="font-size:.74rem;color:var(--text-3)">담당: ${esc(x.owner)}</div>` : ""}</td>
         <td><span class="badge ${STATE_BADGE[st]}">${esc(st)}</span></td>
-        <td>${x.fileUrl ? `<a href="${esc(x.fileUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">열기 ↗</a>` : "-"}</td>
+        ${canWrite ? `<td><button class="btn btn-ghost btn-sm" data-cn-edit="${esc(x.id)}" title="계약 수정">✏️</button></td>` : ""}
       </tr>`; }).join("")}</tbody></table></div>`;
   }
 
@@ -190,7 +199,14 @@
         </div>`;
 
       const wire = () => {
-        if (canWrite) $$("#cn-body [data-cn-row]").forEach(el => el.onclick = () => cnForm(el.dataset.cnRow));
+        if (!canWrite) return;
+        $$("#cn-body [data-cn-row]").forEach(el => el.onclick = (ev) => {
+          if (ev.target.closest("a,button")) return;   // 계약서 링크·버튼 클릭은 열기 동작 유지
+          cnForm(el.dataset.cnRow);
+        });
+        $$("#cn-body [data-cn-edit]").forEach(b => b.onclick = (ev) => {
+          ev.stopPropagation(); cnForm(b.dataset.cnEdit);
+        });
       };
       $("#cn-search").oninput = () => {
         query = $("#cn-search").value.trim();

@@ -546,14 +546,17 @@
   .badd { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; background: #fef3c7; color: #b45309; font-size: 8px; font-weight: 700; }
   .two { display: flex; gap: 12px; }
   .two > div { flex: 1; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; }
-  .ap th { background: #1d4ed8; color: #fff; padding: 5px 6px; text-align: left; font-size: 9px; border: 1px solid #1d4ed8; }
-  .ap td { padding: 4px 6px; border: 1px solid #e2e8f0; vertical-align: top; }
+  /* v2.34: 인쇄 열 폭 재배분 — Action Plan 축소, 계획/실적/목표·산출물 확대 (colgroup + fixed) */
+  .ap { table-layout: fixed; }
+  .ap th { background: #1d4ed8; color: #fff; padding: 5px 5px; text-align: left; font-size: 9px; border: 1px solid #1d4ed8; }
+  .ap td { padding: 4px 5px; border: 1px solid #e2e8f0; vertical-align: top; word-break: break-word; overflow-wrap: anywhere; }
   .ap tr { page-break-inside: avoid; }
   .ap .pph td { background: #eef2ff; font-size: 9.5px; padding: 4px 6px; }
   .ap .pph span { color: #64748b; font-weight: 600; }
-  .pc-st { width: 52px; } .pc-o { width: 66px; font-size: 9px; } .pc-d { width: 62px; font-size: 8.5px; white-space: nowrap; color: #334155; }
-  .pc-n { width: 150px; font-size: 8.5px; color: #334155; }
-  .pc-t { font-size: 9.5px; }
+  .pc-st { text-align: center; } .pc-o { font-size: 8.5px; }
+  .pc-d { font-size: 8.5px; white-space: nowrap; color: #334155; }
+  .pc-n { font-size: 9px; color: #334155; line-height: 1.45; }
+  .pc-t { font-size: 9px; }
   .pkids { color: #64748b; font-size: 8px; margin-top: 2px; }
   .pst { display: inline-block; padding: 1px 5px; border-radius: 8px; color: #fff; font-size: 8px; font-weight: 700; white-space: nowrap; }
   .padd { display: inline-block; margin-top: 2px; padding: 0 4px; border-radius: 6px; background: #fef3c7; color: #b45309; font-size: 7.5px; font-weight: 700; }
@@ -610,6 +613,10 @@
   <div class="sec">
     <div class="sec-h">Action Plan · 진도현황 (총 ${s.total}건)</div>
     <table class="ap">
+      <colgroup>
+        <col style="width:7%"><col style="width:27%"><col style="width:8%">
+        <col style="width:11%"><col style="width:11%"><col style="width:36%">
+      </colgroup>
       <thead><tr><th>상태</th><th>Action Plan</th><th>담당</th><th>계획</th><th>실적</th><th>목표·산출물 / 위험</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>

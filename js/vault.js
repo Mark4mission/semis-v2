@@ -330,7 +330,7 @@
 
   function rowHTML(en, i) {
     return `<tr>
-      <td><span class="badge badge-gray">${esc(en.category)}</span></td>
+      <td><span class="badge badge-gray" style="white-space:nowrap">${esc(en.category)}</span></td>
       <td><b>${esc(en.title)}</b>${en.note ? `<div style="font-size:.74rem;color:var(--text-3)">${esc(en.note)}</div>` : ""}</td>
       <td style="font-size:.84rem">${en.account ? `${esc(en.account)} <button class="ct-copy" data-vc-acc="${i}" title="계정 복사">📋</button>` : "-"}</td>
       <td style="font-size:.84rem;white-space:nowrap">${en.pw ? `<span class="v-mask" data-vp-span="${i}">••••••••</span>
@@ -351,7 +351,7 @@
       .sort((a, b) => String(a.en.category).localeCompare(b.en.category) || String(a.en.title).localeCompare(b.en.title));
     if (!items.length) return '<div class="empty">등록된 항목이 없습니다. "+ 항목 추가"로 시트 내용을 옮겨오세요.</div>';
     return `<div class="table-wrap"><table class="tbl"><thead><tr>
-        <th style="width:86px">분류</th><th>제목</th><th>계정</th><th style="width:150px">비밀번호</th>
+        <th style="width:118px">분류</th><th>제목</th><th style="width:180px">계정</th><th style="width:150px">비밀번호</th>
         <th style="width:60px">URL</th><th style="width:86px">수정일</th><th style="width:44px"></th></tr></thead>
       <tbody>${items.map(({ en, i }) => rowHTML(en, i)).join("")}</tbody></table></div>`;
   }

@@ -23,6 +23,7 @@ const eqJS = read("js/equipment.js");
 const trJS = read("js/training.js");
 const cnJS = read("js/contracts.js");
 const rgJS = read("js/regulations.js");
+const ofJS = read("js/officers.js");
 const plJS = read("js/policy.js");
 const ctcJS = read("js/certs.js");
 const blJS = read("js/billing.js");
@@ -67,7 +68,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) { S.boot(); if (w.SemisSearch) w.SemisSearch.init(); }
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -2378,7 +2379,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "billing,branches,carCfg,cars,certOpts,certs,contacts,contracts,council,customUsers,equipMaint,equipment,gcal,inspections,kpis,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,trainings,userOverrides,vault");
+    eq(keys, "billing,branches,carCfg,cars,certOpts,certs,contacts,contracts,council,customUsers,equipMaint,equipment,gcal,inspections,kpis,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,stationOfficers,supervisors,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -5503,6 +5504,278 @@ function makeFetchStub(server) {
     ok(/\.view\.view-mid\s*\{[^}]*max-width:\s*1560px/.test(css), "mid 최대폭");
     ok(/\.view\s*\{[^}]*max-width:\s*1180px/.test(css), "기본 .view 폭 유지");
     ok(/\.notice-html\s*\{\s*max-width:\s*1040px/.test(css.replace(/\s+/g, " ")) || css.includes(".notice-html { max-width: 1040px; }"), "본문 읽기 폭 제한");
+  });
+
+  /* ══════════ [O] v2.34 보안 인력 모듈 + 열 폭/열람 배치 개선 ══════════ */
+
+  t("O01 보안감독자 시드 — 29명, 본부 5개, 발령내용 분포", () => {
+    const e = makeEnv();
+    const l = e.S.data.supervisors;
+    eq(l.length, 29, "시드 인원");
+    eq(e.w.SemisOfficers.svDivs().join(","), "안전보안실,영업본부,운항본부,정비본부,종합통제실", "본부 순서");
+    const s = e.w.SemisOfficers.svStats();
+    eq(s.chief, 2, "보안책임자 정·부");
+    eq(s.sup, 26, "보안감독자");
+    eq(s.none, 1, "미발령(이윤민)");
+    const me = l.find(x => x.name === "최상일");
+    ok(me && me.empNo === "100046" && me.role === "항공사보안감독자", "최상일 발령 확인");
+    eq(me.from + "~" + me.to, "2026-01-01~2026-12-31", "발령기간");
+    eq(new Set(l.map(x => x.id)).size, 29, "id 고유");
+  });
+
+  t("O02 보안감독자 상태 판정 (유효/만료/미발령)", () => {
+    const e = makeEnv();
+    const O = e.w.SemisOfficers;
+    eq(O.svState({ role: "항공사보안감독자", to: "2999-12-31" }), "유효");
+    eq(O.svState({ role: "항공사보안감독자", to: "2000-01-01" }), "만료");
+    eq(O.svState({ role: "", to: "" }), "미발령");
+    eq(O.svState({ role: "항공사보안책임자(정)", to: "" }), "유효", "기간 미기재는 유효");
+  });
+
+  t("O03 보안감독자 화면 — 본부 그룹행 + 검색/필터", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "supervisors");
+    ok(q(e, "#sv-body"), "목록 렌더");
+    eq(qa(e, "#sv-body .grp-row").length, 5, "본부 그룹행 5개");
+    eq(qa(e, "#sv-body [data-sv-row]").length, 29, "전체 행");
+    ok(qa(e, "#sv-body [data-sv-edit]").length === 29, "hq 수정 버튼 노출");
+    e.w.SemisOfficers.setSvQuery("최상일");
+    e.S.renderView();
+    eq(qa(e, "#sv-body [data-sv-row]").length, 1, "검색 1건");
+    e.w.SemisOfficers.setSvQuery("");
+    e.w.SemisOfficers.setSvDiv("정비본부");
+    e.S.renderView();
+    eq(qa(e, "#sv-body [data-sv-row]").length, 5, "정비본부 5명");
+    e.w.SemisOfficers.setSvDiv("전체");
+  });
+
+  t("O04 보안감독자 등록·수정·삭제 (hq)", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "supervisors");
+    q(e, "#sv-add").click();
+    q(e, "#sv-name").value = "홍길동";
+    q(e, "#sv-div").value = "영업본부";
+    q(e, "#sv-dept").value = "인천화물팀";
+    q(e, "#sv-from").value = "2026-12-31";
+    q(e, "#sv-to").value = "2026-01-01";   // 역순 입력 → 자동 교정
+    q(e, "#sv-save").click();
+    const x = e.S.data.supervisors.find(v => v.name === "홍길동");
+    ok(x, "등록됨");
+    eq(x.from + "~" + x.to, "2026-01-01~2026-12-31", "기간 자동 정렬");
+    eq(x.role, "항공사보안감독자", "기본 발령내용");
+    e.w.SemisOfficers.svForm(x.id);
+    q(e, "#sv-rank").value = "파트장";
+    q(e, "#sv-save").click();
+    eq(e.S.data.supervisors.find(v => v.id === x.id).rank, "파트장", "수정 반영");
+    const n0 = e.S.data.supervisors.length;
+    e.w.SemisOfficers.svForm(x.id);
+    q(e, "#sv-del").click();
+    q(e, "#modal-box [data-act=ok]").click();
+    eq(e.S.data.supervisors.length, n0 - 1, "삭제 반영");
+  });
+
+  t("O05 보안감독자 — 성명·직책 모두 비면 저장 차단", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "supervisors");
+    const n0 = e.S.data.supervisors.length;
+    q(e, "#sv-add").click();
+    q(e, "#sv-name").value = "";
+    q(e, "#sv-duty").value = "";
+    q(e, "#sv-save").click();
+    eq(e.S.data.supervisors.length, n0, "저장되지 않음");
+  });
+
+  t("O06 지점 보안담당자 시드 — 52명, 지역 5개, 지점장 판정", () => {
+    const e = makeEnv();
+    const l = e.S.data.stationOfficers;
+    eq(l.length, 52, "시드 인원");
+    const O = e.w.SemisOfficers;
+    eq(O.soRegions().join(","), "미주,유럽,일본,중국,아시아", "지역 순서");
+    const s = O.soStats();
+    eq(s.heads, 21, "지점장·영업소장");
+    ok(s.stations >= 20, "지점 수: " + s.stations);
+    ok(O.isHead({ note: "지점장" }) && O.isHead({ note: "영업소장" }) && !O.isHead({ note: "KKF" }), "지점장 판정");
+    eq(new Set(l.map(x => x.id)).size, 52, "id 고유");
+    const lax = l.find(x => x.uniworks === "laxsfz");
+    ok(lax && lax.name === "박정훈" && lax.region === "미주", "LAX 지점장");
+  });
+
+  t("O07 지점 보안담당자 화면 — 지역 그룹행 + 검색/필터/등록", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "stn-officers");
+    eq(qa(e, "#so-body .grp-row").length, 5, "지역 그룹행 5개");
+    eq(qa(e, "#so-body [data-so-row]").length, 52, "전체 행");
+    e.w.SemisOfficers.setSoQuery("frakkf");
+    e.S.renderView();
+    eq(qa(e, "#so-body [data-so-row]").length, 1, "유니웍스 ID 검색");
+    e.w.SemisOfficers.setSoQuery("");
+    e.w.SemisOfficers.setSoRegion("일본");
+    e.S.renderView();
+    eq(qa(e, "#so-body [data-so-row]").length, 4, "일본 4명");
+    e.w.SemisOfficers.setSoRegion("전체");
+    e.S.renderView();
+    q(e, "#so-add").click();
+    q(e, "#so-name").value = "테스트담당";
+    q(e, "#so-station").value = "abc";
+    q(e, "#so-region").value = "미주";
+    q(e, "#so-save").click();
+    const x = e.S.data.stationOfficers.find(v => v.name === "테스트담당");
+    ok(x, "등록됨");
+    eq(x.station, "ABC", "지점코드 대문자 정규화");
+  });
+
+  t("O08 인력 모듈 권한 — manager 열람 가능/편집 불가, user 접근 차단", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    go(e, "supervisors");
+    ok(qa(e, "#sv-body [data-sv-row]").length === 29, "manager 열람 가능");
+    eq(q(e, "#sv-add"), null, "manager 등록 버튼 없음");
+    eq(qa(e, "#sv-body [data-sv-edit]").length, 0, "manager 수정 버튼 없음");
+    go(e, "stn-officers");
+    ok(qa(e, "#so-body [data-so-row]").length === 52, "manager 지점담당자 열람");
+    eq(q(e, "#so-add"), null, "manager 등록 버튼 없음");
+
+    const e2 = makeEnv();
+    loginAs(e2, "user");
+    const ids = qa(e2, "#nav-menu [data-route]").map(a => a.dataset.route);
+    ok(ids.indexOf("supervisors") < 0 && ids.indexOf("stn-officers") < 0, "user 메뉴 비노출");
+  });
+
+  t("O09 메뉴 이관 — 구글시트 링크 제거 + 모듈 메뉴 삽입 (기존 데이터도)", () => {
+    const fresh = makeEnv();
+    const menus = fresh.S.data.menus;
+    ok(!menus.some(m => m.id === "br-supervisor" || m.id === "br-officer"), "구 링크 메뉴 없음");
+    const sv = menus.find(m => m.module === "supervisors");
+    const so = menus.find(m => m.module === "stn-officers");
+    ok(sv && sv.parent === "grp-branch" && sv.vis === "mgr", "보안감독자 메뉴");
+    ok(so && so.parent === "grp-branch" && so.vis === "mgr", "지점담당자 메뉴");
+
+    // 구버전(링크 메뉴 + 데이터 없음) 사용자 데이터로 부팅 → 자동 이관
+    const old = JSON.parse(JSON.stringify(fresh.S.data));
+    delete old.supervisors; delete old.stationOfficers;
+    old.menus = old.menus.filter(m => m.module !== "supervisors" && m.module !== "stn-officers");
+    old.menus.push({ id: "br-supervisor", seq: 90, type: "link", label: "보안감독자 현황",
+      icon: "👥", url: "https://docs.google.com/x", vis: "mgr", parent: "grp-branch" });
+    const e2 = makeEnv({ preData: old });
+    eq(e2.S.data.supervisors.length, 29, "시드 이관");
+    eq(e2.S.data.stationOfficers.length, 52, "지점담당자 이관");
+    ok(!e2.S.data.menus.some(m => m.id === "br-supervisor"), "구 링크 제거됨");
+    ok(e2.S.data.menus.some(m => m.module === "supervisors" && m.parent === "grp-branch"), "모듈 메뉴 삽입");
+  });
+
+  t("O10 통합검색 — 감독자/지점담당자 색인 (manager 이상)", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    const r1 = e.w.SemisSearch.search("최상일");
+    ok(r1.some(x => x.group === "보안감독자 현황"), "감독자 검색 결과");
+    const r2 = e.w.SemisSearch.search("hkgkkf");
+    ok(r2.some(x => x.group === "지점 보안담당자"), "지점담당자 검색 결과");
+
+    const e2 = makeEnv();
+    loginAs(e2, "user");
+    ok(!e2.w.SemisSearch.search("최상일").some(x => x.group === "보안감독자 현황"), "user 색인 제외");
+  });
+
+  t("O11 규정 목록 — 제목 클릭이 열람(PDF/링크), 열람 열이 앞쪽", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.regulations = [
+      { id: "rp1", scope: "intl", title: "PDF 규정", fileUrl: "https://x/a.pdf", fileName: "a.pdf", ideas: [] },
+      { id: "rl1", scope: "intl", title: "링크 규정", linkUrl: "https://x/law", ideas: [] },
+      { id: "rn1", scope: "intl", title: "미등록 규정", ideas: [] }
+    ];
+    e.S.saveSilent();
+    go(e, "regs-intl");
+    const th = qa(e, "#rg-body th").map(x => x.textContent.trim());
+    ok(th[0].indexOf("규정명") === 0, "1열 규정명");
+    ok(th[1].indexOf("열람") === 0, "2열 열람 (버전보다 앞)");
+    ok(th.indexOf("수정") === th.length - 1, "수정 열 맨 끝");
+    // PDF 규정: 제목이 뷰어 버튼
+    const pdfTitle = q(e, '[data-rg-row="rp1"] .tbl-open');
+    ok(pdfTitle && pdfTitle.tagName === "BUTTON" && pdfTitle.dataset.rgPdf === "rp1", "PDF 제목=뷰어 버튼");
+    pdfTitle.click();
+    ok(q(e, "#modal-box .reg-pdf-frame"), "제목 클릭 → PDF 뷰어");
+    ok(!q(e, "#rg-title"), "수정 폼이 열리지 않음");
+    e.S.closeModal();
+    // 링크 규정: 제목이 새 탭 앵커
+    const lnkTitle = q(e, '[data-rg-row="rl1"] .tbl-open');
+    ok(lnkTitle && lnkTitle.tagName === "A" && lnkTitle.getAttribute("target") === "_blank", "링크 제목=새 탭");
+    eq(lnkTitle.getAttribute("href"), "https://x/law");
+    // 미등록: 평문
+    eq(q(e, '[data-rg-row="rn1"] .tbl-open'), null, "문서 없으면 링크 아님");
+    // 수정은 ✏️ 버튼으로
+    q(e, '[data-rg-edit="rn1"]').click();
+    ok(q(e, "#rg-title"), "✏️ → 수정 폼");
+  });
+
+  t("O12 규정 목록 — 열람 권한만 있으면(manager) 수정 열 없음", () => {
+    const e = makeEnv();
+    loginAs(e, "manager");
+    e.S.data.regulations = [{ id: "rv1", scope: "own", title: "자체규정", fileUrl: "https://x/b.pdf", ideas: [] }];
+    e.S.saveSilent();
+    go(e, "regs-own");
+    eq(qa(e, "#rg-body [data-rg-edit]").length, 0, "manager 수정 버튼 없음");
+    ok(q(e, '[data-rg-row="rv1"] .tbl-open'), "열람은 가능");
+  });
+
+  t("O13 계약서 목록 — 파일 열이 2열, 계약명 클릭=파일 열기, 분류/기간 폭 확대", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.contracts = [
+      { id: "cf1", name: "파일 계약", party: "프로에스콤", category: "유지보수",
+        start: "2026-01-01", end: "2099-12-31", fileUrl: "https://drive/x", status: "유효" },
+      { id: "cf2", name: "파일 없는 계약", category: "경비", start: "2026-01-01", end: "2099-12-31", status: "유효" }
+    ];
+    e.S.saveSilent();
+    go(e, "contracts-mgmt");
+    const th = qa(e, "#cn-body th");
+    ok(th[0].textContent.indexOf("계약명") === 0, "1열 계약명");
+    eq(th[1].textContent.trim(), "파일", "2열 파일");
+    eq(th[2].textContent.trim(), "분류");
+    ok(parseInt((th[2].getAttribute("style") || "").replace(/\D/g, ""), 10) >= 96, "분류 폭 96px 이상");
+    ok(parseInt((th[3].getAttribute("style") || "").replace(/\D/g, ""), 10) >= 200, "계약기간 폭 200px 이상");
+    const a = q(e, '[data-cn-row="cf1"] .tbl-open');
+    ok(a && a.tagName === "A" && a.getAttribute("href") === "https://drive/x", "계약명=파일 링크");
+    eq(q(e, '[data-cn-row="cf2"] .tbl-open'), null, "파일 없으면 평문");
+    // 기간 셀 줄바꿈 방지
+    const per = qa(e, '[data-cn-row="cf1"] td')[3];
+    ok((per.getAttribute("style") || "").includes("nowrap"), "계약기간 nowrap");
+    // 행 클릭은 여전히 수정
+    q(e, '[data-cn-row="cf2"]').click();
+    ok(q(e, "#c-name"), "행 클릭 → 수정 폼");
+    e.S.closeModal();
+    q(e, '[data-cn-edit="cf1"]').click();
+    ok(q(e, "#c-name"), "✏️ → 수정 폼");
+  });
+
+  t("O14 KPI 인쇄 열 폭 — colgroup 배분(Action Plan 축소, 목표·산출물 확대)", () => {
+    const cols = (kpiJS.match(/<colgroup>[\s\S]*?<\/colgroup>/) || [""])[0];
+    const w = (cols.match(/width:(\d+)%/g) || []).map(s => parseInt(s.replace(/\D/g, ""), 10));
+    eq(w.length, 6, "6개 열 폭 지정");
+    eq(w.reduce((a, b) => a + b, 0), 100, "합계 100%");
+    ok(w[1] <= 28, "Action Plan(2열) 28% 이하: " + w[1]);
+    ok(w[5] >= 35, "목표·산출물(6열) 35% 이상: " + w[5]);
+    ok(w[3] >= 10 && w[4] >= 10, "계획·실적 각 10% 이상");
+    ok(w[5] > w[1], "목표·산출물이 Action Plan보다 넓음");
+    ok(/\.ap\s*\{[^}]*table-layout:\s*fixed/.test(kpiJS), "table-layout: fixed");
+  });
+
+  t("O15 암호 관리 — 분류 열 폭 확대 + 배지 줄바꿈 방지", () => {
+    const src = read("js/vault.js");
+    const th = (src.match(/<th style="width:(\d+)px">분류<\/th>/) || [])[1];
+    ok(th && Number(th) >= 118, "분류 열 118px 이상: " + th);
+    ok(/badge badge-gray" style="white-space:nowrap">\$\{esc\(en\.category\)/.test(src), "분류 배지 nowrap");
+  });
+
+  t("O16 신규 모듈 자원 등록 — index.html · 동기화 키 · 화면 폭", () => {
+    const html = read("index.html");
+    ok(/<script src="js\/officers\.js\?v=[\d.]+"><\/script>/.test(html), "officers.js 스크립트 등록");
+    ok(/"supervisors", "stationOfficers"/.test(read("js/sync.js")), "SYNC_KEYS 등록");
+    ok(/supervisors: "mid", "stn-officers": "mid"/.test(appJS), "VIEW_WIDTH 등록");
   });
 
   /* ══════════ 결과 ══════════ */
