@@ -239,9 +239,9 @@
     if (!items.length) return '<div class="empty">등록된 회의록이 없습니다.' +
       (canWrite() ? ' 우측 상단 <b>+ 회의록 작성</b>으로 첫 회의를 기록하세요.' : '') + '</div>';
     return `<div class="table-wrap"><table class="tbl cn-list-tbl tbl-cap" style="--cap:1480px"><thead><tr>
-        <th style="width:60px">회차</th><th style="width:104px">회의일</th>
-        <th style="width:250px;min-width:200px">회의명<span class="col-sub"> / 장소</span></th>
-        <th class="col-ext" style="min-width:170px">장소</th>
+        <th style="width:60px">회차</th><th style="width:126px">회의일</th>
+        <th style="width:190px;min-width:160px">회의명<span class="col-sub"> / 장소</span></th>
+        <th class="col-ext" style="width:140px">장소</th>
         <th class="col-ext" style="width:110px">주재</th>
         <th class="col-ext" style="width:110px">작성</th>
         <th class="col-ext" style="width:150px">최근 수정</th>
@@ -255,7 +255,7 @@
         const nFile = (x.files || []).length;
         return `<tr data-cn-row="${esc(x.id)}" style="cursor:pointer">
           <td><b>제${esc(String(x.round || "-"))}차</b></td>
-          <td style="font-size:.86rem">${x.date ? esc(x.date) : '<span style="color:var(--text-3)">미정</span>'}${x.time ? `<div style="font-size:.74rem;color:var(--text-3)">${esc(x.time)}</div>` : ""}</td>
+          <td style="font-size:.86rem;white-space:nowrap">${x.date ? esc(x.date) : '<span style="color:var(--text-3)">미정</span>'}${x.time ? `<div style="font-size:.74rem;color:var(--text-3)">${esc(x.time)}</div>` : ""}</td>
           <td><b>${esc(meetTitle(x))}</b><div class="col-sub" style="font-size:.76rem;color:var(--text-3)">📍 ${esc(x.place || "-")}</div></td>
           <td class="col-ext" style="font-size:.82rem">${esc(x.place || "-")}</td>
           <td class="col-ext" style="font-size:.82rem">${esc(x.chair || "-")}</td>
