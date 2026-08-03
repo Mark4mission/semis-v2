@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.34.1";
+  const VERSION = "2.35.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -1138,6 +1138,10 @@ const SeMIS = (() => {
     renderHeader();
     renderNav();
     renderView();
+    // v2.35: 세미·팀 채팅 위젯 — 내부 계정만 표시 (vendor/signer는 위젯이 자체 차단)
+    if (typeof window !== "undefined" && window.SemisChat) {
+      try { window.SemisChat.onLogin(); } catch (e) { /* 위젯 오류가 앱을 막지 않도록 */ }
+    }
   }
 
   function boot() {

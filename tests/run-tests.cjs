@@ -31,6 +31,7 @@ const cnclJS = read("js/council.js");
 const vtJS = read("js/vault.js");
 const caresJS = read("js/cares.js");
 const newsJS = read("js/news.js");
+const chatJS = read("js/chat.js");
 const searchJS = read("js/search.js");
 const kpiJS = read("js/kpi.js");
 const syncJS = read("js/sync.js");
@@ -68,7 +69,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + chatJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) { S.boot(); if (w.SemisSearch) w.SemisSearch.init(); }
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -5777,6 +5778,166 @@ function makeFetchStub(server) {
     ok(/"supervisors", "stationOfficers"/.test(read("js/sync.js")), "SYNC_KEYS 등록");
     ok(/supervisors: "mid", "stn-officers": "mid"/.test(appJS), "VIEW_WIDTH 등록");
   });
+
+  /* ══════════ [CH] 세미 · 팀 채팅 위젯 (v2.35) ══════════ */
+  {
+    /* 채팅 전용 fetch 스텁: chat_messages REST + semi-chat Edge + 기타(빈 배열) */
+    function makeChatFetch() {
+      const st = { rows: [], edgeReply: "안녕하세요! 세미예요.", calls: [] };
+      st.fetch = (url, opts = {}) => {
+        const u = String(url);
+        const method = (opts && opts.method) || "GET";
+        st.calls.push({ url: u, method, body: opts && opts.body ? JSON.parse(opts.body) : null });
+        if (u.includes("/functions/v1/semi-chat")) {
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ reply: st.edgeReply }) });
+        }
+        if (u.includes("/rest/v1/chat_messages")) {
+          if (method === "GET")
+            return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(st.rows.slice().reverse()) });
+          if (method === "POST") {
+            const b = JSON.parse(opts.body);
+            const row = Object.assign({
+              id: "cm" + (st.rows.length + 1),
+              created_at: new Date(Date.now() + st.rows.length * 1000).toISOString()
+            }, b);
+            st.rows.push(row);
+            return Promise.resolve({ ok: true, status: 201, json: () => Promise.resolve([row]) });
+          }
+          if (method === "DELETE") {
+            const m = u.match(/id=eq\.([^&]+)/);
+            const id = m && decodeURIComponent(m[1]);
+            st.rows = st.rows.filter(r => r.id !== id);
+            return Promise.resolve({ ok: true, status: 204, json: () => Promise.resolve([]) });
+          }
+        }
+        if (method === "GET") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+        return Promise.resolve({ ok: true, status: 201, json: () => Promise.resolve([]) });
+      };
+      return st;
+    }
+    const tick = (ms = 15) => new Promise(r => setTimeout(r, ms));
+
+    await ta("CH01 내부 계정 로그인 → 위젯 표시 · 세미 탭 기본 · 인사말/추천칩", async () => {
+      const st = makeChatFetch();
+      const e = makeEnv({ fetch: st.fetch });
+      loginAs(e, "manager");
+      await tick();
+      ok(q(e, "#chat-fab"), "FAB 존재");
+      ok(q(e, "#chat-panel").classList.contains("hidden"), "패널 기본 닫힘");
+      q(e, "#chat-fab").click();
+      ok(!q(e, "#chat-panel").classList.contains("hidden"), "클릭 시 열림");
+      ok(!q(e, "#chat-body-semi").classList.contains("hidden"), "세미 탭 기본");
+      ok(q(e, "#semi-msgs").textContent.includes("세미"), "세미 인사말");
+      ok(qa(e, "#semi-msgs .chat-chip").length >= 2, "추천 질문 칩");
+    });
+
+    await ta("CH02 vendor 로그인 → 위젯 미표시 (canUse 게이트)", async () => {
+      const st = makeChatFetch();
+      const e = makeEnv({ fetch: st.fetch });
+      loginAs(e, "vendor");
+      await tick();
+      ok(!q(e, "#chat-fab"), "vendor에겐 FAB 없음");
+      ok(!e.w.SemisChat.canUse({ role: "signer" }), "signer 차단");
+      ok(!e.w.SemisChat.canUse(null), "미로그인 차단");
+      ok(e.w.SemisChat.canUse({ role: "user" }), "user 허용");
+    });
+
+    await ta("CH03 팀 채팅 전송 → REST POST(작성자 정보) + 내 말풍선 렌더", async () => {
+      const st = makeChatFetch();
+      const e = makeEnv({ fetch: st.fetch });
+      loginAs(e, "hq");
+      await tick();
+      e.w.SemisChat.setTab("team");
+      await e.w.SemisChat.sendTeam("안녕하세요 팀!");
+      await tick();
+      const post = st.calls.find(c => c.method === "POST" && c.url.includes("chat_messages"));
+      ok(post, "POST 발생");
+      eq(post.body.author_id, "thq", "author_id");
+      eq(post.body.role, "hq", "역할 저장");
+      const rows = qa(e, "#team-msgs .chat-row");
+      ok(rows.length >= 1, "메시지 렌더");
+      ok(rows[rows.length - 1].className.includes("mine"), "내 메시지 우측 정렬");
+      ok(q(e, "#team-msgs").textContent.includes("안녕하세요 팀!"), "본문 표시");
+      ok(e.w.localStorage.getItem("semis2:chatTab") === "team", "탭 상태 저장");
+    });
+
+    await ta("CH04 수신 메시지 → 안읽음 배지 → 팀 탭 열람 시 읽음 처리", async () => {
+      const st = makeChatFetch();
+      const e = makeEnv({ fetch: st.fetch });
+      loginAs(e, "manager");
+      await tick();
+      e.w.SemisChat.addIncoming({ id: "x1", created_at: new Date().toISOString(),
+        author: "최상일", author_id: "hq", role: "hq", text: "회의 10시!" });
+      ok(!q(e, "#chat-badge").classList.contains("hidden"), "FAB 배지 표시");
+      eq(q(e, "#chat-badge").textContent, "1", "배지 1건");
+      eq(e.w.SemisChat.unreadCount(
+        [{ id: "a", created_at: "2026-01-01T00:00:00Z", author_id: "hq" }], "", "me"), 1, "unread 계산");
+      eq(e.w.SemisChat.unreadCount(
+        [{ id: "a", created_at: "2026-01-01T00:00:00Z", author_id: "me" }], "", "me"), 0, "내 글 제외");
+      q(e, "#chat-fab").click();
+      e.w.SemisChat.setTab("team");
+      await tick();
+      ok(q(e, "#chat-badge").classList.contains("hidden"), "열람 후 배지 사라짐");
+      e.w.SemisChat.removeMsg("x1");
+      ok(!q(e, "#team-msgs").textContent.includes("회의 10시"), "삭제 반영");
+    });
+
+    await ta("CH05 세미 질문 → Edge 호출(토큰·역할·이력) + 답변 서식 렌더 + 새 대화", async () => {
+      const st = makeChatFetch();
+      st.edgeReply = "이번 주 일정은 **2건**이에요!\n- 회의\n- 점검";
+      const e = makeEnv({ fetch: st.fetch });
+      loginAs(e, "hq");
+      await tick();
+      await e.w.SemisChat.askSemi("이번 주 일정 알려줘");
+      const call = st.calls.find(c => c.url.includes("semi-chat"));
+      ok(call, "Edge 호출");
+      eq(call.body.t, e.w.SemisChat.EDGE_TOKEN, "토큰 포함");
+      eq(call.body.user.role, "hq", "역할 전달");
+      eq(call.body.messages[call.body.messages.length - 1].content, "이번 주 일정 알려줘", "질문 전달");
+      const bubbles = qa(e, "#semi-msgs .semi-bubble");
+      const last = bubbles[bubbles.length - 1];
+      ok(last.innerHTML.includes("<b>2건</b>"), "굵게 렌더");
+      ok(last.innerHTML.includes("• 회의"), "불릿 렌더");
+      ok(e.w.sessionStorage.getItem("semis2:semiConv:thq"), "세션 이력 저장");
+      e.w.SemisChat.resetSemi();
+      ok(!e.w.sessionStorage.getItem("semis2:semiConv:thq"), "새 대화 초기화");
+    });
+
+    t("CH06 mdLite — HTML 전면 이스케이프(XSS 차단) + 서식 유지", () => {
+      const e = makeEnv({ boot: false });
+      const out = e.w.SemisChat.mdLite('<img src=x onerror=alert(1)> **굵게** `코드`');
+      ok(!out.includes("<img"), "태그 이스케이프");
+      ok(out.includes("&lt;img"), "엔티티 변환");
+      ok(out.includes("<b>굵게</b>") && out.includes("<code>코드</code>"), "서식 유지");
+    });
+
+    await ta("CH07 Esc 닫기(모달 우선) + 재로그인 멱등(위젯 1개)", async () => {
+      const st = makeChatFetch();
+      const e = makeEnv({ fetch: st.fetch });
+      loginAs(e, "manager");
+      await tick();
+      q(e, "#chat-fab").click();
+      ok(!q(e, "#chat-panel").classList.contains("hidden"), "열림");
+      e.S.openModal("<p>모달</p>");
+      e.w.document.dispatchEvent(new e.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      ok(!q(e, "#chat-panel").classList.contains("hidden"), "모달이 열려 있으면 패널 유지");
+      e.w.document.dispatchEvent(new e.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      ok(q(e, "#chat-panel").classList.contains("hidden"), "Esc로 패널 닫힘");
+      loginAs(e, "hq");
+      await tick();
+      eq(qa(e, "#chat-fab").length, 1, "FAB 중복 없음");
+      eq(qa(e, "#chat-root").length, 1, "root 중복 없음");
+    });
+
+    t("CH08 자원 등록 — index.html 스크립트 · enterApp 연동 · CSS · 인쇄 숨김", () => {
+      const html = read("index.html");
+      ok(/<script src="js\/chat\.js\?v=[\d.]+"><\/script>/.test(html), "chat.js 스크립트 등록");
+      ok(/window\.SemisChat\.onLogin\(\)/.test(read("js/app.js")), "enterApp 연동");
+      const css = read("css/main.css");
+      ok(/\.chat-fab\s*\{/.test(css) && /\.chat-panel\s*\{/.test(css), "CSS 등록");
+      ok(/@media print \{ \.chat-root/.test(css), "인쇄 시 숨김");
+    });
+  }
 
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");

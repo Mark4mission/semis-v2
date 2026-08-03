@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SeMIS 채팅 위젯 하네스</title>
+<link rel="stylesheet" href="../css/main.css">
+<style>
+  body { padding: 24px; }
+  .note { max-width: 640px; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; font-size: .9rem; color: var(--text-2); }
+</style>
+</head>
+<body>
+<div class="note">
+  <b>세미 · 팀 채팅 위젯 실화면 하네스</b> (로그인 없이 chat.js 로드, fetch 스텁)<br>
+  우하단 위젯으로 확인: ① 세미 탭 인사말·추천칩·질문/답변 서식 ② 팀 채팅 말풍선·날짜 구분·배지
+</div>
+<div id="modal-overlay" class="modal-overlay hidden"><div id="modal-box" class="modal-box"></div></div>
+<div id="toast-wrap" class="toast-wrap"></div>
+
+<script>
+/* ─── SeMIS 코어 스텁 ─── */
+window.SeMIS = {
+  user: { id: "hq", name: "최상일", role: "hq" },
+  roleRank: () => 3,
+  toast: (m) => console.log("toast:", m),
+  confirmModal: (msg, ok) => { if (window.confirm(msg)) ok(); }
+};
+
+/* ─── fetch 스텁: 실서버 대신 샘플 데이터 ─── */
+const T0 = Date.now();
+const iso = (min) => new Date(T0 - min * 60000).toISOString();
+let rows = [
+  { id: "m1", created_at: iso(60 * 26), author: "박철성", author_id: "park", role: "hq", text: "내일 화물터미널 점검 준비 부탁드립니다." },
+  { id: "m2", created_at: iso(60 * 25), author: "최상일", author_id: "hq", role: "hq", text: "네, 체크리스트 준비해 두겠습니다!" },
+  { id: "m3", created_at: iso(50), author: "이은우", author_id: "lee", role: "manager", text: "ETD 2호기 소모품 교체 완료했습니다.\n다음 교체 주기는 10월입니다." },
+  { id: "m4", created_at: iso(10), author: "이윤민", author_id: "yoon", role: "user", text: "회의실 예약해 두었어요 😊" }
+];
+window.fetch = (url, opts = {}) => {
+  const u = String(url), method = opts.method || "GET";
+  const res = (body, status = 200) => Promise.resolve({ ok: status < 300, status, json: () => Promise.resolve(body) });
+  if (u.includes("/functions/v1/semi-chat")) {
+    const q = JSON.parse(opts.body).messages.slice(-1)[0].content;
+    return new Promise(r => setTimeout(() => r({
+      ok: true, status: 200,
+      json: () => Promise.resolve({ reply: "**" + q.slice(0, 12) + "** 질문에 대한 답이에요!\n- 7/29(수) 보안장비 협의회 회의\n- 8/1(토) FRASF 해외공항 점검 출발\n자세한 건 `일정관리` 메뉴에서 확인할 수 있어요 😊" })
+    }), 1200));
+  }
+  if (u.includes("/rest/v1/chat_messages")) {
+    if (method === "GET") return res(rows.slice().reverse());
+    if (method === "POST") {
+      const b = JSON.parse(opts.body);
+      const row = Object.assign({ id: "n" + Date.now(), created_at: new Date().toISOString() }, b);
+      rows.push(row);
+      return res([row], 201);
+    }
+    if (method === "DELETE") {
+      const id = decodeURIComponent((u.match(/id=eq\.([^&]+)/) || [])[1] || "");
+      rows = rows.filter(r => r.id !== id);
+      return res([], 204);
+    }
+  }
+  return res([]);
+};
+</script>
+<script src="../js/chat.js"></script>
+<script>
+  sessionStorage.removeItem("semis2:semiConv:hq");
+  localStorage.removeItem("semis2:chatRead:hq");
+  localStorage.setItem("semis2:chatTab", "semi");
+  SemisChat.onLogin();
+  setTimeout(() => SemisChat.openPanel(), 300);
+</script>
+</body>
+</html>
