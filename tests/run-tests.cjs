@@ -6594,7 +6594,7 @@ function makeFetchStub(server) {
         mk("pv_s1", { title: "비밀회의PV", start: soon, end: soon, priv: true, owner: "tmanager", reminders: ["1d"] }),
         mk("pv_s2", { title: "공개회의PV", start: soon, end: soon }));
       e.S.saveSilent();
-      const hits = e.w.SemisSearch.query("회의PV").map(x => x.title);
+      const hits = e.w.SemisSearch.search("회의PV").map(x => x.title);
       ok(hits.includes("공개회의PV"), "공개 일정 검색됨");
       ok(!hits.includes("비밀회의PV"), "타 계정 비공개는 검색 제외");
       go(e, "dashboard");
@@ -6720,7 +6720,7 @@ function makeFetchStub(server) {
       go(e, "schedule");
       const html = (q(e, "#cal-body") || { innerHTML: "" }).innerHTML;
       ok(html.indexOf("표식PV") >= 0, "일정 렌더");
-      ok(/🔒[^<]*표식PV|🔒/.test(html), "🔒 표식");
+      ok(html.indexOf("🔒") >= 0, "🔒 표식");
       ok(html.indexOf("⏩") >= 0, "자동 연기 표식");
     });
 
@@ -6730,11 +6730,7 @@ function makeFetchStub(server) {
       clearInspEvents(e);
       e.S.data.schedules.push(mk("pv_dt", { title: "상세PV", priv: true, owner: "thq", autoExtend: true }));
       e.S.saveSilent();
-      go(e, "schedule");
-      e.w.SemisCalendar; // no-op
-      e.S.data.schedules.find(x => x.id === "pv_dt");
-      e.w.document.querySelector("#modal-box") && null;
-      e.Cal.setAnchor("2026-07-15");
+      e.Cal.setAnchor("2026-07-15"); e.Cal.setView("month");
       go(e, "schedule");
       const chip = qa(e, '[data-ev="pv_dt"]')[0];
       ok(chip, "칩 존재");
