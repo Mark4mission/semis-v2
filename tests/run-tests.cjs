@@ -24,6 +24,9 @@ const trJS = read("js/training.js");
 const cnJS = read("js/contracts.js");
 const rgJS = read("js/regulations.js");
 const ofJS = read("js/officers.js");
+const slJS = read("js/seclevel.js");
+const iosaJS = read("js/iosa.js");
+const pdJS = read("js/passdocs.js");
 const plJS = read("js/policy.js");
 const ctcJS = read("js/certs.js");
 const blJS = read("js/billing.js");
@@ -69,7 +72,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + chatJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + slJS + "\n;" + iosaJS + "\n;" + pdJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + chatJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) { S.boot(); if (w.SemisSearch) w.SemisSearch.init(); }
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -5938,6 +5941,183 @@ function makeFetchStub(server) {
       ok(/@media print \{ \.chat-root/.test(css), "인쇄 시 숨김");
     });
   }
+
+
+  /* ══════════ [GD] 안내 콘텐츠 3종 (v2.36) ══════════ */
+  t("GD01 마이그레이션 — 구 링크 메뉴 → 내부 모듈 (seclevel/iosa/pass-docs)", () => {
+    const e = makeEnv();
+    const M = e.S.data.menus;
+    const mod = (id) => M.find(m => m.type === "module" && m.module === id);
+    ok(mod("seclevel"), "seclevel 모듈 메뉴");
+    ok(mod("iosa"), "iosa 모듈 메뉴");
+    ok(mod("pass-docs"), "pass-docs 모듈 메뉴");
+    eq(mod("seclevel").parent, "grp-level", "보안등급 그룹");
+    eq(mod("iosa").parent, "grp-rule", "규정/인허가 그룹");
+    eq(mod("pass-docs").parent, "grp-pass", "출입증 그룹");
+    eq(mod("seclevel").vis, "all"); eq(mod("iosa").vis, "all"); eq(mod("pass-docs").vis, "all");
+    ok(!M.some(m => m.id === "lvl-intro"), "구 링크 lvl-intro 제거");
+    const io = M.find(m => m.id === "rule-iosa");
+    ok(io && io.label === "IOSA 자료실 (구버전)" && io.vis === "mgr", "구 IOSA 링크는 자료실(mgr)로 조정");
+    // 출입증 신청 서류는 출입증 관리 바로 뒤
+    ok(mod("pass-docs").seq > mod("passes").seq, "출입증 관리 다음 순서");
+  });
+
+  t("GD02 구버전 저장 데이터에서도 멱등 이관 (2회 정규화)", () => {
+    const legacy = {
+      menus: [
+        { id: "grp-level", seq: 1, type: "group", label: "항공보안등급" },
+        { id: "lvl-intro", seq: 2, type: "link", label: "국가 보안등급 소개", icon: "📖",
+          url: "https://sites.google.com/view/kjsemis/x", vis: "all", parent: "grp-level" },
+        { id: "grp-rule", seq: 3, type: "group", label: "규정 / 인허가" },
+        { id: "regs-own", seq: 4, type: "module", label: "자체 보안규정", icon: "📘",
+          module: "regs-own", vis: "all", parent: "grp-rule" },
+        { id: "rule-iosa", seq: 5, type: "link", label: "IOSA (국제 인허가)", icon: "🏅",
+          url: "https://sites.google.com/view/kjsemis/iosa", vis: "all", parent: "grp-rule" },
+        { id: "grp-pass", seq: 6, type: "group", label: "출입증" },
+        { id: "passes", seq: 7, type: "module", label: "출입증 관리", icon: "🪪",
+          module: "passes", vis: "mgr", parent: "grp-pass" }
+      ]
+    };
+    const e = makeEnv({ preData: legacy });
+    e.S.normalizeData();
+    const M = e.S.data.menus;
+    const cnt = (id) => M.filter(m => m.type === "module" && m.module === id).length;
+    eq(cnt("seclevel"), 1, "seclevel 중복 없음");
+    eq(cnt("iosa"), 1, "iosa 중복 없음");
+    eq(cnt("pass-docs"), 1, "pass-docs 중복 없음");
+    ok(!M.some(m => m.id === "lvl-intro"), "lvl-intro 제거 유지");
+    eq(M.filter(m => m.id === "rule-iosa").length, 1, "구 링크 1건 유지");
+  });
+
+  t("GD03 국가 보안등급 소개 — 5단계 카드 + 제도 근거 렌더", () => {
+    const e = makeEnv();
+    loginAs(e, "user");
+    go(e, "seclevel");
+    const lv = qa(e, "#view .gd-lvl");
+    eq(lv.length, 5, "등급 카드 5개");
+    eq(lv.map(x => x.querySelector(".gd-lvl-name").textContent).join(","),
+      "평시,관심,주의,경계,심각", "5단계 순서");
+    eq(lv.map(x => x.querySelector(".gd-lvl-en").textContent).join(","),
+      "GREEN,BLUE,YELLOW,ORANGE,RED", "색상 코드명");
+    const html = q(e, "#view").innerHTML;
+    ok(html.indexOf("항공보안법 제31조") >= 0, "법적 근거");
+    ok(html.indexOf("국가항공보안 우발계획") >= 0, "우발계획 근거");
+    ok(html.indexOf("국토교통부장관") >= 0, "발령권자");
+    ok(html.indexOf("Contingency Plan") >= 0, "ICAO 해외 동향");
+    eq(qa(e, "#view .gd-tl li").length, 3, "연혁 타임라인 3건");
+    ok(html.indexOf("세부 조치사항은 이 화면에 담지 않습니다") >= 0, "보안통제 정보 안내");
+  });
+
+  t("GD04 국가 보안등급 소개 — 현재 등급 하이라이트 연동", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    e.S.data.levelHistory.length = 0;
+    e.S.data.levelHistory.push({ level: "경계", date: "2000-01-01", end: "", note: "테스트" });
+    e.S.saveSilent();
+    go(e, "seclevel");
+    const on = qa(e, "#view .gd-lvl.on");
+    eq(on.length, 1, "현재 등급 1개만 강조");
+    eq(on[0].querySelector(".gd-lvl-name").textContent, "경계", "경계 강조");
+    ok(on[0].querySelector(".gd-lvl-now"), "현재 배지");
+    ok(q(e, "#view .gd-hero .gd-now").textContent.indexOf("경계") >= 0, "히어로 현재 등급");
+  });
+
+  t("GD05 IOSA — 통계·RBI 비교표·IDX 섹션 + IATA 공식 링크만 인용", () => {
+    const e = makeEnv();
+    loginAs(e, "user");
+    go(e, "iosa");
+    const html = q(e, "#view").innerHTML;
+    eq(qa(e, "#view .stat").length, 4, "통계 카드 4개");
+    ok(html.indexOf("916") >= 0, "ISM 표준 수");
+    ok(html.indexOf("Risk-Based") >= 0, "Risk-Based IOSA");
+    ok(html.indexOf("Maturity Assessment") >= 0 || html.indexOf("성숙도 평가") >= 0, "성숙도 평가");
+    ok(html.indexOf("Incident Data eXchange") >= 0, "IDX");
+    ok(html.indexOf("GADM") >= 0, "GADM");
+    ok(html.indexOf("5,700kg") >= 0, "등록 자격 기준");
+    eq(qa(e, "#view .gd-cmp tbody tr").length, 2, "RBI 비교표 2행");
+    // 외부 링크는 IATA 공식 도메인만 (구버전 보안성 자료 링크 미포함)
+    const hrefs = qa(e, "#view a[target=_blank]").map(a => a.getAttribute("href"));
+    ok(hrefs.length >= 8, "공식 링크 다수");
+    ok(hrefs.every(h => /^https:\/\/(www\.iata\.org|ic\.iata\.org)\//.test(h)),
+      "iata.org 도메인만: " + hrefs.filter(h => !/iata\.org/.test(h)).join(","));
+    ok(html.indexOf("sites.google.com") < 0, "구버전 보안성 자료 링크 미노출");
+  });
+
+  t("GD06 출입증 신청 서류 — 절차 5단계 + 서류 4종 + 주의사항", () => {
+    const e = makeEnv();
+    loginAs(e, "user");
+    go(e, "pass-docs");
+    eq(qa(e, "#view .gd-step").length, 5, "절차 5단계");
+    eq(qa(e, "#view [data-pd-chk]").length, 4, "서류 체크 4종");
+    const html = q(e, "#view").innerHTML;
+    ["재직증명서", "신원진술서", "개인정보 제공 동의서", "행정정보 공동이용 사전동의서"]
+      .forEach(n => ok(html.indexOf(n) >= 0, n + " 항목"));
+    eq(qa(e, "#view .gd-note .gd-ul li").length, 4, "주의사항 4건");
+    ok(html.indexOf("마스킹") >= 0, "개인정보 마스킹 안내");
+    ok(html.indexOf("pass.airport.kr") >= 0, "출입증관리시스템 링크");
+    ok(html.indexOf("032-741-2560") >= 0, "출입증관리센터 연락처");
+    ok(html.indexOf("보안교육") >= 0, "보안교육 이수 안내");
+  });
+
+  t("GD07 출입증 서류 체크리스트 — 진행률 + 계정별 localStorage 보존", () => {
+    const e = makeEnv();
+    loginAs(e, "user");
+    go(e, "pass-docs");
+    eq(q(e, "#pd-pct").textContent, "0 / 4 준비완료", "초기 진행률");
+    const boxes = qa(e, "#view [data-pd-chk]");
+    boxes[0].checked = true;
+    boxes[0].dispatchEvent(new e.w.Event("change", { bubbles: true }));
+    boxes[2].checked = true;
+    boxes[2].dispatchEvent(new e.w.Event("change", { bubbles: true }));
+    eq(q(e, "#pd-pct").textContent, "2 / 4 준비완료", "진행률 갱신");
+    eq(q(e, "#pd-bar").style.width, "50%", "진행 바");
+    ok(boxes[0].closest(".gd-chk").classList.contains("done"), "완료 스타일");
+    const key = e.w.SemisPassDocs.chkKey();
+    ok(key.indexOf("semis2:passDocsChk:") === 0, "계정별 키");
+    const saved = JSON.parse(e.w.localStorage.getItem(key));
+    ok(saved.d1 === true && saved.d3 === true && !saved.d2, "저장 내용");
+    go(e, "dashboard"); go(e, "pass-docs");
+    eq(q(e, "#pd-pct").textContent, "2 / 4 준비완료", "재진입 시 복원");
+  });
+
+  t("GD08 권한 — 일반사용자 열람 가능 / 협력업체는 미노출", () => {
+    const e = makeEnv();
+    loginAs(e, "user");
+    ["seclevel", "iosa", "pass-docs"].forEach(r => {
+      go(e, r);
+      ok(q(e, "#view .gd-hero"), r + " 일반사용자 렌더");
+    });
+    const nav = q(e, "#nav-menu").textContent;
+    ok(nav.indexOf("국가 보안등급 소개") >= 0 && nav.indexOf("IOSA") >= 0
+      && nav.indexOf("출입증 신청 서류") >= 0, "사이드바 노출");
+    const v = makeEnv();
+    loginAs(v, "vendor");
+    go(v, "iosa");
+    ok(!q(v, "#view .gd-hero"), "협력업체는 허용 라우트 밖 → 기본 화면");
+  });
+
+  t("GD09 통합 검색 — 안내 콘텐츠 3종 색인", () => {
+    const e = makeEnv();
+    loginAs(e, "user");
+    const hit = (kw) => e.w.SemisSearch.search(kw).map(r => r.group);
+    ok(hit("우발계획").some(g => g === "국가 보안등급 소개"), "우발계획 → 보안등급 소개");
+    ok(hit("IDX").some(g => g === "IOSA (국제 인허가)"), "IDX → IOSA");
+    ok(hit("Risk-Based").some(g => g === "IOSA (국제 인허가)"), "Risk-Based → IOSA");
+    ok(hit("신원진술서").some(g => g === "출입증 신청 서류"), "신원진술서 → 출입증 신청 서류");
+  });
+
+  t("GD10 자원 등록 — 스크립트/CSS/데이터 격리", () => {
+    const html = read("index.html");
+    ["seclevel", "iosa", "passdocs"].forEach(f =>
+      ok(new RegExp('<script src="js/' + f + '\\.js\\?v=[\\d.]+"><\\/script>').test(html), f + ".js 등록"));
+    const css = read("css/main.css");
+    [".gd-hero", ".gd-lvl", ".gd-step", ".gd-chk", ".gd-cmp"].forEach(c =>
+      ok(new RegExp("\\" + c + "\\s*[,{ ]").test(css), c + " CSS"));
+    // 정적 안내 모듈 — 동기화 키를 늘리지 않음
+    const e = makeEnv();
+    ["seclevel", "iosa", "passDocs", "pass-docs"].forEach(k =>
+      ok(!e.Sync.SYNC_KEYS.includes(k), k + " SYNC_KEYS 미포함"));
+  });
 
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");

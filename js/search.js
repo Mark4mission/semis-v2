@@ -233,6 +233,45 @@ const SemisSearch = (() => {
       sub: [x.region, x.uniworks, x.note].filter(Boolean).join(" · "),
       text: [x.name, x.region, x.station, x.empNo, x.uniworks, x.note] })) });
 
+  /* v2.36: 안내 콘텐츠 3종 — 저장 데이터가 없는 정적 모듈이라 목차를 검색 항목으로 제공 */
+  register({ id: "seclevel", group: "국가 보안등급 소개", icon: "📖", module: "seclevel",
+    items: () => [
+      { title: "국가 항공보안등급 제도 개요", sub: "추진배경 · 법적 근거 · 발령권자 · 정책효과",
+        text: ["국가 항공보안등급", "항공보안법 제31조", "국가항공보안 우발계획", "국토교통부장관", "불법방해행위", "우발계획"] },
+      { title: "항공보안등급 5단계", sub: "평시 · 관심 · 주의 · 경계 · 심각",
+        text: ["평시 Green", "관심 Blue", "주의 Yellow", "경계 Orange", "심각 Red", "5단계", "보안등급 상향"] },
+      { title: "자체 우발계획 · 발령 시 대응", sub: "보안동보 전파 · 등급 이력 관리",
+        text: ["자체 우발계획", "보안동보", "등급 발령", "국토교통부장관 승인"] },
+      { title: "연혁 · 해외 동향", sub: "2003 우발계획 수립 · ICAO Contingency Plans",
+        text: ["연혁", "2002", "2003", "비상계획", "ICAO", "Contingency Plan", "해외 동향", "3~5단계"] }
+    ] });
+
+  register({ id: "iosa", group: "IOSA (국제 인허가)", icon: "🏅", module: "iosa",
+    items: () => [
+      { title: "IOSA란 무엇인가", sub: "IATA 운영안전감사 · 회원 요건 · 안전 성과",
+        text: ["IOSA", "IATA Operational Safety Audit", "운영안전감사", "ISARPs", "ISM", "코드셰어", "웻리스", "차터", "FAA", "EASA", "CASA"] },
+      { title: "Risk-Based IOSA (리스크 기반 감사)", sub: "2024년 전환 · 성숙도 평가 · 감사 범위 설계",
+        text: ["Risk-Based IOSA", "RBI", "리스크 기반", "Maturity Assessment", "성숙도 평가", "Safety Issue Hub", "audit scoping"] },
+      { title: "IOSA 등록 자격과 절차", sub: "5,700kg 초과 · 최초 full-scope 감사 · 갱신",
+        text: ["IOSA 등록", "자격 요건", "5700kg", "full scope", "Initial Application", "Renewal Audit", "IOSA Registry"] },
+      { title: "IDX — Incident Data eXchange", sub: "IATA GADM 안전·보안 사건 데이터 공유",
+        text: ["IDX", "Incident Data eXchange", "GADM", "FDX", "벤치마킹", "SMS", "안전성과지표", "비식별", "난동승객", "드론"] },
+      { title: "관련 프로그램 (ISSA · ISAGO · IATA Connect)", sub: "소형기 평가 · 지상조업 감사 · 협업 플랫폼",
+        text: ["ISSA", "ISAGO", "IATA Connect", "지상조업", "GHSP", "ONE Source"] }
+    ] });
+
+  register({ id: "pass-docs", group: "출입증 신청 서류", icon: "📋", module: "pass-docs",
+    items: () => [
+      { title: "출입증 신청 절차", sub: "보안교육 이수 → 서류 준비 → 온라인 신청 → 심사·수령",
+        text: ["출입증 신청", "보호구역", "보안교육", "이동지역 운전자교육", "pass.airport.kr", "출입증관리시스템", "소요기간"] },
+      { title: "준비 서류 4종", sub: "재직증명서 · 신원진술서 · 개인정보 동의서 · 행정정보 공동이용 사전동의서",
+        text: ["재직증명서", "신원진술서", "개인정보 제공 동의서", "행정정보 공동이용 사전동의서", "양식 다운로드", "작성방법"] },
+      { title: "작성 시 주의사항", sub: "마스킹 처리 · 정자 서명 · 사진 부착 순서",
+        text: ["마스킹", "주민번호", "정자", "서명", "사진 부착", "HWP", "재작성"] },
+      { title: "출입증 문의 · 참고 자료", sub: "출입증관리센터 032-741-2560~2 · 리플렛 · 출입증 규정",
+        text: ["출입증관리센터", "032-741-2560", "인천국제공항공사", "보안관리팀", "리플렛", "보호구역 출입증 규정", "입주자 서비스포털"] }
+    ] });
+
   register({ id: "billing", group: "대금 청구 (대외비)", icon: "🧾", module: "billing", minRank: 3,
     items: () => A(D().billing).map(b => ({
       title: "[" + (b.month || "") + "] " + (b.title || ""),

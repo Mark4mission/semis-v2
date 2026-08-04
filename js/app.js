@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.35.0";
+  const VERSION = "2.36.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -137,15 +137,16 @@ const SeMIS = (() => {
       m("kpi", "KPI 현황", "📈", "kpi", "hq"),
 
       g("grp-level", "항공보안등급"),
-      lk("lvl-intro", "국가 보안등급 소개", "📖", "https://sites.google.com/view/kjsemis/%ED%95%AD%EA%B3%B5%EB%B3%B4%EC%95%88%EB%93%B1%EA%B8%89/%EA%B5%AD%EA%B0%80-%ED%95%AD%EA%B3%B5%EB%B3%B4%EC%95%88%EB%93%B1%EA%B8%89-%EC%86%8C%EA%B0%9C", "grp-level"),
+      m("seclevel", "국가 보안등급 소개", "📖", "seclevel", "all", "grp-level"),
       lk("lvl-now", "보안등급 현황 [현재]", "✅", "https://docs.google.com/document/d/1Fvsi7bcOofgXNv7PA5gPF4USuFAJ1JtLWrAApNY4BDM/edit?usp=sharing", "grp-level", { quick: true }),
 
       g("grp-rule", "규정 / 인허가"),
       m("regs-intl", "국제/국가 보안규정", "🌐", "regs-intl", "all", "grp-rule"),
       m("regs-own", "자체 보안규정", "📘", "regs-own", "all", "grp-rule"),
+      m("iosa", "IOSA (국제 인허가)", "🏅", "iosa", "all", "grp-rule"),
       lk("rule-intl", "국제/국가 보안규정 (구버전)", "🌐", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EA%B5%AD%EC%A0%9C%EA%B5%AD%EA%B0%80-%EB%B3%B4%EC%95%88%EA%B7%9C%EC%A0%95", "grp-rule"),
       lk("rule-own", "자체 보안규정 (구버전)", "📘", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EC%9E%90%EC%B2%B4-%EB%B3%B4%EC%95%88%EA%B7%9C%EC%A0%95", "grp-rule"),
-      lk("rule-iosa", "IOSA (국제 인허가)", "🏅", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/iosa%EA%B5%AD%EC%A0%9C-%EC%9D%B8%ED%97%88%EA%B0%80", "grp-rule"),
+      lk("rule-iosa", "IOSA 자료실 (구버전)", "🏅", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/iosa%EA%B5%AD%EC%A0%9C-%EC%9D%B8%ED%97%88%EA%B0%80", "grp-rule", { vis: "mgr" }),
       lk("rule-ssi", "비밀 취급 / SSI", "㊙️", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EB%B9%84%EB%B0%80-%EC%B7%A8%EA%B8%89ssi", "grp-rule", { vis: "mgr" }),
 
       g("grp-branch", "지점 / 협력업체"),
@@ -165,6 +166,7 @@ const SeMIS = (() => {
 
       g("grp-pass", "출입증"),
       m("passes", "출입증 관리", "🪪", "passes", "mgr", "grp-pass"),
+      m("pass-docs", "출입증 신청 서류", "📋", "pass-docs", "all", "grp-pass"),
       lk("pass-mgmt", "출입증 관리 (구버전)", "🪪", "https://sites.google.com/view/kjsemis/%EC%B6%9C%EC%9E%85%EC%A6%9D%EB%B3%B4%EC%95%88%EC%9E%A5%EB%B9%84/%EC%B6%9C%EC%9E%85%EC%A6%9D-%EA%B4%80%EB%A6%AC", "grp-pass"),
 
       g("grp-equip", "보안장비"),
@@ -666,6 +668,38 @@ const SeMIS = (() => {
       // 구버전 구글시트 링크 메뉴 제거 (모듈로 완전 대체 — 원본 시트는 모듈 상단에서 접근)
       DATA.menus = DATA.menus.filter(m => !(m && m.type === "link" &&
         (m.id === "br-supervisor" || m.id === "br-officer")));
+    }
+    /* v2.36: 안내 콘텐츠 3종을 구 링크 메뉴 → 내부 모듈로 이관 (멱등)
+       ① 국가 보안등급 소개(seclevel)  ② IOSA(iosa)  ③ 출입증 신청 서류(pass-docs) */
+    {
+      // ① 국가 보안등급 소개 — 구 링크(lvl-intro) 자리에 모듈을 넣고 링크는 제거
+      if (!DATA.menus.some(m => m && m.type === "module" && m.module === "seclevel")) {
+        const lv = DATA.menus.find(m => m && m.id === "lvl-intro");
+        if (lv) DATA.menus.push({ id: "seclevel", seq: lv.seq || 0, type: "module",
+          label: "국가 보안등급 소개", icon: "📖", module: "seclevel", vis: "all", parent: "grp-level" });
+        else ensureModuleMenu("seclevel", "grp-level", "국가 보안등급 소개", "📖", "seclevel", "all");
+      }
+      DATA.menus = DATA.menus.filter(m => !(m && m.type === "link" && m.id === "lvl-intro"));
+
+      // ② IOSA — 자체 보안규정 다음에 모듈 삽입, 구 링크는 자료실(보안성 내용)로 라벨·권한 조정
+      if (!DATA.menus.some(m => m && m.type === "module" && m.module === "iosa")) {
+        const ro = DATA.menus.find(m => m && m.type === "module" && m.module === "regs-own");
+        if (ro) DATA.menus.push({ id: "iosa", seq: (ro.seq || 0) + 0.1, type: "module",
+          label: "IOSA (국제 인허가)", icon: "🏅", module: "iosa", vis: "all", parent: "grp-rule" });
+        else ensureModuleMenu("iosa", "grp-rule", "IOSA (국제 인허가)", "🏅", "iosa", "all");
+      }
+      {
+        const io = DATA.menus.find(m => m && m.id === "rule-iosa" && m.type === "link");
+        if (io && io.label !== "IOSA 자료실 (구버전)") { io.label = "IOSA 자료실 (구버전)"; io.vis = "mgr"; }
+      }
+
+      // ③ 출입증 신청 서류 — 출입증 관리 바로 다음
+      if (!DATA.menus.some(m => m && m.type === "module" && m.module === "pass-docs")) {
+        const ps = DATA.menus.find(m => m && m.type === "module" && m.module === "passes");
+        if (ps) DATA.menus.push({ id: "pass-docs", seq: (ps.seq || 0) + 0.1, type: "module",
+          label: "출입증 신청 서류", icon: "📋", module: "pass-docs", vis: "all", parent: "grp-pass" });
+        else ensureModuleMenu("pass-docs", "grp-pass", "출입증 신청 서류", "📋", "pass-docs", "all");
+      }
     }
     return JSON.stringify(DATA) !== before;
   }
