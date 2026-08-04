@@ -38,29 +38,93 @@
 
   const list = () => (D().inspections || []).filter(x => x.year === year);
 
-  /* ─────── 캘린더 연동: 점검 ↔ 일정 (id "insp_"+점검id) ─────── */
+  /* ═══════ 캘린더 연동: 점검 ↔ 일정 (일정 id = "insp_" + 점검id) ═══════
+     원칙(v2.36.4): **보안점검 일정관리가 원본(우선권)**.
+     - 점검 → 일정: 제목·구분(색)·일자·완료를 항상 덮어씀
+     - 일정 → 점검: **일자와 완료 여부만** 역방향 반영(syncFromSchedule) — 두 화면이 어긋나지 않도록
+     - 일자 미정 점검도 계획 월 1일자 "[계획] …" 임시 일정으로 표시(확정하면 자동 이동)  */
+  const p2 = (n) => String(n).padStart(2, "0");
+  const SID = (inspId) => "insp_" + inspId;
+  const inspIdOfSid = (sid) => (String(sid).indexOf("insp_") === 0 ? String(sid).slice(5) : "");
+
+  /* 연동 일정에 쓸 일자 — 확정일이 없으면 계획 월 1일(임시) */
+  function calDates(insp) {
+    if (insp.start) return { start: insp.start, end: insp.end || insp.start, tentative: false };
+    const m = Number(insp.month);
+    if (!(m >= 1 && m <= 12)) return null;
+    const d = (insp.year || new Date().getFullYear()) + "-" + p2(m) + "-01";
+    return { start: d, end: d, tentative: true };
+  }
+
   function syncCalendar(insp) {
-    const sid = "insp_" + insp.id;
+    const sid = SID(insp.id);
     const idx = D().schedules.findIndex(s => s.id === sid);
-    if (!insp.linkCal || !insp.start || insp.status === "취소") {
+    const dt = insp.linkCal && insp.status !== "취소" ? calDates(insp) : null;
+    if (!dt) {
       if (idx >= 0) D().schedules.splice(idx, 1);
       return;
     }
     const rec = {
-      id: sid, title: "[점검] " + insp.target,
-      memo: insp.category + " 보안점검" + (insp.note ? " — " + insp.note : ""),
-      start: insp.start, end: insp.end || insp.start,
+      id: sid, title: (dt.tentative ? "[계획] " : "[점검] ") + insp.target,
+      memo: insp.category + " 보안점검"
+        + (dt.tentative ? " — 일자 미정(" + insp.month + "월 계획, 확정 시 자동 이동)" : "")
+        + (insp.note ? " — " + insp.note : ""),
+      start: dt.start, end: dt.end,
       allDay: true, time: "", timeEnd: "",
       color: CAT_COLOR[insp.category] || "blue",
       done: insp.status === "완료",
       assignee: (insp.inspectors && insp.inspectors[0]) || "",
-      vehicle: false, room: false, reminders: ["1w", "1d"]
+      vehicle: false, room: false, reminders: dt.tentative ? [] : ["1w", "1d"],
+      repeat: { freq: "none", until: "" }, doneFrom: "", doneDates: [], undoneDates: []
     };
     if (idx >= 0) Object.assign(D().schedules[idx], rec);
     else D().schedules.push(rec);
   }
   function removeCalendar(inspId) {
-    D().schedules = D().schedules.filter(s => s.id !== "insp_" + inspId);
+    D().schedules = D().schedules.filter(s => s.id !== SID(inspId));
+  }
+
+  /* 일정관리에서 연동 일정을 옮기거나 완료 처리했을 때 점검에 되반영.
+     patch = { start, end, done } — 날짜가 바뀌면 계획 월(month)도 함께 맞춘다. */
+  function syncFromSchedule(sid, patch) {
+    const id = inspIdOfSid(sid);
+    if (!id) return false;
+    const x = (D().inspections || []).find(i => i.id === id);
+    if (!x) return false;
+    let changed = false;
+    const p = patch || {};
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(p.start))) {
+      // 임시(월 계획) 일정을 옮긴 경우에도 확정 일자로 승격
+      if (x.start !== p.start) { x.start = p.start; changed = true; }
+      const end = /^\d{4}-\d{2}-\d{2}$/.test(String(p.end)) && p.end >= p.start ? p.end : p.start;
+      if (x.end !== end) { x.end = end; changed = true; }
+      const m = Number(p.start.slice(5, 7));
+      if (m >= 1 && m <= 12 && x.month !== m) { x.month = m; changed = true; }
+      const y = Number(p.start.slice(0, 4));
+      if (y && x.year !== y) { x.year = y; changed = true; }
+    }
+    if (typeof p.done === "boolean") {
+      if (p.done && x.status !== "완료") { x.status = "완료"; changed = true; }
+      else if (!p.done && x.status === "완료") { x.status = "계획"; changed = true; }
+    }
+    if (changed) syncCalendar(x);   // 제목·색 등 원본 속성 재적용(우선권)
+    return changed;
+  }
+  /* 연동 일정을 일정관리에서 삭제 → 점검의 연동만 해제(점검 자체는 보존) */
+  function unlinkBySchedule(sid) {
+    const id = inspIdOfSid(sid);
+    const x = id ? (D().inspections || []).find(i => i.id === id) : null;
+    if (!x) return false;
+    x.linkCal = false;
+    return true;
+  }
+  /* v2.36.4 일괄 연동: 취소를 제외한 모든 점검을 일정관리에 반영 */
+  function syncAllCalendar(opts) {
+    const turnOn = !(opts && opts.turnOn === false);
+    (D().inspections || []).forEach(x => {
+      if (turnOn && x.status !== "취소") x.linkCal = true;
+      syncCalendar(x);
+    });
   }
 
   /* ─────── 점검 칩 (대상/점검관 줄 분리) ─────── */
@@ -183,7 +247,7 @@
         ${x && x.resultUrl ? `<div class="form-hint">기존 결과 링크: <a href="${esc(x.resultUrl)}" target="_blank" rel="noopener">열기 ↗</a></div>` : ""}</div>
       <div class="form-row"><label>비고</label><input id="i-note" value="${esc(x ? x.note || "" : "")}" maxlength="200"></div>
       <div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" id="i-linkcal" style="width:auto" ${x && x.linkCal ? "checked" : ""}>
+        <input type="checkbox" id="i-linkcal" style="width:auto" ${x ? (x.linkCal ? "checked" : "") : "checked"}>
         📅 일정관리 캘린더에 표시 (시작일 확정 시)</label></div>
       <div class="modal-actions">
         ${x ? '<button class="btn btn-danger" id="i-del" style="margin-right:auto">삭제</button>' : ""}
@@ -367,7 +431,7 @@
     FINDING_TYPES, FD_BADGE, fdSummary, open,
     getYear: () => year, setYear: (y) => { year = Number(y) || year; },
     setViewMode: (m) => { if (m === "matrix" || m === "list") viewMode = m; },
-    syncCalendar, removeCalendar, moveInsp,
+    syncCalendar, removeCalendar, moveInsp, syncFromSchedule, unlinkBySchedule, syncAllCalendar, calDates,
     list
   };
 })();

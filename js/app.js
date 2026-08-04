@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.36.3";
+  const VERSION = "2.36.4";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -605,6 +605,16 @@ const SeMIS = (() => {
           label: "출입증 신청 서류", icon: "📋", module: "pass-docs", vis: "all", parent: "grp-pass" });
         else ensureModuleMenu("pass-docs", "grp-pass", "출입증 신청 서류", "📋", "pass-docs", "all");
       }
+    }
+    /* v2.36.4: 보안점검 ↔ 일정관리 일괄 연동(1회).
+       그동안 linkCal이 꺼진 점검은 일정관리에 나타나지 않아 두 화면이 어긋났음
+       (예: 점검은 11월로 옮겼는데 캘린더는 10월 그대로).
+       취소를 제외한 모든 점검의 linkCal을 켜고 "[점검]/[계획]" 일정을 생성·갱신한다.
+       이후에는 저장·드래그 시마다 양방향 동기화되므로 다시 실행하지 않는다. */
+    if (DATA.inspSync !== "2.36.4" && typeof window !== "undefined"
+        && window.SemisInspection && window.SemisInspection.syncAllCalendar) {
+      try { window.SemisInspection.syncAllCalendar(); DATA.inspSync = "2.36.4"; }
+      catch (e) { /* 모듈 미로드 등 — 다음 기회에 재시도 */ }
     }
     return JSON.stringify(DATA) !== before;
   }

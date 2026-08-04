@@ -99,6 +99,12 @@ function go(env, route) {
   env.w.location.hash = "#/" + route;
   env.S.renderView();
 }
+/* v2.36.4: 보안점검 일괄 연동으로 부팅 시 "insp_*" 일정이 생성된다.
+   캘린더 자체 로직만 보는 블록에서는 이를 걷어내고 시작한다. */
+function clearInspEvents(env) {
+  env.S.data.schedules = env.S.data.schedules.filter(x => String(x.id).indexOf("insp_") !== 0);
+  env.S.saveSilent();
+}
 const q = (env, sel) => env.w.document.querySelector(sel);
 const qa = (env, sel) => Array.from(env.w.document.querySelectorAll(sel));
 const todayOf = (env) => new Date().toISOString().slice(0, 10); // UTC (app.js todayStr과 동일 기준)
@@ -547,6 +553,7 @@ function makeFetchStub(server) {
     const e = makeEnv();
     loginAs(e, "hq");
     const C = e.Cal;
+    clearInspEvents(e);
     const D = e.S.data;
     D.schedules.push(
       { id: "ev1", title: "단일일정", memo: "", start: "2026-07-15", end: "2026-07-15", allDay: true, time: "", timeEnd: "", color: "green", done: false, assignee: "홍길동" },
@@ -1989,6 +1996,7 @@ function makeFetchStub(server) {
     const e = makeEnv();
     loginAs(e, "hq");
     const C = e.Cal;
+    clearInspEvents(e);
     t("V14 이윤민 이모지(🌸)는 TEAM 데이터에만, 태그는 약자만", () => {
       eq(C.TEAM.find(t2 => t2.name === "이윤민").emoji, "🌸");
       eq(C.tagOf("이윤민"), "윤");
@@ -6368,6 +6376,140 @@ function makeFetchStub(server) {
     const e = makeEnv();
     eq(e.S.data.inspections.filter(x => (x.inspectors || []).length).length, 0, "시드 점검관 0명");
     ["최상일", "이은우", "이윤민"].forEach(n => ok(seed.indexOf(n) < 0, "시드에 실명 없음: " + n));
+  });
+
+
+  /* ══════════ [IB] 점검 ↔ 일정관리 양방향 동기화 (v2.36.4) ══════════ */
+  t("IB01 일괄 연동 — 취소 제외 전 점검이 일정관리에 표시(일자 미정은 월 1일 [계획])", () => {
+    const e = makeEnv();
+    const insp = e.S.data.inspections;
+    const linked = e.S.data.schedules.filter(x => String(x.id).indexOf("insp_") === 0);
+    eq(linked.length, insp.filter(x => x.status !== "취소").length, "취소 제외 전건 연동");
+    ok(insp.every(x => x.status === "취소" || x.linkCal === true), "linkCal 일괄 ON");
+    eq(e.S.data.inspSync, "2.36.4", "마이그레이션 플래그");
+    // 일자 확정 건: [점검], 미정 건: [계획] + 계획 월 1일
+    const fixed = insp.find(x => x.start && x.status !== "취소");
+    const tent = insp.find(x => !x.start && x.status !== "취소");
+    const ev = (x) => e.S.data.schedules.find(s2 => s2.id === "insp_" + x.id);
+    ok(ev(fixed).title.indexOf("[점검] ") === 0, "확정 건 제목");
+    eq(ev(fixed).start, fixed.start, "확정 일자 그대로");
+    ok(ev(tent).title.indexOf("[계획] ") === 0, "미정 건 제목");
+    eq(ev(tent).start, tent.year + "-" + String(tent.month).padStart(2, "0") + "-01", "계획 월 1일");
+    ok(/일자 미정/.test(ev(tent).memo), "미정 안내 메모");
+    eq(ev(tent).reminders.length, 0, "임시 일정은 알림 없음");
+    // 재부팅해도 중복 생성 없음(멱등)
+    const again = makeEnv({ preData: JSON.parse(JSON.stringify(e.S.data)) });
+    eq(again.S.data.schedules.filter(x => String(x.id).indexOf("insp_") === 0).length, linked.length, "멱등");
+  });
+
+  t("IB02 신규 점검 등록 시 '일정관리 연동' 기본 켜짐", () => {
+    const e = makeEnv();
+    e.Insp = e.w.SemisInspection;
+    loginAs(e, "hq");
+    go(e, "inspection");
+    e.Insp.open("__none__");                 // 없는 id → 폼 안 열림
+    ok(!q(e, "#i-linkcal"), "존재하지 않는 점검은 폼 미개방");
+    // 신규 등록 폼(매트릭스 빈 칸 클릭 경로와 동일하게 inspForm(null))은 open으로 못 여니 렌더 확인
+    const src = read("js/inspection.js");
+    ok(/id="i-linkcal"[^>]*\$\{x \? \(x\.linkCal \? "checked" : ""\) : "checked"\}/.test(src),
+      "신규는 checked, 기존은 저장값");
+    // 기존 건: linkCal off면 체크 해제 상태
+    const x = e.S.data.inspections[0];
+    x.linkCal = false; e.S.saveSilent();
+    e.Insp.open(x.id);
+    eq(q(e, "#i-linkcal").checked, false, "기존 OFF 유지");
+  });
+
+  t("IB03 일정관리에서 연동 일정 드래그 → 점검 일자·계획월 반영", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const x = e.S.data.inspections.find(v => v.target === "BKKSU");
+    Object.assign(x, { start: "2026-03-10", end: "2026-03-12", month: 3, linkCal: true, status: "계획" });
+    e.w.SemisInspection.syncCalendar(x);
+    // 캘린더에서 11월로 이동
+    ok(e.Cal.moveEvent("insp_" + x.id, "2026-11-17"), "이동");
+    const y = e.S.data.inspections.find(v => v.id === x.id);
+    eq(y.start + "~" + y.end, "2026-11-17~2026-11-19", "점검 일자 반영(기간 유지)");
+    eq(y.month, 11, "계획 월도 이동");
+    // 되반영 후에도 일정 제목·색은 점검 기준 유지(우선권)
+    const ev = e.S.data.schedules.find(s2 => s2.id === "insp_" + x.id);
+    eq(ev.title, "[점검] BKKSU", "제목은 점검 원본");
+    eq(ev.start, "2026-11-17", "일정도 동일");
+  });
+
+  t("IB04 일정관리에서 기간 조정·완료 토글 → 점검 반영", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const x = e.S.data.inspections.find(v => v.target === "LSG");
+    Object.assign(x, { start: "2026-05-12", end: "2026-05-12", month: 5, linkCal: true, status: "계획" });
+    e.w.SemisInspection.syncCalendar(x);
+    const sid = "insp_" + x.id;
+    ok(e.Cal.resizeEvent(sid, "2026-05-15"), "기간 연장");
+    eq(e.S.data.inspections.find(v => v.id === x.id).end, "2026-05-15", "종료일 반영");
+    // 완료 토글 → 상태 완료
+    e.Cal.toggleDone(sid);
+    eq(e.S.data.inspections.find(v => v.id === x.id).status, "완료", "완료 반영");
+    e.Cal.toggleDone(sid);
+    eq(e.S.data.inspections.find(v => v.id === x.id).status, "계획", "해제 시 계획 복귀");
+  });
+
+  t("IB05 임시([계획]) 일정을 옮기면 확정 일자로 승격", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const x = e.S.data.inspections.find(v => !v.start && v.status !== "취소");
+    const sid = "insp_" + x.id;
+    ok(e.S.data.schedules.find(s2 => s2.id === sid), "임시 일정 존재");
+    ok(e.Cal.moveEvent(sid, "2026-09-15"), "이동");
+    const y = e.S.data.inspections.find(v => v.id === x.id);
+    eq(y.start, "2026-09-15", "확정 일자 승격");
+    eq(y.month, 9, "계획 월");
+    eq(e.S.data.schedules.find(s2 => s2.id === sid).title.indexOf("[점검] "), 0, "제목도 확정형으로");
+  });
+
+  t("IB06 연동 일정을 일정관리에서 삭제 → 연동만 해제(점검 보존)", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const x = e.S.data.inspections.find(v => v.linkCal);
+    const sid = "insp_" + x.id;
+    ok(e.w.SemisCalendar.isInspEvent({ id: sid }), "연동 일정 판별");
+    e.w.SemisInspection.unlinkBySchedule(sid);
+    e.S.data.schedules = e.S.data.schedules.filter(s2 => s2.id !== sid);
+    e.S.save();
+    eq(e.S.data.inspections.find(v => v.id === x.id).linkCal, false, "연동 해제");
+    ok(e.S.data.inspections.some(v => v.id === x.id), "점검 기록은 보존");
+  });
+
+  t("IB07 우선권 — 점검에서 수정하면 일정관리 값이 덮어써짐", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const x = e.S.data.inspections.find(v => v.target === "SFOSF");
+    Object.assign(x, { start: "2026-08-23", end: "2026-08-27", month: 8, linkCal: true, status: "계획" });
+    e.w.SemisInspection.syncCalendar(x);
+    const sid = "insp_" + x.id;
+    // 사용자가 일정관리에서 제목·색을 임의로 바꿔둔 상태
+    const ev = e.S.data.schedules.find(s2 => s2.id === sid);
+    ev.title = "내가 바꾼 제목"; ev.color = "red";
+    // 점검 저장 → 원본 값으로 복구
+    x.start = "2026-08-24"; x.end = "2026-08-28";
+    e.w.SemisInspection.syncCalendar(x);
+    const after = e.S.data.schedules.find(s2 => s2.id === sid);
+    eq(after.title, "[점검] SFOSF", "제목 복구");
+    eq(after.color, "indigo", "구분 색 복구");
+    eq(after.start + "~" + after.end, "2026-08-24~2026-08-28", "일자 반영");
+  });
+
+  t("IB08 취소 상태 점검은 일정관리에서 제거", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const x = e.S.data.inspections.find(v => v.linkCal && v.status !== "취소");
+    const sid = "insp_" + x.id;
+    ok(e.S.data.schedules.some(s2 => s2.id === sid), "연동 중");
+    x.status = "취소";
+    e.w.SemisInspection.syncCalendar(x);
+    ok(!e.S.data.schedules.some(s2 => s2.id === sid), "취소 시 일정 제거");
+    x.status = "계획";
+    e.w.SemisInspection.syncCalendar(x);
+    ok(e.S.data.schedules.some(s2 => s2.id === sid), "복구");
   });
 
   /* ══════════ 결과 ══════════ */

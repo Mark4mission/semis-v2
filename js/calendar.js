@@ -469,6 +469,17 @@
   }
 
   /* ─────── 데이터 조작 ─────── */
+  /* v2.36.4: 보안점검 연동 일정("insp_*")을 일정관리에서 옮기거나 완료 처리하면
+     보안점검 일정관리에도 되반영한다(원본은 점검 모듈 — 제목·색은 그쪽 값이 유지됨). */
+  function backSyncInsp(e) {
+    if (!e || String(e.id).indexOf("insp_") !== 0) return false;
+    if (!window.SemisInspection || !SemisInspection.syncFromSchedule) return false;
+    try {
+      return SemisInspection.syncFromSchedule(e.id, { start: e.start, end: e.end || e.start, done: !!e.done });
+    } catch (err) { return false; }
+  }
+  const isInspEvent = (e) => !!e && String(e.id).indexOf("insp_") === 0;
+
   function moveEvent(id, newStart) {
     const e = D().schedules.find(x => x.id === id);
     if (!e || !/^\d{4}-\d{2}-\d{2}$/.test(String(newStart))) return false;
@@ -477,6 +488,7 @@
     e.start = newStart;
     e.end = addDays(newStart, dur);
     if (isRepeat(e)) shiftDoneMarks(e, delta);              // 회차별 완료 표시도 함께 이동
+    backSyncInsp(e);
     SeMIS.save(); SeMIS.renderView();
     return true;
   }
@@ -484,6 +496,7 @@
     const e = D().schedules.find(x => x.id === id);
     if (!e || !/^\d{4}-\d{2}-\d{2}$/.test(String(newEnd))) return false;
     e.end = newEnd < e.start ? e.start : newEnd;
+    backSyncInsp(e);
     SeMIS.save(); SeMIS.renderView();
     return true;
   }
@@ -493,7 +506,8 @@
     if (!e) return false;
     if (!isRepeat(e)) {
       e.done = !e.done;
-      SeMIS.save(); SeMIS.renderView();
+      backSyncInsp(e);
+    SeMIS.save(); SeMIS.renderView();
       return e.done;
     }
     const iso = /^\d{4}-\d{2}-\d{2}$/.test(String(occIso)) ? occIso : e.start;
@@ -978,7 +992,12 @@
 
     $("#f-cancel").onclick = closeModal;
     if (e) $("#f-del").onclick = () =>
-      confirmModal("이 일정을 삭제하시겠습니까?" + (isRepeat(e) ? " (반복 전체가 삭제됩니다.)" : ""), () => {
+      confirmModal("이 일정을 삭제하시겠습니까?"
+        + (isRepeat(e) ? " (반복 전체가 삭제됩니다.)" : "")
+        + (isInspEvent(e) ? " (보안점검 연동이 해제됩니다. 점검 기록 자체는 남습니다.)" : ""), () => {
+        if (isInspEvent(e) && window.SemisInspection && SemisInspection.unlinkBySchedule) {
+          try { SemisInspection.unlinkBySchedule(e.id); } catch (err) {}
+        }
         D().schedules = D().schedules.filter(x => x.id !== e.id);
         SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
       });
@@ -1032,6 +1051,7 @@
         if (reminders.length && typeof Notification !== "undefined" && Notification.permission === "default")
           Notification.requestPermission();
       } catch (err) {}
+      if (e) backSyncInsp(e);
       SeMIS.save(); closeModal(); SeMIS.renderView(); toast("저장되었습니다.");
     };
   }
@@ -1234,7 +1254,7 @@
     setView, getView: () => view,
     setAnchor, getAnchor: () => anchor,
     setFilter, getFilter: () => ({ assignee: fAssignee, hideDone: fHideDone }),
-    moveEvent, resizeEvent, toggleDone,
+    moveEvent, resizeEvent, toggleDone, backSyncInsp, isInspEvent,
     occDone, setOccDone, applyOccDone, askDoneScope, occurrenceStarts, stepOccurrence,
     shiftDoneMarks, clearDoneMarks, nextOpenOccurrence, DONE_SCOPES,
     eventsOnDay, filteredEvents, assigneeList,
