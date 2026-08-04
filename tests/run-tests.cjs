@@ -1105,6 +1105,10 @@ function makeFetchStub(server) {
       ok(q(e, ".insp-bar-fill"), "진행 바");
     });
     t("I09 매트릭스 칩: 대상/점검관 줄 분리", () => {
+      // v2.36.3: 점검관은 시드에서 제외(개인정보) → 테스트에서 배정 후 검증
+      const p = e.S.data.inspections.find(x => x.target === "프로에스콤");
+      p.inspectors = ["홍길동"];
+      e.S.saveSilent();
       e.Insp.setViewMode("matrix");
       go(e, "inspection");
       const c = qa(e, ".insp-chip").find(el => el.textContent.includes("프로에스콤"));
@@ -6261,6 +6265,109 @@ function makeFetchStub(server) {
     ok(e.w.SemisSearch.search("이하나").some(r => r.group === "출입증 관리 책임자"), "hq 검색 노출");
     loginAs(e, "user");
     ok(!e.w.SemisSearch.search("이하나").some(r => r.group === "출입증 관리 책임자"), "일반 사용자 검색 차단");
+  });
+
+
+  /* ══════════ [IL] 보안점검 목록 폭 · 일정관리 연동 (v2.36.3) ══════════ */
+  t("IL01 목록 뷰 열 폭 배분 — colgroup 7열 + 배지/날짜 줄바꿈 방지", () => {
+    const e = makeEnv();
+    e.Insp = e.w.SemisInspection;
+    loginAs(e, "hq");
+    e.Insp.setViewMode("list");
+    go(e, "inspection");
+    const tbl = q(e, "#view table.insp-list");
+    ok(tbl, "목록 표 렌더");
+    const cols = qa(e, "#view table.insp-list colgroup col");
+    eq(cols.length, 7, "colgroup 7열");
+    // 대상만 가변(width 미지정), 나머지는 고정폭
+    eq(cols.filter(c => !c.style.width).length, 1, "가변 열은 대상 1개");
+    eq(cols[3].style.width, "118px", "일자");
+    eq(cols[4].style.width, "150px", "점검관");
+    eq(cols[6].style.width, "220px", "결과");
+    ok(/--cap:\s*1000px/.test(tbl.getAttribute("style") || ""), "표 최대 폭 제한");
+    const css = read("css/main.css");
+    ok(/\.insp-list \{ table-layout: fixed/.test(css), "고정 레이아웃");
+    ok(/\.insp-list \.il-result \.badge \{[^}]*white-space: nowrap/.test(css), "결과 배지 줄바꿈 방지");
+    ok(/\.insp-list \.il-date \{[^}]*white-space: nowrap/.test(css), "일자 줄바꿈 방지");
+    e.Insp.setViewMode("matrix");
+  });
+
+  t("IL02 목록 뷰 — 점검관은 약자가 아닌 실제 이름", () => {
+    const e = makeEnv();
+    e.Insp = e.w.SemisInspection;
+    loginAs(e, "hq");
+    const x = e.S.data.inspections.find(v => v.target === "LSG");
+    x.inspectors = ["홍길동", "김철수"];
+    e.S.saveSilent();
+    e.Insp.setViewMode("list");
+    go(e, "inspection");
+    const row = qa(e, "#view [data-insp-row]").find(r => r.textContent.includes("LSG"));
+    eq(row.querySelector(".il-people").textContent.trim(), "홍길동 · 김철수", "전체 이름 표기");
+    e.Insp.setViewMode("matrix");
+  });
+
+  t("IL03 점검 일자 수정 → 연결된 일정관리 일정도 함께 변경", () => {
+    const e = makeEnv();
+    e.Insp = e.w.SemisInspection;
+    loginAs(e, "hq");
+    const x = e.S.data.inspections.find(v => v.target === "LSG");
+    // ① 일자 확정 + 캘린더 연동 → 일정 생성
+    Object.assign(x, { start: "2026-05-12", end: "2026-05-13", linkCal: true, status: "계획" });
+    e.Insp.syncCalendar(x);
+    const sid = "insp_" + x.id;
+    const ev = () => e.S.data.schedules.find(s => s.id === sid);
+    ok(ev(), "연동 일정 생성");
+    eq(ev().start + "~" + ev().end, "2026-05-12~2026-05-13", "최초 일자");
+    eq(ev().title, "[점검] LSG", "제목");
+    // ② 점검 일자 수정 → 일정도 갱신 (id 유지 = 중복 생성 아님)
+    Object.assign(x, { start: "2026-06-01", end: "2026-06-03" });
+    e.Insp.syncCalendar(x);
+    eq(e.S.data.schedules.filter(s => s.id === sid).length, 1, "중복 생성 없음");
+    eq(ev().start + "~" + ev().end, "2026-06-01~2026-06-03", "수정 일자 반영");
+    // ③ 상태 완료 → 일정도 완료 표시
+    x.status = "완료"; e.Insp.syncCalendar(x);
+    eq(ev().done, true, "완료 동기화");
+    // ④ 연동 해제 / 취소 / 일자 삭제 → 일정 제거
+    x.linkCal = false; e.Insp.syncCalendar(x);
+    ok(!ev(), "연동 해제 시 일정 제거");
+    x.linkCal = true; x.status = "취소"; e.Insp.syncCalendar(x);
+    ok(!ev(), "취소 시 일정 제거");
+    x.status = "계획"; e.Insp.syncCalendar(x);
+    ok(ev(), "복구");
+    e.Insp.removeCalendar(x.id);
+    ok(!ev(), "점검 삭제 시 일정 제거");
+  });
+
+  t("IL04 점검 폼에서 일자 수정 저장 → 일정관리 반영 (실제 UI 경로)", () => {
+    const e = makeEnv();
+    e.Insp = e.w.SemisInspection;
+    loginAs(e, "hq");
+    const x = e.S.data.inspections.find(v => v.target === "정비고");
+    e.Insp.open(x.id);
+    q(e, "#i-linkcal").checked = true;
+    q(e, "#i-start").value = "2026-09-07";
+    q(e, "#i-end").value = "2026-09-08";
+    q(e, "#i-save").click();
+    const sid = "insp_" + x.id;
+    let ev = e.S.data.schedules.find(s => s.id === sid);
+    ok(ev && ev.start === "2026-09-07" && ev.end === "2026-09-08", "폼 저장 시 일정 생성");
+    // 날짜만 바꿔 재저장
+    e.Insp.open(x.id);
+    q(e, "#i-start").value = "2026-09-21";
+    q(e, "#i-end").value = "2026-09-22";
+    q(e, "#i-save").click();
+    ev = e.S.data.schedules.find(s => s.id === sid);
+    eq(ev.start + "~" + ev.end, "2026-09-21~2026-09-22", "수정 일자가 일정에 반영");
+    eq(e.S.data.schedules.filter(s => s.id === sid).length, 1, "일정 1건 유지");
+  });
+
+  t("IL05 개인정보 — 보안점검 시드에 점검관 이름 없음 (v2.36.3)", () => {
+    const app = read("js/app.js");
+    const seed = app.slice(app.indexOf("function seedInspections"), app.indexOf("let DATA = null"));
+    ok(!/\[\s*"[^"]/.test(seed.replace(/mk\("/g, "")), "시드 inspectors 배열이 모두 비어 있음");
+    const e = makeEnv();
+    eq(e.S.data.inspections.filter(x => (x.inspectors || []).length).length, 0, "시드 점검관 0명");
+    ["최상일", "이은우", "이윤민"].forEach(n => ok(seed.indexOf(n) < 0, "시드에 실명 없음: " + n));
   });
 
   /* ══════════ 결과 ══════════ */

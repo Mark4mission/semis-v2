@@ -127,18 +127,25 @@
     const items = list().slice().sort((a, b) =>
       (a.month - b.month) || String(a.start || "").localeCompare(String(b.start || "")) || String(a.category).localeCompare(b.category));
     if (!items.length) return '<div class="empty">등록된 점검이 없습니다.</div>';
-    return `<div class="table-wrap"><table class="tbl"><thead><tr>
-        <th style="width:52px">월</th><th style="width:90px">구분</th><th>대상</th>
-        <th style="width:150px">일자</th><th>점검관</th><th style="width:70px">상태</th>
-        <th style="width:60px">결과</th></tr></thead><tbody>
+    /* v2.36.3: 열 폭 고정 배분(colgroup) — 대상이 남는 폭을 독점해 결과 배지가
+       세로로 쪼개지던 문제 해소. 점검관은 약자 대신 실제 이름 표기. */
+    return `<div class="table-wrap"><table class="tbl tbl-cap insp-list" style="--cap:1000px">
+      <colgroup>
+        <col style="width:54px"><col style="width:96px"><col>
+        <col style="width:118px"><col style="width:150px">
+        <col style="width:74px"><col style="width:220px">
+      </colgroup>
+      <thead><tr>
+        <th>월</th><th>구분</th><th>대상</th>
+        <th>일자</th><th>점검관</th><th>상태</th><th>결과</th></tr></thead><tbody>
       ${items.map(x => `<tr data-insp-row="${esc(x.id)}" style="cursor:pointer" class="${x.status === "취소" ? "insp-cancel" : ""}">
         <td><b>${x.month}월</b></td>
-        <td><span class="cal-dot ev-${CAT_COLOR[x.category] || "gray"}"></span> ${esc(x.category)}</td>
-        <td><b>${esc(x.target)}</b>${x.note ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(x.note)}</div>` : ""}</td>
-        <td style="font-size:.82rem">${x.start ? esc(x.start) + (x.end && x.end !== x.start ? "<br>~ " + esc(x.end) : "") : '<span style="color:var(--text-3)">미정</span>'}${x.linkCal && x.start ? " 📅" : ""}</td>
-        <td style="font-size:.84rem">${(x.inspectors || []).map(n => esc(tagOf(n))).join(" ") || '<span style="color:var(--text-3)">미정</span>'}</td>
+        <td class="il-cat"><span class="cal-dot ev-${CAT_COLOR[x.category] || "gray"}"></span> ${esc(x.category)}</td>
+        <td class="il-target"><b>${esc(x.target)}</b>${x.note ? `<div class="il-note">${esc(x.note)}</div>` : ""}</td>
+        <td class="il-date">${x.start ? esc(x.start) + (x.end && x.end !== x.start ? "<br>~ " + esc(x.end) : "") : '<span style="color:var(--text-3)">미정</span>'}${x.linkCal && x.start ? ' <span title="일정관리 연동">📅</span>' : ""}</td>
+        <td class="il-people">${(x.inspectors || []).map(n => esc(n)).join(" · ") || '<span style="color:var(--text-3)">미정</span>'}</td>
         <td><span class="badge ${ST_BADGE[x.status] || "badge-gray"}">${esc(x.status)}</span></td>
-        <td>${fdSummary(x) || (x.resultUrl ? `<a href="${esc(x.resultUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">보기 ↗</a>` : "-")}</td>
+        <td class="il-result">${fdSummary(x) || (x.resultUrl ? `<a href="${esc(x.resultUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">보기 ↗</a>` : "-")}</td>
       </tr>`).join("")}</tbody></table></div>`;
   }
 

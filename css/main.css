@@ -634,6 +634,15 @@ body.cal-dragging .cal-cell { cursor: grabbing !important; }
   font-size: 0.75rem; font-weight: 700;
 }
 tr.insp-cancel td { opacity: .5; text-decoration: line-through; }
+/* 목록 뷰 열 폭 배분 (v2.36.3) — colgroup 고정 + 배지·날짜 줄바꿈 방지 */
+.insp-list { table-layout: fixed; }
+.insp-list th, .insp-list td { vertical-align: middle; }
+.insp-list .il-cat { white-space: nowrap; }
+.insp-list .il-target b { word-break: keep-all; }
+.insp-list .il-note { font-size: .76rem; color: var(--text-3); margin-top: 2px; }
+.insp-list .il-date { font-size: .82rem; white-space: nowrap; }
+.insp-list .il-people { font-size: .82rem; word-break: keep-all; line-height: 1.5; }
+.insp-list .il-result .badge { display: inline-block; white-space: nowrap; margin: 1px 3px 1px 0; }
 .insp-bar { height: 7px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; margin-top: 7px; overflow: hidden; }
 .insp-bar-fill { height: 100%; background: var(--success); border-radius: 5px; transition: width .3s; }
 
