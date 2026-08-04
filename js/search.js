@@ -272,6 +272,13 @@ const SemisSearch = (() => {
         text: ["출입증관리센터", "032-741-2560", "인천국제공항공사", "보안관리팀", "리플렛", "보호구역 출입증 규정", "입주자 서비스포털"] }
     ] });
 
+  /* 출입증 관리 책임자 명단 — 개인정보 포함이라 보안관리자(mgr) 이상만 검색 노출 */
+  register({ id: "pass-owners", group: "출입증 관리 책임자", icon: "👤", module: "pass-docs", minRank: 2,
+    items: () => A(D().passOwners).map(x => ({
+      title: (x.name || "-") + (x.title ? " " + x.title : ""),
+      sub: [x.org, x.team, x.tel].filter(Boolean).join(" · "),
+      text: [x.name, x.org, x.team, x.title, x.empNo, x.passNo, x.tel, x.note] })) });
+
   register({ id: "billing", group: "대금 청구 (대외비)", icon: "🧾", module: "billing", minRank: 3,
     items: () => A(D().billing).map(b => ({
       title: "[" + (b.month || "") + "] " + (b.title || ""),

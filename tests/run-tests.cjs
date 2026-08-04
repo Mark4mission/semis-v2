@@ -2383,7 +2383,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "billing,branches,carCfg,cars,certOpts,certs,contacts,contracts,council,customUsers,equipMaint,equipment,gcal,inspections,kpis,levelHistory,menus,notices,passes,policy,pwOverrides,regulations,schedules,stationOfficers,supervisors,trainings,userOverrides,vault");
+    eq(keys, "billing,branches,carCfg,cars,certOpts,certs,contacts,contracts,council,customUsers,equipMaint,equipment,gcal,inspections,kpis,levelHistory,menus,notices,passOwners,passes,policy,pwOverrides,regulations,schedules,stationOfficers,supervisors,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -6006,6 +6006,10 @@ function makeFetchStub(server) {
     ok(html.indexOf("Contingency Plan") >= 0, "ICAO 해외 동향");
     eq(qa(e, "#view .gd-tl li").length, 3, "연혁 타임라인 3건");
     ok(html.indexOf("세부 조치사항은 이 화면에 담지 않습니다") >= 0, "보안통제 정보 안내");
+    // v2.36.1: 구버전 문서 링크 제거 (등급 현황 문서 / kjsemis 소개 페이지)
+    ok(html.indexOf("docs.google.com/document") < 0, "보안등급 현황 문서 링크 제거");
+    ok(html.indexOf("sites.google.com") < 0, "구버전 소개 페이지 링크 제거");
+    ok(qa(e, "#view a[href='#/dashboard']").length === 1, "대시보드 이동만 유지");
   });
 
   t("GD04 국가 보안등급 소개 — 현재 등급 하이라이트 연동", () => {
@@ -6057,6 +6061,10 @@ function makeFetchStub(server) {
     ok(html.indexOf("pass.airport.kr") >= 0, "출입증관리시스템 링크");
     ok(html.indexOf("032-741-2560") >= 0, "출입증관리센터 연락처");
     ok(html.indexOf("보안교육") >= 0, "보안교육 이수 안내");
+    // v2.36.1: 구버전 안내 페이지 · 공항 출입증 규정 자료실 링크 제거
+    ok(html.indexOf("sites.google.com") < 0, "구버전 안내 페이지 링크 제거");
+    ok(html.indexOf("drive.google.com/drive/folders") < 0, "규정 자료실(폴더) 링크 제거");
+    ok(html.indexOf("docs.google.com/spreadsheets") < 0, "책임자 명단 구글시트 링크 제거");
   });
 
   t("GD07 출입증 서류 체크리스트 — 진행률 + 계정별 localStorage 보존", () => {
@@ -6117,6 +6125,101 @@ function makeFetchStub(server) {
     const e = makeEnv();
     ["seclevel", "iosa", "passDocs", "pass-docs"].forEach(k =>
       ok(!e.Sync.SYNC_KEYS.includes(k), k + " SYNC_KEYS 미포함"));
+  });
+
+
+  /* ══════════ [GD] v2.36.1 후속 — 등급 연동 · 책임자 명단 ══════════ */
+  t("GD11 보안등급 변경이 소개 화면에 즉시 반영 (로컬 · 원격 동기화)", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    go(e, "seclevel");
+    const cur = () => q(e, "#view .gd-lvl.on .gd-lvl-name").textContent;
+    // ① 대시보드에서 등급 변경 → 소개 화면 재진입 시 반영
+    e.S.data.levelHistory.length = 0;
+    e.S.data.levelHistory.push({ level: "심각", date: "2000-01-01", end: "", note: "" });
+    e.S.saveSilent();
+    go(e, "dashboard"); go(e, "seclevel");
+    eq(cur(), "심각", "로컬 변경 반영");
+    ok(q(e, "#view .gd-hero .gd-now").textContent.indexOf("심각") >= 0, "히어로도 갱신");
+    // ② 원격 동기화 반영 — sync applyRemote가 renderView를 호출하므로 화면에 있어도 갱신
+    e.Sync.applyRemote("levelHistory",
+      [{ level: "관심", date: "2000-01-02", end: "", note: "원격" }]);
+    eq(cur(), "관심", "원격 변경이 현재 화면에 즉시 반영");
+    eq(e.S.secCurrent().level, "관심", "데이터 동기화");
+  });
+
+  t("GD12 출입증 관리 책임자 명단 — 코드 미시드 + CRUD (hq)", () => {
+    const e = makeEnv();
+    // 개인정보이므로 코드/시드에 실데이터가 없어야 한다
+    eq(e.S.data.passOwners.length, 0, "기본값 빈 배열(코드 미시드)");
+    const src = read("js/passdocs.js");   // 명단 실데이터는 이 모듈 어디에도 없어야 한다
+    ok(!/010-(?!0000-0000)\d{3,4}-\d{4}/.test(src), "코드에 실제 휴대폰 번호 없음(입력 예시 제외)");
+    ["이은우", "박상형", "허용준"].forEach(n =>
+      ok(src.indexOf(n) < 0, "코드에 실명 없음: " + n));
+    loginAs(e, "hq");
+    go(e, "pass-docs");
+    ok(q(e, "#po-body .empty"), "빈 상태 안내");
+    q(e, "#po-add").click();
+    q(e, "#po-no").value = "1";
+    q(e, "#po-org").value = "안전보안실";
+    q(e, "#po-team").value = "항공보안팀";
+    q(e, "#po-name").value = "홍길동";
+    q(e, "#po-title").value = "프로";
+    q(e, "#po-empNo").value = "100080";
+    q(e, "#po-passNo").value = "2501787491";
+    q(e, "#po-tel").value = "010-0000-0000";
+    q(e, "#po-consent").checked = true;
+    q(e, "#po-save").click();
+    eq(e.S.data.passOwners.length, 1, "등록됨");
+    const x = e.S.data.passOwners[0];
+    eq(x.org + "/" + x.name + "/" + x.consent, "안전보안실/홍길동/true", "필드 저장");
+    eq(qa(e, "#po-body tbody tr").length, 1, "표 렌더");
+    ok(q(e, "#po-body a[href^='tel:']"), "연락처 전화 링크");
+    // 수정
+    e.w.SemisPassDocs.ownerForm(x.id);
+    q(e, "#po-team").value = "보안운영팀";
+    q(e, "#po-save").click();
+    eq(e.S.data.passOwners[0].team, "보안운영팀", "수정 반영");
+    // 삭제
+    e.w.SemisPassDocs.ownerForm(x.id);
+    q(e, "#po-del").click();
+    q(e, "#modal-box [data-act=ok]").click();
+    eq(e.S.data.passOwners.length, 0, "삭제됨");
+  });
+
+  t("GD13 책임자 명단 — 권한별 열 노출 · 정렬 · 동기화 키", () => {
+    const rows = [
+      { id: "po2", no: "2", org: "정비본부", team: "운항정비팀", name: "김둘", title: "프로",
+        empNo: "300171", passNo: "2507807160", tel: "010-1111-2222", consent: true, note: "" },
+      { id: "po1", no: "1", org: "안전보안실", team: "항공보안팀", name: "이하나", title: "프로",
+        empNo: "100080", passNo: "2501787491", tel: "010-3333-4444", consent: false, note: "총괄" }
+    ];
+    const e = makeEnv({ preData: { passOwners: rows } });
+    // 일반 사용자: 이름·연락처는 보이고 사번·출입증번호·동의는 숨김
+    loginAs(e, "user");
+    go(e, "pass-docs");
+    let html = q(e, "#po-body").innerHTML;
+    ok(html.indexOf("이하나") >= 0 && html.indexOf("010-3333-4444") >= 0, "이름·연락처 노출");
+    ok(html.indexOf("100080") < 0 && html.indexOf("2501787491") < 0, "사번·출입증번호 비노출");
+    ok(html.indexOf("개인정보 동의") < 0, "동의 열 비노출");
+    ok(!q(e, "#po-add"), "일반 사용자는 추가 버튼 없음");
+    eq(qa(e, "#po-body tbody tr td:nth-child(4)")[0].textContent, "이하나", "번호순 정렬");
+    // 보안관리자: 전체 열 노출, 편집은 불가
+    loginAs(e, "manager");
+    go(e, "pass-docs");
+    html = q(e, "#po-body").innerHTML;
+    ok(html.indexOf("100080") >= 0 && html.indexOf("2501787491") >= 0, "mgr는 사번·출입증번호 열람");
+    ok(!q(e, "#po-add"), "mgr는 편집 불가");
+    // hq: 편집 가능
+    loginAs(e, "hq");
+    go(e, "pass-docs");
+    ok(q(e, "#po-add"), "hq 추가 버튼");
+    eq(qa(e, "#po-body [data-po-edit]").length, 2, "행별 수정 버튼");
+    ok(e.Sync.SYNC_KEYS.includes("passOwners"), "SYNC_KEYS 등록");
+    // 검색: mgr 이상만 노출
+    ok(e.w.SemisSearch.search("이하나").some(r => r.group === "출입증 관리 책임자"), "hq 검색 노출");
+    loginAs(e, "user");
+    ok(!e.w.SemisSearch.search("이하나").some(r => r.group === "출입증 관리 책임자"), "일반 사용자 검색 차단");
   });
 
   /* ══════════ 결과 ══════════ */

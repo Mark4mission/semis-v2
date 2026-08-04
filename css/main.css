@@ -1807,6 +1807,14 @@ a.ct-tel:hover { color: var(--primary); }
 .gd-link .gd-link-ext { font-size: .68rem; color: var(--text-3); }
 .gd-link:hover .gd-link-ext { color: var(--primary); }
 
+/* 출입증 관리 책임자 명단 (v2.36.1) */
+.po-tbl td, .po-tbl th { white-space: nowrap; }
+.po-tbl td:last-child, .po-tbl th:last-child { white-space: normal; }
+.po-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .8rem; color: var(--text-2);
+}
+
 /* 출처 */
 .gd-src { font-size: .73rem; color: var(--text-3); line-height: 1.75; margin-top: 14px;
   padding-top: 11px; border-top: 1px dashed var(--border-strong); }

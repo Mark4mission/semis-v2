@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.36.0";
+  const VERSION = "2.36.1";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -225,6 +225,7 @@ const SeMIS = (() => {
       contacts: { sections: [] },     // v2.6: 보고체계 연락망 (실데이터는 공용 DB 동기화 — 코드에 미시드)
       branches: [],                   // v2.7: 지점 관리 (해외지점 세계지도)
       passes: [],                     // v2.8: 출입증 관리 (개인정보 — 공용 DB 동기화)
+      passOwners: [],                 // v2.36.1: 출입증 관리 책임자 명단 (개인정보 — 코드 미시드, 공용 DB만)
       equipment: [],                  // v2.8: 보안장비 유지관리
       trainings: [],                  // v2.8: 보안교육 관리
       contracts: [],                  // v2.8: 계약서 관리
@@ -694,6 +695,8 @@ const SeMIS = (() => {
       }
 
       // ③ 출입증 신청 서류 — 출입증 관리 바로 다음
+      //    v2.36.1: 관리 책임자 명단(구글시트 이관) 컨테이너 — 실데이터는 공용 DB에서만 로드
+      if (!Array.isArray(DATA.passOwners)) DATA.passOwners = [];
       if (!DATA.menus.some(m => m && m.type === "module" && m.module === "pass-docs")) {
         const ps = DATA.menus.find(m => m && m.type === "module" && m.module === "passes");
         if (ps) DATA.menus.push({ id: "pass-docs", seq: (ps.seq || 0) + 0.1, type: "module",

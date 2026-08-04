@@ -15,8 +15,8 @@
 (() => {
   const { esc } = SeMIS;
 
-  const LEGACY_URL = "https://sites.google.com/view/kjsemis/%ED%95%AD%EA%B3%B5%EB%B3%B4%EC%95%88%EB%93%B1%EA%B8%89/%EA%B5%AD%EA%B0%80-%ED%95%AD%EA%B3%B5%EB%B3%B4%EC%95%88%EB%93%B1%EA%B8%89-%EC%86%8C%EA%B0%9C";
-  const NOW_DOC_URL = "https://docs.google.com/document/d/1Fvsi7bcOofgXNv7PA5gPF4USuFAJ1JtLWrAApNY4BDM/edit?usp=sharing";
+  /* v2.36.1: 구버전 문서(항공보안등급 현황 [현재] · kjsemis 소개 페이지) 링크는 사용자 요청으로 제거.
+     등급 현황은 대시보드 「보안등급 현황」에서 관리하므로 내부 이동만 남긴다. */
   const LAW_URL = "https://www.law.go.kr/%EB%B2%95%EB%A0%B9/%ED%95%AD%EA%B3%B5%EB%B3%B4%EC%95%88%EB%B2%95";
   const MOLIT_URL = "https://www.molit.go.kr/";
 
@@ -147,7 +147,6 @@
       </ul>
       <div class="gd-links" style="margin-top:13px">
         <a class="gd-link" href="#/dashboard">🏠 대시보드 · 보안등급 현황 관리</a>
-        ${ext(NOW_DOC_URL, "항공보안등급 현황 [현재] 문서", "✅")}
       </div>`;
   }
 
@@ -171,8 +170,6 @@
       <div class="gd-links">
         ${ext(LAW_URL, "항공보안법 (국가법령정보센터)", "⚖️")}
         ${ext(MOLIT_URL, "국토교통부", "🏛️")}
-        ${ext(NOW_DOC_URL, "보안등급 현황 [현재]", "✅")}
-        ${ext(LEGACY_URL, "구버전 소개 페이지 (kjsemis)", "🕰️")}
       </div>
       <div class="gd-src">
         출처 — 국가 항공보안등급 정책 개요·연혁·해외 동향: 구 SeMIS(kjsemis) 「국가 항공보안등급 소개」 게시 내용 /
@@ -204,5 +201,5 @@
   });
 
   /* ─────── 테스트/외부 노출 ─────── */
-  window.SemisSecLevel = { LEVELS, HISTORY, levelIndex, LEGACY_URL };
+  window.SemisSecLevel = { LEVELS, HISTORY, levelIndex };
 })();
