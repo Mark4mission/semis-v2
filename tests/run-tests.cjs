@@ -5512,19 +5512,44 @@ function makeFetchStub(server) {
 
   /* ══════════ [O] v2.34 보안 인력 모듈 + 열 폭/열람 배치 개선 ══════════ */
 
-  t("O01 보안감독자 시드 — 29명, 본부 5개, 발령내용 분포", () => {
-    const e = makeEnv();
+  /* v2.36.2: 보안 인력 시드는 개인정보라 코드에서 제거됨(공용 DB 전용).
+     아래 테스트는 가명 픽스처를 preData로 주입해 로직만 검증한다. */
+  const SV_FIX = [
+    ["sv01", "안전보안실", "안전보안실", "실장", "안전보안실장", "가나다", "S001", "항공사보안책임자(정)"],
+    ["sv02", "안전보안실", "항공보안팀", "팀장", "항공보안팀장", "나다라", "S002", "항공사보안책임자(부)"],
+    ["sv03", "안전보안실", "항공보안팀", "프로", "팀원", "다라마", "S003", "항공사보안감독자"],
+    ["sv04", "안전보안실", "항공보안팀", "프로", "팀원", "라마바", "", ""],
+    ["sv05", "영업본부", "인천화물팀", "팀장", "팀장", "마바사", "S005", "항공사보안감독자"],
+    ["sv06", "운항본부", "운항팀", "팀장", "팀장", "바사아", "S006", "항공사보안감독자"],
+    ["sv07", "정비본부", "정비팀", "팀장", "팀장", "사아자", "S007", "항공사보안감독자"],
+    ["sv08", "종합통제실", "통제팀", "팀장", "팀장", "아자차", "S008", "항공사보안감독자"]
+  ].map((r, i) => ({ id: r[0], seq: i, div: r[1], dept: r[2], rank: r[3], duty: r[4],
+    name: r[5], empNo: r[6], role: r[7], from: r[7] ? "2026-01-01" : "", to: r[7] ? "2026-12-31" : "", note: "" }));
+  const SO_FIX = [
+    ["미주", "LAX", "미주하나", "E001", "laxsfz", "지점장"],
+    ["미주", "LAX", "미주둘", "E002", "lax2", ""],
+    ["유럽", "FRA", "유럽하나", "E003", "frakkf", ""],
+    ["일본", "NRT", "일본하나", "E004", "nrtsfz", "영업소장"],
+    ["일본", "NRT", "일본둘", "E005", "nrt2", ""],
+    ["중국", "PVG", "중국하나", "E006", "pvgsfz", "지점장"],
+    ["아시아", "HKG", "아시아하나", "E007", "hkgkkf", ""]
+  ].map((r, i) => ({ id: "so" + (i + 1), seq: i, region: r[0], station: r[1],
+    name: r[2], empNo: r[3], uniworks: r[4], note: r[5] }));
+  const officerEnv = () => makeEnv({ preData: { supervisors: SV_FIX, stationOfficers: SO_FIX } });
+
+  t("O01 보안감독자 데이터 — 본부 정렬 · 발령내용 분포 (가명 픽스처)", () => {
+    const e = officerEnv();
     const l = e.S.data.supervisors;
-    eq(l.length, 29, "시드 인원");
+    eq(l.length, 8, "인원");
     eq(e.w.SemisOfficers.svDivs().join(","), "안전보안실,영업본부,운항본부,정비본부,종합통제실", "본부 순서");
-    const s = e.w.SemisOfficers.svStats();
-    eq(s.chief, 2, "보안책임자 정·부");
-    eq(s.sup, 26, "보안감독자");
-    eq(s.none, 1, "미발령(이윤민)");
-    const me = l.find(x => x.name === "최상일");
-    ok(me && me.empNo === "100046" && me.role === "항공사보안감독자", "최상일 발령 확인");
-    eq(me.from + "~" + me.to, "2026-01-01~2026-12-31", "발령기간");
-    eq(new Set(l.map(x => x.id)).size, 29, "id 고유");
+    const st = e.w.SemisOfficers.svStats();
+    eq(st.chief, 2, "보안책임자 정·부");
+    eq(st.sup, 5, "보안감독자");
+    eq(st.none, 1, "미발령");
+    const x = l.find(v => v.name === "다라마");
+    ok(x && x.empNo === "S003" && x.role === "항공사보안감독자", "발령 확인");
+    eq(x.from + "~" + x.to, "2026-01-01~2026-12-31", "발령기간");
+    eq(new Set(l.map(v => v.id)).size, 8, "id 고유");
   });
 
   t("O02 보안감독자 상태 판정 (유효/만료/미발령)", () => {
@@ -5537,20 +5562,20 @@ function makeFetchStub(server) {
   });
 
   t("O03 보안감독자 화면 — 본부 그룹행 + 검색/필터", () => {
-    const e = makeEnv();
+    const e = officerEnv();
     loginAs(e, "hq");
     go(e, "supervisors");
     ok(q(e, "#sv-body"), "목록 렌더");
     eq(qa(e, "#sv-body .grp-row").length, 5, "본부 그룹행 5개");
-    eq(qa(e, "#sv-body [data-sv-row]").length, 29, "전체 행");
-    ok(qa(e, "#sv-body [data-sv-edit]").length === 29, "hq 수정 버튼 노출");
-    e.w.SemisOfficers.setSvQuery("최상일");
+    eq(qa(e, "#sv-body [data-sv-row]").length, 8, "전체 행");
+    ok(qa(e, "#sv-body [data-sv-edit]").length === 8, "hq 수정 버튼 노출");
+    e.w.SemisOfficers.setSvQuery("다라마");
     e.S.renderView();
     eq(qa(e, "#sv-body [data-sv-row]").length, 1, "검색 1건");
     e.w.SemisOfficers.setSvQuery("");
-    e.w.SemisOfficers.setSvDiv("정비본부");
+    e.w.SemisOfficers.setSvDiv("안전보안실");
     e.S.renderView();
-    eq(qa(e, "#sv-body [data-sv-row]").length, 5, "정비본부 5명");
+    eq(qa(e, "#sv-body [data-sv-row]").length, 4, "안전보안실 4명");
     e.w.SemisOfficers.setSvDiv("전체");
   });
 
@@ -5592,34 +5617,34 @@ function makeFetchStub(server) {
     eq(e.S.data.supervisors.length, n0, "저장되지 않음");
   });
 
-  t("O06 지점 보안담당자 시드 — 52명, 지역 5개, 지점장 판정", () => {
-    const e = makeEnv();
+  t("O06 지점 보안담당자 데이터 — 지역 정렬 · 지점장 판정 (가명 픽스처)", () => {
+    const e = officerEnv();
     const l = e.S.data.stationOfficers;
-    eq(l.length, 52, "시드 인원");
+    eq(l.length, 7, "인원");
     const O = e.w.SemisOfficers;
     eq(O.soRegions().join(","), "미주,유럽,일본,중국,아시아", "지역 순서");
-    const s = O.soStats();
-    eq(s.heads, 21, "지점장·영업소장");
-    ok(s.stations >= 20, "지점 수: " + s.stations);
+    const st = O.soStats();
+    eq(st.heads, 3, "지점장·영업소장");
+    eq(st.stations, 5, "지점 수");
     ok(O.isHead({ note: "지점장" }) && O.isHead({ note: "영업소장" }) && !O.isHead({ note: "KKF" }), "지점장 판정");
-    eq(new Set(l.map(x => x.id)).size, 52, "id 고유");
+    eq(new Set(l.map(x => x.id)).size, 7, "id 고유");
     const lax = l.find(x => x.uniworks === "laxsfz");
-    ok(lax && lax.name === "박정훈" && lax.region === "미주", "LAX 지점장");
+    ok(lax && lax.name === "미주하나" && lax.region === "미주", "LAX 지점장");
   });
 
   t("O07 지점 보안담당자 화면 — 지역 그룹행 + 검색/필터/등록", () => {
-    const e = makeEnv();
+    const e = officerEnv();
     loginAs(e, "hq");
     go(e, "stn-officers");
     eq(qa(e, "#so-body .grp-row").length, 5, "지역 그룹행 5개");
-    eq(qa(e, "#so-body [data-so-row]").length, 52, "전체 행");
+    eq(qa(e, "#so-body [data-so-row]").length, 7, "전체 행");
     e.w.SemisOfficers.setSoQuery("frakkf");
     e.S.renderView();
     eq(qa(e, "#so-body [data-so-row]").length, 1, "유니웍스 ID 검색");
     e.w.SemisOfficers.setSoQuery("");
     e.w.SemisOfficers.setSoRegion("일본");
     e.S.renderView();
-    eq(qa(e, "#so-body [data-so-row]").length, 4, "일본 4명");
+    eq(qa(e, "#so-body [data-so-row]").length, 2, "일본 2명");
     e.w.SemisOfficers.setSoRegion("전체");
     e.S.renderView();
     q(e, "#so-add").click();
@@ -5633,14 +5658,14 @@ function makeFetchStub(server) {
   });
 
   t("O08 인력 모듈 권한 — manager 열람 가능/편집 불가, user 접근 차단", () => {
-    const e = makeEnv();
+    const e = officerEnv();
     loginAs(e, "manager");
     go(e, "supervisors");
-    ok(qa(e, "#sv-body [data-sv-row]").length === 29, "manager 열람 가능");
+    ok(qa(e, "#sv-body [data-sv-row]").length === 8, "manager 열람 가능");
     eq(q(e, "#sv-add"), null, "manager 등록 버튼 없음");
     eq(qa(e, "#sv-body [data-sv-edit]").length, 0, "manager 수정 버튼 없음");
     go(e, "stn-officers");
-    ok(qa(e, "#so-body [data-so-row]").length === 52, "manager 지점담당자 열람");
+    ok(qa(e, "#so-body [data-so-row]").length === 7, "manager 지점담당자 열람");
     eq(q(e, "#so-add"), null, "manager 등록 버튼 없음");
 
     const e2 = makeEnv();
@@ -5665,23 +5690,39 @@ function makeFetchStub(server) {
     old.menus.push({ id: "br-supervisor", seq: 90, type: "link", label: "보안감독자 현황",
       icon: "👥", url: "https://docs.google.com/x", vis: "mgr", parent: "grp-branch" });
     const e2 = makeEnv({ preData: old });
-    eq(e2.S.data.supervisors.length, 29, "시드 이관");
-    eq(e2.S.data.stationOfficers.length, 52, "지점담당자 이관");
+    // v2.36.2: 실데이터는 공용 DB 전용 — 코드는 빈 컨테이너만 보장
+    ok(Array.isArray(e2.S.data.supervisors) && e2.S.data.supervisors.length === 0, "감독자 빈 컨테이너");
+    ok(Array.isArray(e2.S.data.stationOfficers) && e2.S.data.stationOfficers.length === 0, "지점담당자 빈 컨테이너");
     ok(!e2.S.data.menus.some(m => m.id === "br-supervisor"), "구 링크 제거됨");
     ok(e2.S.data.menus.some(m => m.module === "supervisors" && m.parent === "grp-branch"), "모듈 메뉴 삽입");
   });
 
   t("O10 통합검색 — 감독자/지점담당자 색인 (manager 이상)", () => {
-    const e = makeEnv();
+    const e = officerEnv();
     loginAs(e, "manager");
-    const r1 = e.w.SemisSearch.search("최상일");
+    const r1 = e.w.SemisSearch.search("다라마");
     ok(r1.some(x => x.group === "보안감독자 현황"), "감독자 검색 결과");
     const r2 = e.w.SemisSearch.search("hkgkkf");
     ok(r2.some(x => x.group === "지점 보안담당자"), "지점담당자 검색 결과");
 
-    const e2 = makeEnv();
+    const e2 = officerEnv();
     loginAs(e2, "user");
-    ok(!e2.w.SemisSearch.search("최상일").some(x => x.group === "보안감독자 현황"), "user 색인 제외");
+    ok(!e2.w.SemisSearch.search("다라마").some(x => x.group === "보안감독자 현황"), "user 색인 제외");
+  });
+
+  t("O17 개인정보 — 인력 시드가 코드에 남아있지 않음 (v2.36.2)", () => {
+    const app = read("js/app.js");
+    ok(/const seedSupervisors = \(\) => \[\]/.test(app), "감독자 시드 비움");
+    ok(/const seedStationOfficers = \(\) => \[\]/.test(app), "지점담당자 시드 비움");
+    ok(!/uniworks: "[a-z]/.test(app), "유니웍스 ID 없음");
+    ok(!/"(laxsfz|frakkf|hkgkkf|nycsfz)"/.test(app), "계정 ID 없음");
+    const e = makeEnv();
+    eq(e.S.data.supervisors.length, 0, "기본값 빈 배열");
+    eq(e.S.data.stationOfficers.length, 0, "기본값 빈 배열");
+    // 화면은 데이터가 없어도 안전하게 렌더
+    loginAs(e, "hq");
+    go(e, "supervisors"); ok(q(e, "#sv-body"), "감독자 화면 렌더");
+    go(e, "stn-officers"); ok(q(e, "#so-body"), "지점담당자 화면 렌더");
   });
 
   t("O11 규정 목록 — 제목 클릭이 열람(PDF/링크), 열람 열이 앞쪽", () => {
