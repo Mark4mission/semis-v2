@@ -37,6 +37,7 @@
     { id: "lime",   label: "연두" }, { id: "yellow", label: "노랑" },
     { id: "amber",  label: "황갈" }, { id: "orange", label: "주황" },
     { id: "red",    label: "빨강" }, { id: "pink",   label: "분홍" },
+    { id: "rose",   label: "연분홍" },
     { id: "purple", label: "보라" }, { id: "indigo", label: "남색" },
     { id: "brown",  label: "갈색" }, { id: "gray",   label: "회색" }
   ];

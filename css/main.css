@@ -545,6 +545,8 @@ body.cal-dragging .cal-cell { cursor: grabbing !important; }
 .ev-orange { --evc: #ea580c; background: var(--evc); color: #fff; }
 .ev-red    { --evc: #dc2626; background: var(--evc); color: #fff; }
 .ev-pink   { --evc: #db2777; background: var(--evc); color: #fff; }
+.ev-rose   { --evc: #ec4899; background: #fce7f3; color: #9d174d;
+             box-shadow: inset 0 0 0 1px #f9a8d4; }
 .ev-purple { --evc: #7c3aed; background: var(--evc); color: #fff; }
 .ev-indigo { --evc: #4f46e5; background: var(--evc); color: #fff; }
 .ev-brown  { --evc: #7c2d12; background: var(--evc); color: #fff; }

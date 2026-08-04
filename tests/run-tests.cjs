@@ -543,8 +543,9 @@ function makeFetchStub(server) {
       eq(C.startOfWeek("2026-07-12"), "2026-07-12"); // 일요일 그대로
     });
     t("C04 색상 팔레트 14종 (고대비)", () => {
-      eq(C.COLORS.length, 14);
-      ok(new Set(C.COLORS.map(c => c.id)).size === 14, "id 중복 없음");
+      eq(C.COLORS.length, 15);
+      ok(new Set(C.COLORS.map(c => c.id)).size === 15, "id 중복 없음");
+      ok(C.COLORS.some(c => c.id === "rose"), "연분홍(점검 계획용) 포함");
     });
     t("C05 보기 5종 (일/주/2주/월/년)", () =>
       eq(C.VIEWS.map(v => v.id).join(","), "day,week,2week,month,year"));
@@ -6494,8 +6495,31 @@ function makeFetchStub(server) {
     e.w.SemisInspection.syncCalendar(x);
     const after = e.S.data.schedules.find(s2 => s2.id === sid);
     eq(after.title, "[점검] SFOSF", "제목 복구");
-    eq(after.color, "indigo", "구분 색 복구");
+    eq(after.color, "pink", "연동 색(분홍) 복구");
     eq(after.start + "~" + after.end, "2026-08-24~2026-08-28", "일자 반영");
+  });
+
+  t("IB09 연동 일정 색상 — 확정=분홍 / 일자 미정(계획)=연분홍", () => {
+    const e = makeEnv();
+    const I = e.w.SemisInspection;
+    eq(I.CAL_COLOR_FIXED, "pink"); eq(I.CAL_COLOR_PLAN, "rose");
+    const fixed = e.S.data.inspections.find(x => x.start && x.status !== "취소");
+    const tent = e.S.data.inspections.find(x => !x.start && x.status !== "취소");
+    const ev = (x) => e.S.data.schedules.find(s2 => s2.id === "insp_" + x.id);
+    eq(ev(fixed).color, "pink", "확정 건");
+    eq(ev(tent).color, "rose", "미정 건");
+    // 일자를 확정하면 색도 분홍으로 승격
+    tent.start = "2026-09-15"; tent.end = "2026-09-15";
+    I.syncCalendar(tent);
+    eq(ev(tent).color, "pink", "확정 시 분홍 승격");
+    // 구분(카테고리)이 달라도 연동 색은 동일 — 점검 일정임이 한눈에
+    const others = e.S.data.schedules.filter(s2 => String(s2.id).indexOf("insp_") === 0);
+    ok(others.every(s2 => s2.color === "pink" || s2.color === "rose"), "연동 일정은 분홍 계열만");
+    // CSS 정의 확인
+    const css = read("css/main.css");
+    ok(/\.ev-rose\s*\{[^}]*background:\s*#fce7f3/.test(css), "연분홍 배경");
+    ok(/\.ev-rose\s*\{[^}]*color:\s*#9d174d/.test(css), "가독 글자색");
+    ok(/\.ev-pink\s*\{[^}]*--evc:\s*#db2777/.test(css), "분홍 유지");
   });
 
   t("IB08 취소 상태 점검은 일정관리에서 제거", () => {

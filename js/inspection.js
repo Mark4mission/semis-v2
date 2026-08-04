@@ -43,6 +43,9 @@
      - 점검 → 일정: 제목·구분(색)·일자·완료를 항상 덮어씀
      - 일정 → 점검: **일자와 완료 여부만** 역방향 반영(syncFromSchedule) — 두 화면이 어긋나지 않도록
      - 일자 미정 점검도 계획 월 1일자 "[계획] …" 임시 일정으로 표시(확정하면 자동 이동)  */
+  /* 연동 일정 색상(v2.36.5): 일자 확정 = 분홍 / 일자 미정(계획) = 연분홍 */
+  const CAL_COLOR_FIXED = "pink";
+  const CAL_COLOR_PLAN = "rose";
   const p2 = (n) => String(n).padStart(2, "0");
   const SID = (inspId) => "insp_" + inspId;
   const inspIdOfSid = (sid) => (String(sid).indexOf("insp_") === 0 ? String(sid).slice(5) : "");
@@ -71,7 +74,7 @@
         + (insp.note ? " — " + insp.note : ""),
       start: dt.start, end: dt.end,
       allDay: true, time: "", timeEnd: "",
-      color: CAT_COLOR[insp.category] || "blue",
+      color: dt.tentative ? CAL_COLOR_PLAN : CAL_COLOR_FIXED,
       done: insp.status === "완료",
       assignee: (insp.inspectors && insp.inspectors[0]) || "",
       vehicle: false, room: false, reminders: dt.tentative ? [] : ["1w", "1d"],
@@ -431,6 +434,7 @@
     FINDING_TYPES, FD_BADGE, fdSummary, open,
     getYear: () => year, setYear: (y) => { year = Number(y) || year; },
     setViewMode: (m) => { if (m === "matrix" || m === "list") viewMode = m; },
+    CAL_COLOR_FIXED, CAL_COLOR_PLAN,
     syncCalendar, removeCalendar, moveInsp, syncFromSchedule, unlinkBySchedule, syncAllCalendar, calDates,
     list
   };
