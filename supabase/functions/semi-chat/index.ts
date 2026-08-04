@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   SeMIS v2.36 — 세미(Semi) AI 도우미 Edge Function (v3.2)
+   SeMIS v2.37 — 세미(Semi) AI 도우미 Edge Function (v3.3)
    Claude API 프록시 + semis_store 조회 도구 + 쓰기 도구(rank3+)
    쓰기: 공지·일정·점검계획 등록 + 점검 결과·협의회 회의록 추가(append 전용)
 
@@ -9,6 +9,7 @@
      미지원 시 claude-sonnet-4-5 자동 폴백)
    - 데이터 접근: 사용자 역할(rank)별 허용 키만 도구에 노출 + 서버 이중 검증
      (vault·pwOverrides·userOverrides·customUsers·gcal은 어떤 등급에도 미노출)
+   - v3.3: 일정 "나에게만 보이기"(priv/owner)는 소유 계정에게만 노출(stripPrivate)
    ═══════════════════════════════════════════════════════ */
 
 const TOKEN = "azs-semi-9f2c47b1e6d3";
@@ -349,6 +350,7 @@ ${rank >= 3
 - 요청이 애매하면 무엇이 필요한지 **한 문장으로 콕 집어** 물어보세요. 어떤 경우에도 빈 답변이나 "모르겠다"만 보내지 마세요.
 - 답변은 대체로 2~8문장. 목록이 필요하면 "- " 불릿으로 간결하게.
 - 지금 대화 상대의 권한 밖 데이터는 도구에 없습니다. 요청 시 "권한이 필요한 자료"라고 정중히 안내하세요.
+- 일정 중 "나에게만 보이기"로 등록된 개인 일정은 다른 계정에는 아예 조회되지 않습니다. 없는 일정을 지어내지 마세요.
 
 [현재 사용자] ${name} (${ROLE_LABEL[role] || role})
 
@@ -394,7 +396,7 @@ Deno.serve(async (req: Request) => {
   if (body.dbg === "store") {
     try {
       const v = await fetchStore("levelHistory");
-      return json({ ok: true, rows: Array.isArray(v) ? v.length : (v ? 1 : 0), ver: "3.2" });
+      return json({ ok: true, rows: Array.isArray(v) ? v.length : (v ? 1 : 0), ver: "3.3" });
     } catch (e) {
       return json({ ok: false, error: String(e).slice(0, 200) });
     }
