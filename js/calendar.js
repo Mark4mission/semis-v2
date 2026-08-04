@@ -7,10 +7,14 @@
    구글캘린더식 렌더링: 기간 일정 한 줄 연결(스패닝 바), 시간 일정 투명 칩
    보기: 일 / 주 / 2주 / 월 / 년 · 포인터 드래그로 일정 이동(고스트 미리보기)
 
+   개인 일정(나에게만 보이기) · 자동 연기 / 자동 연장 (v2.37)
+
    데이터 스키마: { id, title, memo, memoHtml?, start, end, allDay, time, timeEnd,
                     color, done, assignee, vehicle, room, reminders[],
                     repeat?: { freq: none|daily|weekly|2week|monthly|yearly, until },
-                    doneFrom?: ISO, doneDates?: ISO[], undoneDates?: ISO[], gcalId? }
+                    doneFrom?: ISO, doneDates?: ISO[], undoneDates?: ISO[], gcalId?,
+                    priv?: bool, owner?: 계정 origId,
+                    autoDefer?: bool, autoExtend?: bool, autoRolledAt?: ISO }
    ═══════════════════════════════════════════════════════ */
 "use strict";
 
@@ -268,6 +272,53 @@
     return null;
   }
 
+  /* ─────── v2.37: 개인 일정 (나에게만 보이기) ───────
+     소유 기준 = 로그인 "계정"(origId 고정 — 계정명이 바뀌어도 소유권 유지).
+     같은 계정 암호를 공유하는 사람끼리는 서로 보입니다(계정 단위 비공개).
+     owner 가 비어 있는 과거 데이터는 안전하게 공개로 취급합니다. */
+  function meKey() {
+    const u = (SeMIS && SeMIS.user) || null;
+    return u ? String(u.origId || u.id || "") : "";
+  }
+  function canSeePriv(e) {
+    if (!e || !e.priv || !e.owner) return true;
+    return String(e.owner) === meKey();
+  }
+  const isMinePriv = (e) => !!(e && e.priv && String(e.owner || "") === meKey());
+
+  /* ─────── v2.37: 자동 연기 / 자동 연장 ───────
+     자동 연기(autoDefer) : 종료일까지 완료 체크를 못하면 시작일·종료일을 하루씩 미룸(기간 유지)
+     자동 연장(autoExtend): 종료일만 하루씩 늘림(시작일 고정)
+     - 며칠 지난 뒤 접속해도 "하루씩" 누적 적용한 결과(= 종료일이 오늘)가 되도록 한 번에 보정
+     - 반복 일정은 회차별 완료 구조와 충돌하므로 적용하지 않음
+     - 완료된 일정 · 오늘 이내로 아직 기한이 남은 일정은 대상 아님 */
+  function autoRollOne(e, today) {
+    if (!e || isRepeat(e)) return 0;
+    if (!e.autoDefer && !e.autoExtend) return 0;
+    if (e.done) return 0;
+    const end = e.end || e.start;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(end)) || end >= today) return 0;
+    const delta = diffDays(end, today);
+    if (e.autoDefer) { e.start = addDays(e.start, delta); e.end = today; }
+    else { e.end = today; }
+    e.autoRolledAt = today;
+    return delta;
+  }
+  /* 전체 일정 일괄 적용 — 변경분이 있을 때만 저장. 반환값 = 변경된 일정 수 */
+  function runAutoRoll(todayIso) {
+    const today = /^\d{4}-\d{2}-\d{2}$/.test(String(todayIso)) ? todayIso : todayISO();
+    let n = 0;
+    (D().schedules || []).forEach(e => {
+      if (autoRollOne(e, today)) { n++; try { backSyncInsp(e); } catch (err) {} }
+    });
+    if (n) SeMIS.save();
+    return n;
+  }
+  /* 편집 권한이 있는 접속자만 데이터를 갱신 (열람 전용 계정은 공용 데이터 변경 금지) */
+  function autoRollIfAllowed() {
+    try { return SeMIS.canEdit() ? runAutoRoll() : 0; } catch (e) { return 0; }
+  }
+
   /* ─────── 리마인더 ─────── */
   const REMINDER_DEFS = [
     { id: "2w", label: "2주일 전", ms: 14 * 86400000 },
@@ -302,6 +353,7 @@
     const out = [];
     D().schedules.forEach(e => {
       if (!Array.isArray(e.reminders) || !e.reminders.length) return;
+      if (!canSeePriv(e)) return;                            // v2.37: 타 계정 비공개 일정 제외
       if (!isRepeat(e) && e.done) return;
       const cands = [];
       if (!isRepeat(e)) cands.push(e.start);
@@ -325,6 +377,7 @@
     return out;
   }
   function checkReminders() {
+    autoRollIfAllowed();                                     // v2.37: 자동 연기/연장 (날짜 변경도 자동 반영)
     dueReminders().forEach(d => {
       const when = d.occStart + (d.event.allDay ? " (종일)" : " " + (d.event.time || ""));
       try { toast("⏰ " + d.label + " 알림: " + d.event.title + " — " + when); } catch (e) {}
@@ -433,7 +486,8 @@
   /* ─────── 이벤트 질의 (반복 occurrence 전개 포함) ─────── */
   function filteredEvents() {
     // 반복 일정은 회차별 완료 상태가 다르므로 완료 숨기기는 eventsOnDay 에서 회차 단위로 판정
-    return D().schedules.filter(e =>
+    // v2.37: 다른 계정이 "나에게만 보이기"로 등록한 일정은 제외
+    return D().schedules.filter(e => canSeePriv(e) &&
       (!fAssignee || e.assignee === fAssignee) && (!fHideDone || isRepeat(e) || !e.done));
   }
   function evCompare(a, b) {
@@ -683,8 +737,9 @@
   }
 
   /* ─────── 그리드 (주 단위 레인 배치 — 구글캘린더식) ─────── */
-  const evIcons = (e) => (e.vehicle ? "🚗" : "") + (e.room ? "🏢" : "") +
-    ((e.reminders || []).length ? "⏰" : "") + (isRepeat(e) ? "🔁" : "");
+  const evIcons = (e) => (e.priv ? "🔒" : "") + (e.vehicle ? "🚗" : "") + (e.room ? "🏢" : "") +
+    ((e.reminders || []).length ? "⏰" : "") + (isRepeat(e) ? "🔁" : "") +
+    (e.autoDefer ? "⏩" : "") + (e.autoExtend ? "↔️" : "");
 
   /* 완료 체크: 완료 시 ✓(항상 표시) / 미완료 시 ○(호버 시에만 노출, 클릭으로 완료 처리)
      반복 일정은 회차(occ) 단위로 판정·토글 */
@@ -896,6 +951,19 @@
         <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-weight:600">
           <input type="checkbox" id="f-room" style="width:auto" ${e && e.room ? "checked" : ""}> 🏢 회의실 예약</label>
       </div>
+      <div class="form-row" style="display:flex;gap:18px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-weight:600">
+          <input type="checkbox" id="f-priv" style="width:auto" ${e && e.priv ? "checked" : ""}> 🔒 나에게만 보이기</label>
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-weight:600">
+          <input type="checkbox" id="f-autodefer" style="width:auto" ${e && e.autoDefer ? "checked" : ""}> ⏩ 자동 연기</label>
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-weight:600">
+          <input type="checkbox" id="f-autoextend" style="width:auto" ${e && e.autoExtend ? "checked" : ""}> ↔️ 자동 연장</label>
+      </div>
+      <div class="form-hint" id="hint-auto" style="margin:-6px 0 4px">
+        🔒 <b>나에게만 보이기</b> — 지금 로그인한 계정에서만 표시됩니다(다른 계정에는 보이지 않음).<br>
+        ⏩ <b>자동 연기</b> — 종료일까지 완료를 체크하지 않으면 시작일·종료일이 하루씩 밀립니다(기간 유지).<br>
+        ↔️ <b>자동 연장</b> — 종료일만 하루씩 늘어납니다(시작일 고정). 반복 일정에는 적용되지 않습니다.
+      </div>
       <div class="form-grid" id="row-time" ${allDay ? 'style="display:none"' : ""}>
         <div class="form-row"><label>시작 시간</label><input type="time" id="f-time" value="${esc(e && e.time ? e.time : "09:00")}"></div>
         <div class="form-row"><label>종료 시간 (선택)</label><input type="time" id="f-timeend" value="${esc(e ? e.timeEnd || "" : "")}"></div>
@@ -954,10 +1022,28 @@
     $("#f-allday").onchange = () => {
       $("#row-time").style.display = $("#f-allday").checked ? "none" : "";
     };
+    /* v2.37: 자동 연기/연장은 상호 배타 + 반복 일정에는 사용 불가 */
+    const defEl = $("#f-autodefer"), extEl = $("#f-autoextend");
+    function syncAuto(changed) {
+      const rep = $("#f-repeat").value !== "none";
+      if (changed === "defer" && defEl.checked) extEl.checked = false;
+      if (changed === "extend" && extEl.checked) defEl.checked = false;
+      [defEl, extEl].forEach(el => {
+        el.disabled = rep;
+        if (rep) el.checked = false;
+        el.parentElement.style.opacity = rep ? ".45" : "";
+        el.parentElement.title = rep ? "반복 일정에는 자동 연기·연장을 적용할 수 없습니다." : "";
+      });
+    }
+    defEl.onchange = () => syncAuto("defer");
+    extEl.onchange = () => syncAuto("extend");
+
     $("#f-repeat").onchange = () => {
       $("#row-until").style.display = $("#f-repeat").value === "none" ? "none" : "";
+      syncAuto();
       if (wasRepeat) syncDoneScope();
     };
+    syncAuto();
 
     /* 반복 일정: 완료 체크 상태가 바뀌면 적용 범위 선택을 노출 */
     function syncDoneScope() {
@@ -1017,9 +1103,14 @@
       const memoHtml = sanitize(med.innerHTML);
       const tmp = document.createElement("div");
       tmp.innerHTML = memoHtml;
+      const priv = $("#f-priv").checked;
+      const autoDefer  = freq === "none" && $("#f-autodefer").checked;
+      const autoExtend = freq === "none" && !autoDefer && $("#f-autoextend").checked;
       const rec = {
         title, memo: (tmp.textContent || "").trim(), memoHtml,
         start: s, end: en, allDay: allday,
+        priv, owner: priv ? ((e && e.owner) || meKey()) : "",
+        autoDefer, autoExtend,
         time: allday ? "" : ($("#f-time").value || "09:00"),
         timeEnd: allday ? "" : ($("#f-timeend").value || ""),
         color,
@@ -1073,6 +1164,10 @@
         <tr><td style="width:90px;color:var(--text-2)">기간</td><td>${esc(occ)}${occEnd !== occ ? " ~ " + esc(occEnd) : ""}</td></tr>
         <tr><td style="color:var(--text-2)">시간</td><td>${e.allDay ? "종일" : esc(e.time || "") + (e.timeEnd ? " ~ " + esc(e.timeEnd) : "")}</td></tr>
         ${isRepeat(e) ? `<tr><td style="color:var(--text-2)">반복</td><td>🔁 ${esc(repeatLabel(e))}</td></tr>` : ""}
+        ${e.priv || e.autoDefer || e.autoExtend ? `<tr><td style="color:var(--text-2)">옵션</td><td>${
+          e.priv ? '<span class="badge badge-gray">🔒 나에게만 보이기</span> ' : ""}${
+          e.autoDefer ? '<span class="badge badge-amber">⏩ 자동 연기 (시작·종료일 이동)</span> ' : ""}${
+          e.autoExtend ? '<span class="badge badge-amber">↔️ 자동 연장 (종료일만 연장)</span>' : ""}</td></tr>` : ""}
         ${e.vehicle || e.room ? `<tr><td style="color:var(--text-2)">예약</td><td>${e.vehicle ? "🚗 차량 " : ""}${e.room ? "🏢 회의실" : ""}</td></tr>` : ""}
         ${remTxt ? `<tr><td style="color:var(--text-2)">리마인더</td><td>⏰ ${esc(remTxt)}</td></tr>` : ""}
         ${e.assignee ? `<tr><td style="color:var(--text-2)">담당자</td><td>${esc(tagOf(e.assignee))} ${esc(e.assignee)}</td></tr>` : ""}
@@ -1149,6 +1244,7 @@
     title: "일정관리",
     render(root) {
       const canWrite = SeMIS.canEdit();
+      autoRollIfAllowed();                                   // v2.37: 화면 진입 시 자동 연기/연장 보정
       const assignees = assigneeList();
       root.innerHTML = `
         <div class="page-head">
@@ -1259,6 +1355,7 @@
     occDone, setOccDone, applyOccDone, askDoneScope, occurrenceStarts, stepOccurrence,
     shiftDoneMarks, clearDoneMarks, nextOpenOccurrence, DONE_SCOPES,
     eventsOnDay, filteredEvents, assigneeList,
+    meKey, canSeePriv, isMinePriv, autoRollOne, runAutoRoll, autoRollIfAllowed,
     addDays, diffDays, startOfWeek, rangeTitle,
     COLORS, VIEWS, TEAM, tagOf,
     REMINDER_DEFS, eventStartMs, eventStartMsFor, dueReminders, checkReminders, startReminders, stopReminders,

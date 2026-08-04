@@ -350,24 +350,50 @@
   }
 
   /* ═══════════ 세미 (AI 도우미) ═══════════ */
+  function myRank() {
+    try { return (S() && S().roleRank && S().roleRank()) || 1; } catch (e) { return 1; }
+  }
   function suggestions() {
-    const rank = (S() && S().roleRank && S().roleRank()) || 1;
-    const list = ["최근 공지사항 요약해줘", "현재 보안등급 알려줘"];
-    if (rank >= 2) list.unshift("이번 주 팀 일정 알려줘");
-    if (rank >= 2) list.push("보안장비 현황 어때?");
-    if (rank >= 3) list.push("KPI 진행 상황 요약해줘");
-    return list.slice(0, 4);
+    const rank = myRank();
+    if (rank >= 3) return [
+      "이번 주 팀 일정 알려줘",
+      "내일 오전 10시 팀 회의 일정 잡아줘",
+      "점검 결과 기록해줘",
+      "협의회 회의록에 결정사항 추가해줘",
+      "공지 초안 작성해줘",
+      "KPI 진행 상황 요약해줘"
+    ];
+    if (rank >= 2) return [
+      "이번 주 팀 일정 알려줘",
+      "최근 공지사항 요약해줘",
+      "보안장비 현황 어때?",
+      "현재 보안등급 알려줘"
+    ];
+    return ["최근 공지사항 요약해줘", "현재 보안등급 알려줘", "SeMIS 메뉴 안내해줘"];
+  }
+  function greetingHTML() {
+    const u = me();
+    const rank = myRank();
+    let caps = "🔎 <b>자료 찾기</b> — 일정·점검·장비·규정·공지 조회와 요약<br>💡 사용법·메뉴 안내, 항공보안 지식 답변";
+    let tip = "";
+    if (rank >= 3) {
+      caps = "🔎 <b>자료 찾기</b> — 일정·점검·장비·규정·공지 조회와 요약<br>" +
+        "📝 <b>등록하기</b> — 공지·일정·점검 계획을 말로 등록<br>" +
+        "🗂 <b>기록하기</b> — 점검 결과(완료·지적사항), 협의회 회의록(안건·결정사항·사례) 추가";
+      tip = '<div class="chat-tip">등록·기록은 제가 초안을 먼저 보여드리고, 확인해 주시면 반영해요 ✅</div>';
+    }
+    return '<div class="chat-row semi"><div class="chat-who"><span class="chat-semi-face">🤖</span> 세미</div>' +
+      '<div class="chat-line"><div class="chat-bubble semi-bubble">' +
+      "안녕하세요" + (u ? ", <b>" + esc(u.name) + "</b>님" : "") + "! 저는 SeMIS 도우미 <b>세미</b>예요 🙌<br>" +
+      '<div class="chat-caps">' + caps + "</div>" + tip +
+      "아래 예시를 눌러보거나, 편하게 말로 부탁해 주세요!" +
+      "</div></div></div>";
   }
   function renderSemi() {
     const box = $id("semi-msgs");
     if (!box) return;
     const conv = convLoad();
-    const u = me();
-    let html = '<div class="chat-row semi"><div class="chat-who"><span class="chat-semi-face">🤖</span> 세미</div>' +
-      '<div class="chat-line"><div class="chat-bubble semi-bubble">' +
-      "안녕하세요" + (u ? ", <b>" + esc(u.name) + "</b>님" : "") + "! 저는 SeMIS 도우미 <b>세미</b>예요 🙌<br>" +
-      "일정·점검·장비·규정 같은 사이트 자료를 찾아드리고, 사용법도 안내해 드려요. 편하게 물어보세요!" +
-      "</div></div></div>";
+    let html = greetingHTML();
     conv.forEach((m) => {
       if (!m || !m.content) return;
       if (m.role === "user") {
@@ -411,7 +437,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           t: EDGE_TOKEN,
-          user: { name: u.name, role: u.role },
+          user: { name: u.name, role: u.role, uid: u.origId || u.id },
           messages: convLoad().slice(-MAX_CONV)
         })
       });

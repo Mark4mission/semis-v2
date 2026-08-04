@@ -45,6 +45,8 @@
         (b.pinned - a.pinned) || String(b.created).localeCompare(String(a.created)));
       const upcoming = [];
       d.schedules.forEach(s => {
+        // v2.37: 다른 계정의 "나에게만 보이기" 일정은 대시보드에서도 제외
+        if (window.SemisCalendar && SemisCalendar.canSeePriv && !SemisCalendar.canSeePriv(s)) return;
         const rep = s.repeat && s.repeat.freq && s.repeat.freq !== "none";
         if (rep && window.SemisCalendar) {
           // v2.33: 회차별 완료 반영 — 미완료 회차 우선, 없으면 다음 회차(완료 표시)

@@ -138,7 +138,9 @@ const SemisSearch = (() => {
       text: [e.level, e.note, e.date], route: "dashboard" })) });
 
   register({ id: "schedules", group: "일정관리", icon: "📅", module: "schedule",
-    items: () => A(D().schedules).map(s => ({
+    // v2.37: 다른 계정의 "나에게만 보이기" 일정은 검색에서도 제외
+    items: () => A(D().schedules).filter(s =>
+      !window.SemisCalendar || SemisCalendar.canSeePriv(s)).map(s => ({
       title: s.title, sub: [s.start + (s.end && s.end !== s.start ? "~" + s.end : ""), s.assignee, s.memo].filter(Boolean).join(" · "),
       text: [s.title, s.memo, s.assignee] })) });
 

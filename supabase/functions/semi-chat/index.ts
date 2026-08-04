@@ -267,6 +267,13 @@ async function toolUpdateCouncil(inp: Record<string, unknown>) {
   return { ok: true, id, round: m.round, changes: changed, message: "협의회 회의록에 반영되었습니다: " + changed.join(", ") };
 }
 
+/* v2.37: "나에게만 보이기"(priv) 일정은 소유 계정(owner)에게만 노출 */
+function stripPrivate(key: string, val: unknown, uid: string): unknown {
+  if (key !== "schedules" || !Array.isArray(val)) return val;
+  return (val as Record<string, unknown>[]).filter((it) =>
+    !it || !it.priv || !it.owner || String(it.owner) === uid);
+}
+
 /* ─── 도구 결과 가공: 날짜 범위 / 키워드 필터 + 용량 제한 ─── */
 function filterItems(key: string, val: unknown, inp: Record<string, unknown>): unknown {
   if (!Array.isArray(val)) return val;
@@ -393,7 +400,8 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  const user = (body.user || {}) as { name?: string; role?: string };
+  const user = (body.user || {}) as { name?: string; role?: string; uid?: string };
+  const uid = String(user.uid || "").slice(0, 60);   // v2.37: 개인 일정 소유 판정용 계정 id
   const role = String(user.role || "");
   const rank = ROLE_RANK[role] || 0;
   if (rank < 1) return json({ error: "forbidden_role" }, 403);
@@ -597,7 +605,7 @@ Deno.serve(async (req: Request) => {
               if (!allowed.includes(key)) {
                 out = JSON.stringify({ error: "이 사용자 권한으로 조회할 수 없는 키입니다." });
               } else {
-                const val = await fetchStore(key);
+                const val = stripPrivate(key, await fetchStore(key), uid);
                 out = val === null ? JSON.stringify({ error: "데이터 없음" })
                   : serializeCapped(filterItems(key, val, inp));
               }

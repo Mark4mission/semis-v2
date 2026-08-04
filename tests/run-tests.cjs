@@ -6536,6 +6536,215 @@ function makeFetchStub(server) {
     ok(e.S.data.schedules.some(s2 => s2.id === sid), "복구");
   });
 
+  /* ══════════ [PV] 개인 일정 · 자동 연기/연장 (v2.37) ══════════ */
+  {
+    const base = { memo: "", allDay: true, time: "", timeEnd: "", color: "blue", done: false,
+      assignee: "", vehicle: false, room: false, reminders: [], repeat: { freq: "none", until: "" },
+      doneFrom: "", doneDates: [], undoneDates: [] };
+    const mk = (id, patch) => Object.assign({}, base,
+      { id, title: id, start: "2026-07-15", end: "2026-07-15" }, patch || {});
+
+    t("PV01 canSeePriv: 소유 계정만 열람 · owner 없으면 공개", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      eq(e.Cal.meKey(), "thq", "로그인 계정 origId");
+      ok(e.Cal.canSeePriv(mk("a", { priv: true, owner: "thq" })), "본인 소유");
+      ok(!e.Cal.canSeePriv(mk("b", { priv: true, owner: "tmanager" })), "타 계정 소유");
+      ok(e.Cal.canSeePriv(mk("c", { priv: true, owner: "" })), "owner 미기록 = 공개(과거 데이터)");
+      ok(e.Cal.canSeePriv(mk("d", {})), "일반 일정");
+      ok(e.Cal.isMinePriv(mk("a", { priv: true, owner: "thq" })), "isMinePriv");
+      ok(!e.Cal.isMinePriv(mk("d", {})), "비공개 아님");
+    });
+
+    t("PV02 filteredEvents/eventsOnDay: 타 계정 비공개 일정 제외", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      clearInspEvents(e);
+      e.S.data.schedules.push(
+        mk("pv_open", {}),
+        mk("pv_mine", { priv: true, owner: "thq" }),
+        mk("pv_other", { priv: true, owner: "tmanager" }));
+      e.S.saveSilent();
+      const ids = e.Cal.filteredEvents().map(x => x.id);
+      ok(ids.includes("pv_open") && ids.includes("pv_mine"), "공개·본인 일정 표시");
+      ok(!ids.includes("pv_other"), "타 계정 비공개 제외");
+      eq(e.Cal.eventsOnDay("2026-07-15").filter(x => x.id === "pv_other").length, 0);
+      eq(e.Cal.eventsOnDay("2026-07-15").filter(x => x.id === "pv_mine").length, 1);
+    });
+
+    t("PV03 다른 계정으로 재로그인하면 비공개 일정이 사라짐", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      clearInspEvents(e);
+      e.S.data.schedules.push(mk("pv_h", { priv: true, owner: "thq" }));
+      e.S.saveSilent();
+      ok(e.Cal.filteredEvents().some(x => x.id === "pv_h"), "hq 계정에서는 보임");
+      const e2 = makeEnv({ preData: JSON.parse(e.w.localStorage.getItem("semis2:data")) });
+      loginAs(e2, "manager");
+      eq(e2.Cal.meKey(), "tmanager");
+      ok(!e2.Cal.filteredEvents().some(x => x.id === "pv_h"), "다른 계정에서는 숨김");
+    });
+
+    t("PV04 검색·대시보드·리마인더에서도 비공개 일정 제외", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      clearInspEvents(e);
+      const soon = e.Cal.addDays(localToday(), 1);
+      e.S.data.schedules.push(
+        mk("pv_s1", { title: "비밀회의PV", start: soon, end: soon, priv: true, owner: "tmanager", reminders: ["1d"] }),
+        mk("pv_s2", { title: "공개회의PV", start: soon, end: soon }));
+      e.S.saveSilent();
+      const hits = e.w.SemisSearch.query("회의PV").map(x => x.title);
+      ok(hits.includes("공개회의PV"), "공개 일정 검색됨");
+      ok(!hits.includes("비밀회의PV"), "타 계정 비공개는 검색 제외");
+      go(e, "dashboard");
+      const dash = (q(e, ".dash-grid") || { textContent: "" }).textContent;
+      ok(dash.indexOf("비밀회의PV") < 0, "대시보드 다가오는 일정 제외");
+      ok(!e.Cal.dueReminders(Date.now()).some(d => d.event.id === "pv_s1"), "리마인더 제외");
+    });
+
+    t("PV05 자동 연기: 시작일·종료일을 함께 이동(기간 유지)", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      const ev = mk("pv_d", { start: "2026-07-10", end: "2026-07-12", autoDefer: true });
+      eq(e.Cal.autoRollOne(ev, "2026-07-15"), 3, "3일 경과분 보정");
+      eq(ev.start, "2026-07-13"); eq(ev.end, "2026-07-15");
+      eq(e.Cal.diffDays(ev.start, ev.end), 2, "기간 2일 유지");
+      eq(ev.autoRolledAt, "2026-07-15");
+      eq(e.Cal.autoRollOne(ev, "2026-07-15"), 0, "당일 재실행은 변화 없음");
+    });
+
+    t("PV06 자동 연장: 종료일만 연장 · 시작일 고정", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      const ev = mk("pv_x", { start: "2026-07-10", end: "2026-07-12", autoExtend: true });
+      eq(e.Cal.autoRollOne(ev, "2026-07-15"), 3);
+      eq(ev.start, "2026-07-10", "시작일 불변");
+      eq(ev.end, "2026-07-15", "종료일만 연장");
+    });
+
+    t("PV07 자동 연기/연장 미적용 조건 (완료·기한 내·반복·미설정)", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      const C = e.Cal;
+      eq(C.autoRollOne(mk("p1", { end: "2026-07-10", autoDefer: true, done: true }), "2026-07-15"), 0, "완료 제외");
+      eq(C.autoRollOne(mk("p2", { start: "2026-07-15", end: "2026-07-20", autoDefer: true }), "2026-07-15"), 0, "기한 남음");
+      eq(C.autoRollOne(mk("p3", { end: "2026-07-10", autoExtend: true, repeat: { freq: "weekly", until: "" } }), "2026-07-15"), 0, "반복 제외");
+      eq(C.autoRollOne(mk("p4", { end: "2026-07-10" }), "2026-07-15"), 0, "옵션 미설정");
+    });
+
+    t("PV08 runAutoRoll: 대상만 일괄 보정 후 저장", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      clearInspEvents(e);
+      e.S.data.schedules.push(
+        mk("pv_r1", { start: "2026-07-01", end: "2026-07-01", autoDefer: true }),
+        mk("pv_r2", { start: "2026-07-01", end: "2026-07-03", autoExtend: true }),
+        mk("pv_r3", { start: "2026-07-01", end: "2026-07-01" }));
+      e.S.saveSilent();
+      eq(e.Cal.runAutoRoll("2026-07-15"), 2, "대상 2건만 변경");
+      const g = (id) => e.S.data.schedules.find(x => x.id === id);
+      eq(g("pv_r1").start, "2026-07-15"); eq(g("pv_r1").end, "2026-07-15");
+      eq(g("pv_r2").start, "2026-07-01"); eq(g("pv_r2").end, "2026-07-15");
+      eq(g("pv_r3").end, "2026-07-01", "옵션 없는 일정 불변");
+      const saved = JSON.parse(e.w.localStorage.getItem("semis2:data"));
+      eq(saved.schedules.find(x => x.id === "pv_r1").end, "2026-07-15", "저장 반영");
+    });
+
+    t("PV09 열람 전용 계정은 공용 데이터를 변경하지 않음", () => {
+      const e = makeEnv();
+      loginAs(e, "manager");                                  // rank 2 — canEdit false
+      clearInspEvents(e);
+      e.S.data.schedules.push(mk("pv_ro", { start: "2026-07-01", end: "2026-07-01", autoDefer: true }));
+      e.S.saveSilent();
+      eq(e.Cal.autoRollIfAllowed(), 0, "편집 권한 없음 → 미실행");
+      eq(e.S.data.schedules.find(x => x.id === "pv_ro").end, "2026-07-01");
+    });
+
+    t("PV10 등록 폼: 체크박스 3종 노출 + 저장 시 owner 기록", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      clearInspEvents(e);
+      go(e, "schedule");
+      q(e, "#cal-add").click();
+      ok(q(e, "#f-priv") && q(e, "#f-autodefer") && q(e, "#f-autoextend"), "체크박스 3종");
+      q(e, "#f-title").value = "개인일정PV";
+      q(e, "#f-start").value = "2026-07-15";
+      q(e, "#f-end").value = "2026-07-15";
+      q(e, "#f-priv").checked = true;
+      q(e, "#f-autoextend").checked = true;
+      q(e, "#f-save").click();
+      const ev = e.S.data.schedules.find(x => x.title === "개인일정PV");
+      ok(ev, "저장됨");
+      eq(ev.priv, true); eq(ev.owner, "thq", "소유 계정 기록");
+      eq(ev.autoExtend, true); eq(ev.autoDefer, false);
+    });
+
+    t("PV11 폼: 자동 연기·연장은 상호 배타", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "schedule");
+      q(e, "#cal-add").click();
+      const dEl = q(e, "#f-autodefer"), xEl = q(e, "#f-autoextend");
+      dEl.checked = true; dEl.dispatchEvent(new e.w.Event("change"));
+      ok(dEl.checked && !xEl.checked, "연기 선택 시 연장 해제");
+      xEl.checked = true; xEl.dispatchEvent(new e.w.Event("change"));
+      ok(xEl.checked && !dEl.checked, "연장 선택 시 연기 해제");
+    });
+
+    t("PV12 폼: 반복 일정 선택 시 자동 연기·연장 비활성", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "schedule");
+      q(e, "#cal-add").click();
+      const dEl = q(e, "#f-autodefer"), xEl = q(e, "#f-autoextend");
+      dEl.checked = true; dEl.dispatchEvent(new e.w.Event("change"));
+      q(e, "#f-repeat").value = "weekly";
+      q(e, "#f-repeat").dispatchEvent(new e.w.Event("change"));
+      ok(dEl.disabled && xEl.disabled, "비활성화");
+      ok(!dEl.checked && !xEl.checked, "체크 해제");
+      q(e, "#f-title").value = "반복PV";
+      q(e, "#f-save").click();
+      const ev = e.S.data.schedules.find(x => x.title === "반복PV");
+      eq(ev.autoDefer, false); eq(ev.autoExtend, false);
+    });
+
+    t("PV13 캘린더 칩에 🔒 · 자동 옵션 표식 표시", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      clearInspEvents(e);
+      e.S.data.schedules.push(mk("pv_i", { title: "표식PV", start: "2026-07-15", end: "2026-07-15",
+        priv: true, owner: "thq", autoDefer: true }));
+      e.S.saveSilent();
+      e.Cal.setAnchor("2026-07-15"); e.Cal.setView("month");
+      go(e, "schedule");
+      const html = (q(e, "#cal-body") || { innerHTML: "" }).innerHTML;
+      ok(html.indexOf("표식PV") >= 0, "일정 렌더");
+      ok(/🔒[^<]*표식PV|🔒/.test(html), "🔒 표식");
+      ok(html.indexOf("⏩") >= 0, "자동 연기 표식");
+    });
+
+    t("PV14 상세 모달에 옵션 안내 표시", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      clearInspEvents(e);
+      e.S.data.schedules.push(mk("pv_dt", { title: "상세PV", priv: true, owner: "thq", autoExtend: true }));
+      e.S.saveSilent();
+      go(e, "schedule");
+      e.w.SemisCalendar; // no-op
+      e.S.data.schedules.find(x => x.id === "pv_dt");
+      e.w.document.querySelector("#modal-box") && null;
+      e.Cal.setAnchor("2026-07-15");
+      go(e, "schedule");
+      const chip = qa(e, '[data-ev="pv_dt"]')[0];
+      ok(chip, "칩 존재");
+      chip.click();
+      const box = (q(e, "#modal-box") || { textContent: "" }).textContent;
+      ok(box.indexOf("나에게만 보이기") >= 0, "비공개 안내");
+      ok(box.indexOf("자동 연장") >= 0, "자동 연장 안내");
+    });
+  }
+
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
   console.log(`  SeMIS v2.9 테스트: ${passed + failed}건 실행`);

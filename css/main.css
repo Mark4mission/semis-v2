@@ -1838,3 +1838,8 @@ a.ct-tel:hover { color: var(--primary); }
   .gd-cmp { font-size: .76rem; }
   .gd-cmp th, .gd-cmp td { padding: 7px 8px; }
 }
+
+/* 세미 첫 화면 기능 안내 (v2.35.1) */
+.chat-caps { margin: 7px 0; padding: 8px 11px; background: #fff; border: 1px solid #dbeafe;
+  border-radius: 10px; font-size: .82rem; line-height: 1.75; }
+.chat-tip { margin: 2px 0 7px; font-size: .76rem; color: var(--text-3); }
