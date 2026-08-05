@@ -422,7 +422,10 @@ function makeFetchStub(server) {
     const e = makeEnv();
     loginAs(e, "admin");
     go(e, "settings");
-    t("R54 설정: admin 접근 및 탭 3개", () => eq(qa(e, ".tab").length, 3));
+    t("R54 설정: admin 접근 및 탭 4개", () => {
+      eq(qa(e, ".tab").length, 4);                          // v2.38: 저장소 관리 탭 추가
+      eq(qa(e, ".tab").map(x => x.dataset.tab).join(","), "menus,users,data,storage");
+    });
     t("R55 메뉴 추가: 잘못된 URL 거부", () => {
       const before = e.S.data.menus.length;
       q(e, "#btn-add-menu").click();
@@ -6740,6 +6743,211 @@ function makeFetchStub(server) {
       ok(box.indexOf("자동 연장") >= 0, "자동 연장 안내");
     });
   }
+
+  /* ══════════ [ST] 저장소 관리 탭 (v2.38) ══════════
+     환경(jsdom) 생성은 메모리를 많이 써서 블록당 최소로 재사용한다.
+     주의: go()의 location.hash 변경은 hashchange를 비동기로 흘려보내므로
+     비동기 검증 전에는 반드시 tick() 한 번으로 재렌더를 흘려보낸 뒤 탭을 연다. */
+  {
+    const PUB = "https://mzyuzrxkdcpzxojenwat.supabase.co/storage/v1/object/public/semis-files/";
+    const day = (n) => new Date(Date.now() - n * 86400000).toISOString();
+    /* aaa_big·bbb_used = 데이터에서 참조 중 / ccc_old = 미참조(10일 전) / ddd_new = 오늘 업로드(보호) */
+    const FILES = [
+      { path: "regs/aaa_big.pdf",    name: "aaa_big.pdf",  folder: "regs",    size: 9 * 1024 * 1024, updated: day(30), url: PUB + "regs/aaa_big.pdf" },
+      { path: "certs/bbb_used.pdf",  name: "bbb_used.pdf", folder: "certs",   size: 400 * 1024,      updated: day(20), url: PUB + "certs/bbb_used.pdf" },
+      { path: "council/ccc_old.png", name: "ccc_old.png",  folder: "council", size: 120 * 1024,      updated: day(10), url: PUB + "council/ccc_old.png" },
+      { path: "billing/ddd_new.pdf", name: "ddd_new.pdf",  folder: "billing", size: 50 * 1024,       updated: day(0),  url: PUB + "billing/ddd_new.pdf" }
+    ];
+    const tick = () => new Promise(r => setTimeout(r, 0));
+
+    const e = makeEnv();
+    loginAs(e, "admin");
+    const S = e.w.SemisStorage;
+    const REF_REG = { id: "st_r1", title: "ST규정", scope: "intl", fileUrl: PUB + "regs/aaa_big.pdf" };
+    const REF_CERT = { id: "st_c1", name: "ST이수증", fileUrl: PUB + "certs/bbb_used.pdf" };
+    e.S.data.regulations.push(REF_REG);
+    e.S.data.certs.push(REF_CERT);
+    e.S.saveSilent();
+
+    /* 설정 화면을 연 뒤 hashchange를 흘려보내고 저장소 탭을 연다 */
+    async function openStorage(stub) {
+      e.w.SemisSync.listFiles = stub || (() => Promise.resolve(FILES.slice()));
+      go(e, "settings");
+      await tick();                                          // hashchange 재렌더 소진
+      go(e, "settings");
+      qa(e, ".tab").find(x => x.dataset.tab === "storage").click();
+      await tick();
+      await tick();
+    }
+
+    t("ST01 fmtBytes: 단위 변환", () => {
+      eq(S.fmtBytes(512), "512 B");
+      eq(S.fmtBytes(2048), "2.0 KB");
+      eq(S.fmtBytes(5 * 1024 * 1024), "5.0 MB");
+      eq(S.fmtBytes(2 * 1024 * 1024 * 1024), "2.00 GB");
+      eq(S.fmtBytes(null), "0 B");
+    });
+
+    t("ST02 storeSizes: 컬렉션별 용량 · 용량순 정렬 · 합계", () => {
+      const r = S.storeSizes();
+      ok(r.rows.length >= 25, "SYNC_KEYS 전 컬렉션");
+      ok(r.rows.every((x, i) => i === 0 || r.rows[i - 1].bytes >= x.bytes), "내림차순 정렬");
+      eq(r.total, r.rows.reduce((s, x) => s + x.bytes, 0), "합계 일치");
+      const sc = r.rows.find(x => x.key === "schedules");
+      ok(sc && sc.count === e.S.data.schedules.length, "배열은 항목 수 표기");
+    });
+
+    t("ST03 referencedPaths: 데이터 안의 파일 URL만 추출", () => {
+      const refs = S.referencedPaths();
+      ok(refs.has("regs/aaa_big.pdf"), "규정 첨부 인식");
+      ok(refs.has("certs/bbb_used.pdf"), "이수증 첨부 인식");
+      ok(!refs.has("council/ccc_old.png"), "미참조 파일은 미포함");
+    });
+
+    t("ST04 orphanFiles: 참조·최근 업로드 제외", () => {
+      const orphans = S.orphanFiles(FILES, S.referencedPaths());
+      eq(orphans.map(f => f.path).join(","), "council/ccc_old.png");
+      eq(S.orphanFiles(FILES, new Set()).length, 0, "참조 스캔 실패 시 아무것도 대상 아님");
+    });
+
+    t("ST05 folderName: 업로드 폴더 → 한글 라벨", () => {
+      eq(S.folderName("branch-train"), "지점 교육 첨부");
+      eq(S.folderName("council-sign"), "협의회 서명");
+      eq(S.folderName("unknown-x"), "unknown-x", "미등록 폴더는 원문");
+    });
+
+    t("ST06 설정 탭 구성: 저장소 관리 탭 추가", () => {
+      go(e, "settings");
+      eq(qa(e, ".tab").map(x => x.dataset.tab).join(","), "menus,users,data,storage");
+    });
+
+    await ta("ST07 탭 렌더: 용량 게이지 2종 + 컬렉션 용량 표", async () => {
+      await openStorage();
+      eq(qa(e, "#tab-body .st-gauge").length, 2, "파일 · DB 게이지");
+      ok(q(e, "#st-reload"), "새로고침 버튼");
+      const rows = qa(e, "#tab-body .card:last-child .st-tbl tbody tr");
+      ok(rows.length >= 25, "컬렉션별 용량 표: " + rows.length);
+    });
+
+    await ta("ST08 파일 목록 로드: 게이지 갱신 · 분류별 · 대용량 TOP", async () => {
+      await openStorage();
+      const gauge = q(e, "#st-file-gauge").textContent;
+      ok(/9\.[56] MB/.test(gauge), "총 용량 표기: " + gauge);
+      ok(gauge.indexOf("4개 파일") >= 0, "파일 수");
+      const folders = q(e, "#st-folders").textContent;
+      ok(folders.indexOf("보안규정 파일") >= 0 && folders.indexOf("대금 청구 증빙") >= 0, "분류 라벨");
+      const big = qa(e, "#st-big tbody tr");
+      eq(big.length, 4);
+      ok(big[0].textContent.indexOf("aaa_big.pdf") >= 0, "용량 내림차순");
+    });
+
+    await ta("ST09 미참조 목록: 참조·최근 업로드 파일 제외", async () => {
+      await openStorage();
+      const rows = qa(e, "#st-orphans tbody tr");
+      eq(rows.length, 1, "미참조 1건만");
+      ok(rows[0].textContent.indexOf("ccc_old.png") >= 0);
+      ok(q(e, "#st-del").disabled, "선택 전에는 삭제 비활성");
+    });
+
+    await ta("ST10 선택 삭제: 확인 모달 후에만 deleteFile 호출", async () => {
+      await openStorage();
+      const deleted = [];
+      e.w.SemisSync.deleteFile = (p) => { deleted.push(p); return Promise.resolve(true); };
+      const chk = q(e, "#st-orphans .st-o");
+      chk.checked = true;
+      chk.dispatchEvent(new e.w.Event("change"));
+      eq(q(e, "#st-del").disabled, false, "선택 시 활성");
+      ok(q(e, "#st-del").textContent.indexOf("1개") >= 0, "선택 수 표기");
+      q(e, "#st-del").click();
+      eq(deleted.length, 0, "확인 전에는 삭제하지 않음");
+      q(e, "#modal-box [data-act=ok]").click();
+      await tick();
+      eq(deleted.join(","), "council/ccc_old.png");
+    });
+
+    await ta("ST11 전체 선택 체크 → 선택 수 반영", async () => {
+      await openStorage();
+      q(e, "#st-all").checked = true;
+      q(e, "#st-all").dispatchEvent(new e.w.Event("change"));
+      eq(qa(e, "#st-orphans .st-o").filter(c => c.checked).length, 1);
+      eq(q(e, "#st-del").disabled, false);
+    });
+
+    await ta("ST12 목록 조회 실패 시 안내만 표시 (삭제 대상 없음)", async () => {
+      await openStorage(() => Promise.reject(new Error("network")));
+      ok(q(e, "#st-orphans").textContent.indexOf("불러오지 못했습니다") >= 0);
+      eq(qa(e, "#st-orphans .st-o").length, 0);
+      ok(q(e, "#st-file-gauge").textContent.indexOf("조회 실패") >= 0);
+    });
+
+    await ta("ST13 참조 스캔이 0건이면 정리 기능 잠금 (오삭제 방지)", async () => {
+      e.S.data.regulations = e.S.data.regulations.filter(x => x.id !== "st_r1");
+      e.S.data.certs = e.S.data.certs.filter(x => x.id !== "st_c1");
+      e.S.saveSilent();
+      eq(S.referencedPaths().size, 0, "참조 URL 없음");
+      await openStorage();
+      const txt = q(e, "#st-orphans").textContent;
+      ok(txt.indexOf("정리 기능을 잠갔습니다") >= 0, "잠금 안내: " + txt.slice(0, 60));
+      eq(qa(e, "#st-orphans .st-o").length, 0, "삭제 대상 미노출");
+      e.S.data.regulations.push(REF_REG);
+      e.S.data.certs.push(REF_CERT);
+      e.S.saveSilent();
+    });
+
+    t("ST14 저장소 탭은 시스템관리자 전용 (설정 화면 자체가 잠김)", () => {
+      loginAs(e, "hq");                                      // 같은 환경에서 계정만 전환(메모리 절약)
+      go(e, "settings");
+      eq(qa(e, ".tab").length, 0);
+      ok(q(e, "#view .empty"), "잠금 안내");
+      loginAs(e, "admin");                                   // 원복
+    });
+
+    /* sync.js 저장소 API — fetch 스텁 환경 1개 재사용 */
+    let stFetch = () => Promise.reject(new Error("no stub"));
+    const e3 = makeEnv({ fetch: (u, o) => stFetch(u, o), boot: false });
+
+    await ta("ST15 sync.listFiles: 폴더 재귀 조회 → 경로·공개 URL", async () => {
+      const calls = [];
+      stFetch = (url, opts) => {
+        const body = opts && opts.body ? JSON.parse(opts.body) : {};
+        calls.push({ url: String(url), prefix: body.prefix, offset: body.offset });
+        if (String(url).indexOf("/object/list/semis-files") < 0) return Promise.reject(new Error("bad url"));
+        if (body.offset > 0) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        if (!body.prefix) return Promise.resolve({ ok: true, json: () => Promise.resolve([
+          { name: "regs", id: null },
+          { name: "loose.txt", id: "x0", metadata: { size: 10 }, updated_at: "2026-08-01T00:00:00Z" }]) });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([
+          { name: "a.pdf", id: "x1", metadata: { size: 2048 }, updated_at: "2026-07-01T00:00:00Z" }]) });
+      };
+      const files = await e3.w.SemisSync.listFiles();
+      eq(files.length, 2);
+      const a = files.find(f => f.name === "a.pdf");
+      eq(a.path, "regs/a.pdf"); eq(a.folder, "regs"); eq(a.size, 2048);
+      ok(a.url.indexOf("/object/public/semis-files/regs/a.pdf") > 0, "공개 URL");
+      const loose = files.find(f => f.name === "loose.txt");
+      eq(loose.path, "loose.txt"); eq(loose.folder, "", "루트 직속 파일");
+      ok(calls.some(c => c.prefix === "regs/"), "하위 폴더 재귀 조회");
+    });
+
+    await ta("ST16 sync.deleteFile: DELETE 요청 경로", async () => {
+      let seen = null;
+      stFetch = (url, opts) => {
+        seen = { url: String(url), method: opts.method };
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      };
+      ok(await e3.w.SemisSync.deleteFile("council/ccc_old.png"));
+      eq(seen.method, "DELETE");
+      ok(seen.url.indexOf("/storage/v1/object/semis-files/council/ccc_old.png") > 0, seen.url);
+    });
+
+    await ta("ST17 sync.listFiles: 실패 응답은 예외로 전달", async () => {
+      stFetch = () => Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({}) });
+      let err = null;
+      await e3.w.SemisSync.listFiles().catch(x => { err = x; });
+      ok(err && /403/.test(err.message), "403 전달");
+    });
+  }
+
 
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");

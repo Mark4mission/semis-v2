@@ -643,9 +643,10 @@
           <button class="tab active" data-tab="menus">메뉴 관리</button>
           <button class="tab" data-tab="users">사용자 / 암호</button>
           <button class="tab" data-tab="data">데이터 관리</button>
+          <button class="tab" data-tab="storage">저장소 관리</button>
         </div>
         <div id="tab-body"></div>`;
-      const tabs = { menus: renderMenuTab, users: renderUserTab, data: renderDataTab };
+      const tabs = { menus: renderMenuTab, users: renderUserTab, data: renderDataTab, storage: renderStorageTab };
       $$(".tab").forEach(t => t.onclick = () => {
         $$(".tab").forEach(x => x.classList.remove("active"));
         t.classList.add("active");
@@ -1090,4 +1091,247 @@
       };
     }
   }
+
+  /* ═════════════ 저장소 관리 탭 (v2.38, 시스템관리자 전용) ═════════════
+     Supabase 무료 플랜 한도(파일 1GB / DB 500MB) 대비 사용량을 보여주고,
+     어느 기록에도 연결되지 않은 "미참조 파일"을 골라 지울 수 있게 한다.
+     안전장치: 일괄 삭제 버튼 없음 · 개별 선택 + 확인 모달 · 최근 업로드 제외 ·
+     참조 스캔이 0건이면(스캔 실패 의심) 정리 기능 자체를 잠근다. */
+  const STORE_LIMIT = 1024 * 1024 * 1024;   // 파일 스토리지 1 GB
+  const DB_LIMIT = 500 * 1024 * 1024;       // 데이터베이스 500 MB
+  const FRESH_MS = 24 * 3600 * 1000;        // 업로드 24시간 이내는 정리 대상에서 제외
+
+  /* 업로드 prefix(폴더) → 사람이 읽는 이름 */
+  const FOLDER_LABEL = {
+    "regs": "보안규정 파일", "regs-diff": "규정 개정 대비표", "branch-train": "지점 교육 첨부",
+    "schedules": "일정 메모 첨부", "council": "협의회 회의록", "council-sign": "협의회 서명",
+    "certs": "교육 이수증", "billing": "대금 청구 증빙", "policy": "보안정책 PDF",
+    "car-sign": "CAR 서명", "car-att": "CAR 첨부", "notices": "공지 이미지",
+    "attach": "공지 첨부", "files": "기타", "": "(루트)"
+  };
+  const folderName = (f) => FOLDER_LABEL[f] || f || "(루트)";
+
+  function fmtBytes(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
+    return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
+  }
+  const pct = (used, limit) => Math.max(0, Math.min(100, (used / limit) * 100));
+  const gaugeTone = (p) => (p >= 85 ? "danger" : p >= 60 ? "warn" : "ok");
+
+  /* 컬렉션(semis_store) 키별 용량 — 로컬 DATA가 공용 DB와 동기화되어 있으므로 동일 기준 */
+  function storeSizes() {
+    const d = D();
+    const keys = (window.SemisSync && SemisSync.SYNC_KEYS) ? SemisSync.SYNC_KEYS : Object.keys(d);
+    const rows = keys.map(k => {
+      let bytes = 0;
+      try { bytes = JSON.stringify(d[k] === undefined ? null : d[k]).length; } catch (e) { bytes = 0; }
+      const v = d[k];
+      return { key: k, bytes, count: Array.isArray(v) ? v.length : (v && typeof v === "object" ? Object.keys(v).length : null) };
+    }).sort((a, b) => b.bytes - a.bytes);
+    return { rows, total: rows.reduce((s, r) => s + r.bytes, 0) };
+  }
+
+  /* 현재 데이터 어딘가에서 참조 중인 파일 경로 집합 */
+  function referencedPaths() {
+    const set = new Set();
+    let json = "";
+    try { json = JSON.stringify(D()); } catch (e) { return set; }
+    const base = (window.SemisSync && SemisSync.PUBLIC_PREFIX) || "/object/public/semis-files/";
+    const tail = base.slice(base.indexOf("/object/public/"));
+    const re = new RegExp(tail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([A-Za-z0-9._\\-]+(?:/[A-Za-z0-9._\\-]+)*)", "g");
+    let m;
+    while ((m = re.exec(json))) set.add(m[1]);
+    return set;
+  }
+
+  /* 미참조 판정 — 참조 집합이 비어 있으면(스캔 실패 의심) 아무것도 지우지 않는다 */
+  function orphanFiles(files, refs, nowMs) {
+    if (!refs || !refs.size) return [];
+    const now = nowMs || Date.now();
+    return files.filter(f => {
+      if (refs.has(f.path)) return false;
+      const t = Date.parse(f.updated || "");
+      if (Number.isFinite(t) && now - t < FRESH_MS) return false;   // 방금 올린 파일 보호
+      return true;
+    });
+  }
+
+  function gaugeHTML(label, used, limit, note) {
+    const p = pct(used, limit);
+    return `<div class="st-gauge">
+      <div class="st-gauge-head"><b>${esc(label)}</b>
+        <span class="spacer"></span>
+        <span class="st-gauge-num">${esc(fmtBytes(used))} <span>/ ${esc(fmtBytes(limit))}</span></span></div>
+      <div class="st-bar"><div class="st-bar-fill ${gaugeTone(p)}" style="width:${p.toFixed(1)}%"></div></div>
+      <div class="st-gauge-foot">${p.toFixed(1)}% 사용${note ? " · " + esc(note) : ""}</div>
+    </div>`;
+  }
+
+  function renderStorageTab(box) {
+    const ss = storeSizes();
+    box.innerHTML = `
+      <div class="card">
+        <div class="card-title">📦 저장 용량 현황 <span class="spacer"></span>
+          <button class="btn btn-ghost btn-sm" id="st-reload">↻ 새로고침</button></div>
+        <div class="st-gauges">
+          <div id="st-file-gauge">${gaugeHTML("파일 스토리지", 0, STORE_LIMIT, "불러오는 중…")}</div>
+          ${gaugeHTML("데이터베이스 (semis_store)", ss.total, DB_LIMIT, ss.rows.length + "개 컬렉션")}
+        </div>
+        <p class="form-hint" style="margin-top:10px">Supabase 무료 플랜 기준(파일 1GB · DB 500MB)입니다.
+          데이터베이스 수치는 동기화된 컬렉션 JSON 합계로, 인덱스·이력 등을 제외한 근사치입니다.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">📂 분류별 파일</div>
+        <div id="st-folders" class="st-loading">파일 목록을 불러오는 중…</div>
+      </div>
+      <div class="card">
+        <div class="card-title">📈 용량 큰 파일 TOP 10</div>
+        <div id="st-big" class="st-loading">불러오는 중…</div>
+      </div>
+      <div class="card">
+        <div class="card-title">🧹 미참조 파일 정리</div>
+        <p class="form-hint" style="margin-bottom:12px">
+          공지·규정·회의록 등 <b>어느 기록에서도 참조하지 않는</b> 파일입니다. 첨부를 지우거나 글을 삭제하면 원본 파일은 남기 때문에 쌓입니다.
+          업로드 24시간 이내 파일은 작성 중일 수 있어 목록에서 제외합니다. <b>삭제는 되돌릴 수 없습니다.</b></p>
+        <div id="st-orphans" class="st-loading">참조 관계를 확인하는 중…</div>
+      </div>
+      <div class="card">
+        <div class="card-title">🗄 컬렉션별 데이터 용량</div>
+        <table class="tbl st-tbl">
+          <colgroup><col style="width:38%"><col style="width:22%"><col style="width:20%"><col style="width:20%"></colgroup>
+          <thead><tr><th>컬렉션</th><th>항목 수</th><th>용량</th><th>비중</th></tr></thead>
+          <tbody>${ss.rows.map(r => `<tr>
+            <td>${esc(r.key)}</td>
+            <td>${r.count === null ? "-" : esc(String(r.count)) + "건"}</td>
+            <td>${esc(fmtBytes(r.bytes))}</td>
+            <td>${ss.total ? ((r.bytes / ss.total) * 100).toFixed(1) : "0.0"}%</td></tr>`).join("")}
+          </tbody>
+          <tfoot><tr><th>합계</th><th></th><th>${esc(fmtBytes(ss.total))}</th><th>100%</th></tr></tfoot>
+        </table>
+      </div>`;
+
+    $("#st-reload").onclick = () => renderStorageTab(box);
+    loadStorage(box);
+  }
+
+  function loadStorage(box) {
+    const fail = (msg) => {
+      ["#st-folders", "#st-big", "#st-orphans"].forEach(sel => {
+        const el = $(sel); if (el) { el.className = ""; el.innerHTML = `<div class="empty">${esc(msg)}</div>`; }
+      });
+      const g = $("#st-file-gauge");
+      if (g) g.innerHTML = gaugeHTML("파일 스토리지", 0, STORE_LIMIT, "조회 실패");
+    };
+    if (!window.SemisSync || !SemisSync.listFiles) { fail("동기화 모듈이 로드되지 않아 조회할 수 없습니다."); return; }
+
+    SemisSync.listFiles().then(files => {
+      if (!$("#st-folders")) return;                       // 탭이 이미 바뀐 경우
+      const total = files.reduce((s, f) => s + f.size, 0);
+      $("#st-file-gauge").innerHTML =
+        gaugeHTML("파일 스토리지", total, STORE_LIMIT, files.length + "개 파일");
+
+      /* 분류별 */
+      const byFolder = {};
+      files.forEach(f => {
+        const k = f.folder || "";
+        if (!byFolder[k]) byFolder[k] = { files: 0, bytes: 0 };
+        byFolder[k].files++; byFolder[k].bytes += f.size;
+      });
+      const folders = Object.keys(byFolder).sort((a, b) => byFolder[b].bytes - byFolder[a].bytes);
+      const fb = $("#st-folders");
+      fb.className = "";
+      fb.innerHTML = `<table class="tbl st-tbl">
+        <colgroup><col style="width:44%"><col style="width:18%"><col style="width:20%"><col style="width:18%"></colgroup>
+        <thead><tr><th>분류</th><th>파일 수</th><th>용량</th><th>비중</th></tr></thead>
+        <tbody>${folders.map(k => `<tr>
+          <td>${esc(folderName(k))} <span class="st-dim">${esc(k || "-")}</span></td>
+          <td>${byFolder[k].files}개</td>
+          <td>${esc(fmtBytes(byFolder[k].bytes))}</td>
+          <td>${total ? ((byFolder[k].bytes / total) * 100).toFixed(1) : "0.0"}%</td></tr>`).join("")}
+        </tbody></table>`;
+
+      /* 대용량 TOP 10 */
+      const big = files.slice().sort((a, b) => b.size - a.size).slice(0, 10);
+      const bb = $("#st-big");
+      bb.className = "";
+      bb.innerHTML = big.length ? `<table class="tbl st-tbl">
+        <colgroup><col style="width:46%"><col style="width:20%"><col style="width:16%"><col style="width:18%"></colgroup>
+        <thead><tr><th>파일</th><th>분류</th><th>용량</th><th>등록일</th></tr></thead>
+        <tbody>${big.map(f => `<tr>
+          <td><a href="${esc(f.url)}" target="_blank" rel="noopener" class="st-file">${esc(f.name)}</a></td>
+          <td>${esc(folderName(f.folder))}</td>
+          <td>${esc(fmtBytes(f.size))}</td>
+          <td>${esc(String(f.updated).slice(0, 10))}</td></tr>`).join("")}
+        </tbody></table>` : '<div class="empty">파일이 없습니다.</div>';
+
+      paintOrphans(box, files);
+    }).catch(() => fail("파일 목록을 불러오지 못했습니다. 네트워크를 확인하세요."));
+  }
+
+  function paintOrphans(box, files) {
+    const refs = referencedPaths();
+    const ob = $("#st-orphans");
+    if (!ob) return;
+    ob.className = "";
+    if (!refs.size) {
+      ob.innerHTML = '<div class="empty">⚠️ 참조 관계를 확인하지 못해 정리 기능을 잠갔습니다. (오삭제 방지)</div>';
+      return;
+    }
+    const orphans = orphanFiles(files, refs).sort((a, b) => b.size - a.size);
+    if (!orphans.length) {
+      ob.innerHTML = '<div class="empty">✅ 미참조 파일이 없습니다. 저장소가 깔끔합니다.</div>';
+      return;
+    }
+    const sum = orphans.reduce((s, f) => s + f.size, 0);
+    ob.innerHTML = `
+      <div class="st-orphan-head">
+        미참조 <b>${orphans.length}개</b> · 합계 <b>${esc(fmtBytes(sum))}</b>
+        <span class="spacer"></span>
+        <label class="st-chk"><input type="checkbox" id="st-all"> 전체 선택</label>
+        <button class="btn btn-danger btn-sm" id="st-del" disabled>선택 삭제</button>
+      </div>
+      <table class="tbl st-tbl">
+        <colgroup><col style="width:40px"><col style="width:40%"><col style="width:20%"><col style="width:14%"><col style="width:16%"></colgroup>
+        <thead><tr><th></th><th>파일</th><th>분류</th><th>용량</th><th>등록일</th></tr></thead>
+        <tbody>${orphans.map(f => `<tr>
+          <td><input type="checkbox" class="st-o" data-path="${esc(f.path)}" data-size="${f.size}"></td>
+          <td><a href="${esc(f.url)}" target="_blank" rel="noopener" class="st-file">${esc(f.name)}</a></td>
+          <td>${esc(folderName(f.folder))}</td>
+          <td>${esc(fmtBytes(f.size))}</td>
+          <td>${esc(String(f.updated).slice(0, 10))}</td></tr>`).join("")}
+        </tbody></table>`;
+
+    const boxes = () => $$("#st-orphans .st-o");
+    const picked = () => boxes().filter(c => c.checked);
+    const sync = () => {
+      const n = picked().length;
+      const btn = $("#st-del");
+      btn.disabled = !n;
+      btn.textContent = n ? "선택 " + n + "개 삭제" : "선택 삭제";
+    };
+    boxes().forEach(c => c.onchange = sync);
+    $("#st-all").onchange = (e) => { boxes().forEach(c => { c.checked = e.target.checked; }); sync(); };
+    $("#st-del").onclick = () => {
+      const sel = picked();
+      if (!sel.length) return;
+      const bytes = sel.reduce((s, c) => s + Number(c.dataset.size || 0), 0);
+      confirmModal(`파일 ${sel.length}개(${fmtBytes(bytes)})를 영구 삭제합니다. 되돌릴 수 없습니다. 계속하시겠습니까?`, () => {
+        const paths = sel.map(c => c.dataset.path);
+        Promise.all(paths.map(p => SemisSync.deleteFile(p).then(() => 1).catch(() => 0)))
+          .then(res => {
+            const ok = res.reduce((a, b) => a + b, 0);
+            toast(ok === paths.length ? `${ok}개 파일을 삭제했습니다.`
+              : `${ok}/${paths.length}개 삭제 — 일부는 실패했습니다.`, ok !== paths.length);
+            renderStorageTab(box);
+          });
+      });
+    };
+  }
+
+  /* 테스트/외부 참조용 */
+  window.SemisStorage = { fmtBytes, storeSizes, referencedPaths, orphanFiles, folderName,
+    STORE_LIMIT, DB_LIMIT, FRESH_MS };
 })();

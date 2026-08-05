@@ -1843,3 +1843,26 @@ a.ct-tel:hover { color: var(--primary); }
 .chat-caps { margin: 7px 0; padding: 8px 11px; background: #fff; border: 1px solid #dbeafe;
   border-radius: 10px; font-size: .82rem; line-height: 1.75; }
 .chat-tip { margin: 2px 0 7px; font-size: .76rem; color: var(--text-3); }
+
+/* ═════ 저장소 관리 탭 (v2.38) ═════ */
+.st-gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.st-gauge { border: 1px solid var(--border-strong); border-radius: 10px; padding: 13px 15px; background: #fff; }
+.st-gauge-head { display: flex; align-items: baseline; gap: 8px; font-size: .88rem; }
+.st-gauge-num { font-size: .84rem; font-weight: 700; color: var(--text-1); }
+.st-gauge-num span { font-weight: 500; color: var(--text-3); }
+.st-bar { height: 9px; margin: 9px 0 6px; border-radius: 99px; background: #e2e8f0; overflow: hidden; }
+.st-bar-fill { height: 100%; border-radius: 99px; transition: width .35s ease; }
+.st-bar-fill.ok { background: linear-gradient(90deg, #22c55e, #16a34a); }
+.st-bar-fill.warn { background: linear-gradient(90deg, #f59e0b, #d97706); }
+.st-bar-fill.danger { background: linear-gradient(90deg, #ef4444, #dc2626); }
+.st-gauge-foot { font-size: .75rem; color: var(--text-3); }
+.st-tbl { font-size: .84rem; table-layout: fixed; }
+.st-tbl th, .st-tbl td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-tbl tfoot th { border-top: 2px solid var(--border-strong); background: var(--primary-soft); }
+.st-dim { color: var(--text-3); font-size: .76rem; }
+.st-file { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.st-loading { padding: 16px 0; font-size: .84rem; color: var(--text-3); }
+.st-orphan-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 10px; font-size: .84rem; }
+.st-chk { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: .82rem; }
+.st-chk input, .st-tbl input[type=checkbox] { width: auto; }

@@ -258,6 +258,73 @@
              url: SUPA_URL + "/storage/v1/object/public/semis-files/" + path };
   }
 
+  /* ─── v2.38: 저장소(Storage) 관리 API ───
+     시스템 설정 → "저장소 관리" 탭에서 사용. anon 키에 semis-files 버킷의
+     select/insert/delete 정책이 열려 있어 목록 조회·삭제가 가능하다. */
+  const BUCKET = "semis-files";
+  const STORAGE_API = SUPA_URL + "/storage/v1";
+  const PUBLIC_PREFIX = STORAGE_API + "/object/public/" + BUCKET + "/";
+  const LIST_PAGE = 100;
+
+  /* 폴더 1단계 목록 (파일 + 하위 폴더). 폴더 항목은 id === null */
+  async function listFolder(prefix) {
+    const out = [];
+    for (let offset = 0; offset < 5000; offset += LIST_PAGE) {
+      const res = await fetch(STORAGE_API + "/object/list/" + BUCKET, {
+        method: "POST", headers: HEADERS,
+        body: JSON.stringify({ prefix: prefix || "", limit: LIST_PAGE, offset,
+          sortBy: { column: "name", order: "asc" } })
+      });
+      if (!res.ok) throw new Error("list " + res.status);
+      const rows = await res.json();
+      if (!Array.isArray(rows) || !rows.length) break;
+      rows.forEach(r => out.push(r));
+      if (rows.length < LIST_PAGE) break;
+    }
+    return out;
+  }
+
+  /* 버킷 전체 파일 목록 — [{ path, name, folder, size, updated, url }] (2단계 깊이) */
+  async function listFiles() {
+    if (typeof fetch === "undefined") throw new Error("offline");
+    const mk = (folder, r) => ({
+      path: (folder ? folder + "/" : "") + r.name,
+      name: r.name,
+      folder: folder || "",
+      size: Number((r.metadata && r.metadata.size) || 0),
+      updated: r.updated_at || r.created_at || "",
+      url: PUBLIC_PREFIX + (folder ? folder + "/" : "") + r.name
+    });
+    const roots = await listFolder("");
+    const files = [];
+    for (const r of roots) {
+      if (!r || !r.name) continue;
+      if (r.id) { files.push(mk("", r)); continue; }        // 루트 직속 파일
+      const kids = await listFolder(r.name + "/");
+      kids.forEach(k => { if (k && k.id && k.name) files.push(mk(r.name, k)); });
+    }
+    return files;
+  }
+
+  async function deleteFile(path) {
+    if (typeof fetch === "undefined") throw new Error("offline");
+    const res = await fetch(STORAGE_API + "/object/" + BUCKET + "/" + String(path)
+      .split("/").map(encodeURIComponent).join("/"), { method: "DELETE", headers: HEADERS });
+    if (!res.ok) throw new Error("delete " + res.status);
+    return true;
+  }
+
+  /* 테이블 행 수 (Content-Range 헤더) — 실패해도 화면은 계속 동작 */
+  async function countRows(table) {
+    if (typeof fetch === "undefined") return null;
+    const res = await fetch(SUPA_URL + "/rest/v1/" + encodeURIComponent(table) + "?select=id&limit=1",
+      { headers: Object.assign({}, HEADERS, { Prefer: "count=exact" }) });
+    if (!res.ok) return null;
+    const cr = res.headers && res.headers.get ? res.headers.get("content-range") : "";
+    const n = Number(String(cr || "").split("/")[1]);
+    return Number.isFinite(n) ? n : null;
+  }
+
   /* ─── 단일 KV 조회 (SYNC_KEYS 외 설정 행 — 예: caresCfg) ─── */
   async function fetchKV(key) {
     if (typeof fetch === "undefined") return null;
@@ -304,6 +371,7 @@
 
   window.SemisSync = {
     init, stop, syncNow, uploadFile, fetchKV,
+    listFiles, listFolder, deleteFile, countRows, BUCKET, PUBLIC_PREFIX,
     push, pull, applyRemote,
     dirtyKeys, pendingKeys, snapAll,
     get status() { return status; },
