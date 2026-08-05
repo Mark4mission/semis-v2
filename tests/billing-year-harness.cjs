@@ -15,8 +15,10 @@ const dom = new JSDOM(HTML, { url: "https://semis.test/", runScripts: "outside-o
 const w = dom.window;
 try { const wc = require("crypto").webcrypto; if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true }); } catch(e){}
 
-// 대장 실측치 (2025 OZ+BX / KJ, 2026 KJ)
+// 대장 실측치 (2024 OZ+BX 단독 / 2025 통합출범 병행 / 2026 KJ 단독)
 const L = {
+ "2024-10": {"OZ+BX":[12433667,13000000,0]}, "2024-11": {"OZ+BX":[12394333,0,0]},
+ "2024-12": {"OZ+BX":[12355000,0,0]},
  "2025-01": {"OZ+BX":[12315667,0,14500000]}, "2025-02": {"OZ+BX":[12276333,8300000,0]},
  "2025-03": {"OZ+BX":[13194000,9100000,0]}, "2025-04": {"OZ+BX":[13154667,19100000,0]},
  "2025-05": {"OZ+BX":[13115333,9500000,0]}, "2025-06": {"OZ+BX":[13076000,8500000,0]},
@@ -48,13 +50,15 @@ w.SemisBilling.setVendor("프로에스콤"); w.SemisBilling.setMonth("2026-07");
 w.location.hash = "#/billing"; S.renderView();
 const view = w.document.querySelector("#view") || w.document.body;
 const css = read("css/main.css");
+const yearHTML = (y, cap) => { w.SemisBilling.setYear(y); S.renderView();
+  return `<hr style="margin:32px 0"><h2 style="font:700 1rem/1.4 system-ui;margin:0 0 12px">${y}년 — ${cap}</h2>`
+    + (w.document.querySelector("#view") || w.document.body).innerHTML; };
 const out = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>연간 비교표 검증</title><style>${css}</style>
 <style>body{padding:24px;background:var(--bg,#fff)}</style></head><body class="">
-<h2 style="font:700 1rem/1.4 system-ui;margin:0 0 12px">SeMIS 대금청구 · 유지보수비 연간 비교표 (2026년)</h2>
+<h2 style="font:700 1rem/1.4 system-ui;margin:0 0 12px">2026년 — KJ 단독 (OZ+BX 열 없음)</h2>
 ${view.innerHTML}
-<hr style="margin:32px 0">
-<h2 style="font:700 1rem/1.4 system-ui;margin:0 0 12px">2025년</h2>
-${(() => { w.SemisBilling.setYear(2025); S.renderView(); return (w.document.querySelector("#view")||w.document.body).innerHTML; })()}
+${yearHTML(2025, "통합출범 전환 구간 · OZ+BX / KJ 병행")}
+${yearHTML(2024, "통합 이전 · OZ+BX 단독")}
 </body></html>`;
 const outPath = process.env.OUT || "/tmp/billing-year-verify.html";
 fs.writeFileSync(outPath, out);

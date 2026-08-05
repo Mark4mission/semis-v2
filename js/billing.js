@@ -79,7 +79,34 @@
   /* v2.39: 장비군 — ETD는 대장과 동일하게 OZ+BX / KJ 로 구분 집계 */
   const GROUP_CATS = { "ETD 유지보수": ["OZ+BX", "KJ"] };
   const groupsOf = (cat) => GROUP_CATS[cat] || [];
-  /* 장비군 판정: equipGroup 명시값 우선, 없으면 제목/메모의 (KJ)·(OZ+BX) 표기로 추론 (구데이터 호환) */
+  /* v2.39.1: 장비군 운용 기간
+     - 2025년 8월 KJ 통합출범 → 2025년은 OZ+BX·KJ 병행 기록 구간
+     - OZ+BX 잔존가 청구는 2025년 12월로 종료 → 2026년부터는 KJ 단독
+     - 2024년 이전은 OZ+BX 단독 */
+  const GROUP_PERIOD = {
+    "OZ+BX": { from: "", to: "2025-12" },
+    "KJ": { from: "2025-08", to: "" }
+  };
+  const GROUP_MERGE_YM = "2025-08"; // KJ 통합출범 시점 (안내 표기용)
+  const inPeriod = (g, ym) => {
+    const p = GROUP_PERIOD[g];
+    if (!p || !ym) return true;
+    return !(p.from && ym < p.from) && !(p.to && ym > p.to);
+  };
+  /* 해당 월(YYYY-MM)에 운용 중인 장비군 */
+  function groupsForMonth(cat, ym) {
+    return groupsOf(cat).filter(g => inPeriod(g, ym));
+  }
+  /* 해당 연도에 운용 중인 장비군 (연간 비교표 열 구성) */
+  function groupsForYear(cat, year) {
+    const y = String(year);
+    return groupsOf(cat).filter(g => {
+      const p = GROUP_PERIOD[g] || {};
+      return !(p.from && y < p.from.slice(0, 4)) && !(p.to && y > p.to.slice(0, 4));
+    });
+  }
+  /* 장비군 판정: ① equipGroup 명시값 → ② 제목·메모의 (KJ)·(OZ+BX) 표기
+     → ③ 해당 월에 운용 장비군이 하나뿐이면 그것으로 확정 (구데이터·2026년 이후 자동 보정) */
   function groupOf(r) {
     const cat = r && r.category;
     const gs = groupsOf(cat);
@@ -88,7 +115,8 @@
     const txt = String((r && r.title) || "") + " " + String((r && r.note) || "");
     if (/\bKJ\b|\(\s*KJ\s*\)/i.test(txt)) return "KJ";
     if (/OZ\s*\+\s*BX|\(\s*OZ\s*\)|\(\s*BX\s*\)/i.test(txt)) return "OZ+BX";
-    return "";
+    const only = groupsForMonth(cat, String((r && r.month) || ""));
+    return only.length === 1 ? only[0] : "";
   }
 
   const list = () => (Array.isArray(D().billing) ? D().billing : []);
@@ -156,8 +184,10 @@
     const recs = visible().filter(r => r && r.vendor === vendor && r.category === cat
       && String(r.month || "").slice(0, 4) === String(year));
     const keyOf = (r) => (base.length ? (groupOf(r) || "미지정") : "전체");
-    const keys = base.length ? base.slice() : ["전체"];
+    // 열 구성: 해당 연도 운용 장비군 기준 (2024 이전 OZ+BX / 2025 병행 / 2026~ KJ) + 실제 데이터 보정
+    const keys = base.length ? groupsForYear(cat, year) : ["전체"];
     recs.forEach(r => { const k = keyOf(r); if (!keys.includes(k)) keys.push(k); });
+    if (!keys.length) keys.push(base.length ? base[base.length - 1] : "전체");
     const blank = () => ({ base: 0, repair: 0, supply: 0, sub: 0, total: 0 });
     const add = (c, kind, amt) => {
       if (kind === "수리/부품") c.repair += amt;
@@ -179,7 +209,8 @@
       s.base += c.base; s.repair += c.repair; s.supply += c.supply; s.sub += c.sub; s.total += c.total;
     }));
     return { year: Number(year), category: cat, keys, months, totals,
-      grand: keys.reduce((s, k) => s + totals[k].total, 0) };
+      grand: keys.reduce((s, k) => s + totals[k].total, 0),
+      merged: base.length > 1 && String(year) === GROUP_MERGE_YM.slice(0, 4) };
   }
   /* 청구 입력이 존재하는 연도 목록 (연간 비교표 연도 이동 범위) */
   function yearsOf(vendor) {
@@ -233,10 +264,8 @@
             ${COST_KINDS.map(k => `<option value="${k}" ${x && x.costKind === k ? "selected" : ""}>${k} (${KIND_LABEL[k]})</option>`).join("")}
           </select></div>
         <div class="form-row" id="bl-group-row"><label>장비군 <span style="font-weight:400;color:var(--text-3)">(대장 집계 단위)</span></label>
-          <select id="bl-equipgroup">
-            <option value="">자동 판별 — 제목의 (KJ)·(OZ+BX) 표기 기준</option>
-            ${["OZ+BX", "KJ"].map(g => `<option value="${g}" ${x && x.equipGroup === g ? "selected" : ""}>${g}</option>`).join("")}
-          </select></div>
+          <select id="bl-equipgroup"></select>
+          <div class="form-hint" id="bl-group-hint"></div></div>
       </div>
       <div class="form-row"><label>증빙 PDF (선택 — 청구서·명세서 등 · 최대 ${MAX_FILES}개)</label>
         <div id="bl-file-box" class="nb-files-view"></div>
@@ -250,14 +279,30 @@
         <button class="btn btn-primary" id="bl-save">저장</button>
       </div>`, { wide: true });
 
+    /* 카테고리·귀속월에 따라 비용구분/장비군 노출 갱신.
+       장비군 선택지는 해당 월에 운용 중인 것만 — 단일이면 자동 확정 (2024 이전 OZ+BX / 2026~ KJ) */
     const updHint = () => {
-      const c = $("#bl-cat").value;
+      const c = $("#bl-cat").value, ym = $("#bl-month").value;
       $("#bl-cat-hint").textContent = cfg.hint[c] || "";
-      // 장비 유지보수 성격 카테고리에서만 비용 구분 노출, 장비군은 구분이 있는 카테고리만
       $("#bl-maint-row").style.display = MAINT_CATS.includes(c) ? "" : "none";
-      $("#bl-group-row").style.display = groupsOf(c).length ? "" : "none";
+      const all = groupsOf(c);
+      $("#bl-group-row").style.display = all.length ? "" : "none";
+      if (!all.length) return;
+      const live = groupsForMonth(c, ym);
+      // 기존 항목이 운용 기간 밖 장비군이면 유지 (과거 데이터 보존)
+      const opts = live.slice();
+      if (x && x.equipGroup && !opts.includes(x.equipGroup)) opts.push(x.equipGroup);
+      const sel = $("#bl-equipgroup"), prev = sel.value || (x ? x.equipGroup || "" : "");
+      sel.innerHTML = (opts.length > 1 ? '<option value="">자동 판별 — 제목의 (KJ)·(OZ+BX) 표기 기준</option>' : "")
+        + opts.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
+      sel.value = opts.includes(prev) ? prev : (opts.length === 1 ? opts[0] : "");
+      $("#bl-group-hint").textContent = opts.length === 1
+        ? `${ym || "해당 월"} 운용 장비군은 ${opts[0]} 뿐입니다 (2025년 8월 KJ 통합출범 · OZ+BX 청구는 2025년 12월 종료).`
+        : "2025년은 KJ 통합출범 전환 구간으로 두 장비군이 병행 청구됩니다.";
     };
-    $("#bl-cat").onchange = updHint; updHint();
+    $("#bl-cat").onchange = updHint;
+    $("#bl-month").onchange = updHint;
+    updHint();
     const renderFiles = () => {
       $("#bl-file-box").innerHTML = files.length
         ? files.map((f, i) => `<span class="nb-file"><a href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>
@@ -377,10 +422,8 @@
   function yearTableHTML(vendor, year) {
     const t = yearTable(vendor, year);
     if (!t.category) return "";
-    // 해당 연도에 청구가 전혀 없는 장비군은 열 생략 (전부 0이면 전체 유지)
-    const shown = t.keys.filter(k => t.totals[k].total);
-    const hidden = t.keys.filter(k => shown.indexOf(k) < 0);
-    const keys = shown.length ? shown : t.keys, multi = keys.length > 1;
+    // 열 구성은 운용 기간이 결정 — 운용 기간 밖인데 데이터만 있는 장비군도 함께 노출
+    const keys = t.keys, multi = keys.length > 1;
     const cell = (v, cls) => `<td class="${cls}${v ? "" : " bl-yr-zero"}">${v ? fmtWon(v) : "-"}</td>`;
     const gcls = (i) => (i > 0 ? " bl-yr-gsep" : "");
     const head = `
@@ -420,8 +463,10 @@
         <div class="table-wrap"><table class="tbl bl-yr-tbl">${head}<tbody>${body}${foot}</tbody></table></div>
         <div class="form-hint" style="margin-top:8px">
           ① 장비 잔존가+수선유지비 · ② 실비 청구건(부품교체 및 수리비 + 소모품비) — 유지보수비 대장과 동일 구조입니다.
-          비용 구분·장비군은 항목의 지정값을 따르며, 미지정 시 제목·메모로 자동 판별합니다.
-          ${hidden.length && shown.length ? `<br>${t.year}년 청구 없음 — 열 생략: ${hidden.map(esc).join(" · ")}` : ""}
+          비용 구분·장비군은 항목의 지정값을 따르며, 미지정 시 제목·메모 또는 해당 월 운용 장비군으로 자동 판별합니다.
+          <br>장비군 운용: ~2025년 7월 OZ+BX 단독 → <b>2025년 8월 KJ 통합출범</b>(2025년은 병행 기록)
+          → 2025년 12월 OZ+BX 잔존 청구 종료 → 2026년부터 KJ 단독.
+          ${t.merged ? "<br><b>※ 2025년은 통합출범 전환 구간</b>이라 두 장비군을 모두 표기합니다." : ""}
           ${ys.length ? `<br>청구 입력 연도: ${ys.join(" · ")}` : ""}</div>
       </div>`;
   }
@@ -518,7 +563,8 @@
   window.SemisBilling = {
     VENDORS, MAINT_CATS, COST_KINDS, KIND_LABEL, GROUP_CATS, MAX_FILES,
     list, visible, recsOf, settle, yearSummary,
-    classifyCost, groupOf, groupsOf, yearTable, yearsOf,
+    classifyCost, groupOf, groupsOf, groupsForMonth, groupsForYear, GROUP_PERIOD, GROUP_MERGE_YM,
+    yearTable, yearsOf,
     maintRows, monthlySettles, filesOf, itemForm, parseWon, fmtWon,
     setVendor: (v) => { curVendor = v; },
     setMonth: (m) => { curMonth = m; curYear = Number(String(m).slice(0, 4)); },

@@ -4107,8 +4107,7 @@ function makeFetchStub(server) {
       if (sp) recs.push(blSeed({ id: "y" + i + "s", month: m, title: "소모품비 (KJ)",
         costKind: "소모품", equipGroup: "KJ", amount: sp }));
     });
-    // 장비군 미지정 + 도급비(집계 제외) 혼입 케이스
-    recs.push(blSeed({ id: "yx", month: "2026-02", title: "구분불명 청구", amount: 7, costKind: "", equipGroup: "" }));
+    // 도급비(집계 제외) 혼입 케이스
     recs.push(blSeed({ id: "yp", month: "2026-02", category: "보안검색&경비", title: "도급비", amount: 99999999 }));
     const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
       d.billing = recs; return d; })();
@@ -4117,7 +4116,7 @@ function makeFetchStub(server) {
     const B = e.w.SemisBilling;
     const t2 = B.yearTable("프로에스콤", 2026);
     eq(t2.category, "ETD 유지보수", "기본 카테고리");
-    eq(t2.keys.join(","), "OZ+BX,KJ,미지정", "장비군 + 미지정 버킷");
+    eq(t2.keys.join(","), "KJ", "2026년은 KJ 단독 운용 (OZ+BX 열 없음)");
     eq(t2.months.length, 12, "12개월 고정");
     // 대장 값 대사
     led.forEach(([m, b, rp, sp]) => {
@@ -4132,9 +4131,7 @@ function makeFetchStub(server) {
     eq(t2.totals["KJ"].repair, 10500000, "대장 I25 부품교체 합계");
     eq(t2.totals["KJ"].supply, 18375000, "대장 J25 소모품 합계");
     eq(t2.totals["KJ"].total, 45831667, "대장 L25 합계");
-    eq(t2.totals["OZ+BX"].total, 0, "2026년 OZ+BX 없음");
-    eq(t2.totals["미지정"].total, 7, "미지정 버킷 분리");
-    eq(t2.grand, 45831674, "총계(도급비 미포함)");
+    eq(t2.grand, 45831667, "총계(도급비 미포함)");
     eq(B.yearsOf("프로에스콤").join(","), "2026", "청구 입력 연도 목록");
   });
 
@@ -4166,18 +4163,73 @@ function makeFetchStub(server) {
     ok(tb, "연간 비교표 렌더");
     eq(qa(e, ".bl-yr-tbl thead tr").length, 3, "대장과 동일한 3단 헤더");
     eq(qa(e, ".bl-yr-tbl tbody tr").length, 13, "12개월 + 합계행");
-    // 2026년은 KJ만 청구 → OZ+BX 열 생략 (5열 + 월 = 6열, 단일 장비군이라 총계열 없음)
-    eq(qa(e, ".bl-yr-tbl tbody tr")[0].children.length, 6, "청구 없는 장비군 열 생략");
-    ok(/열 생략: OZ\+BX/.test(q(e, ".card").textContent), "생략 안내 문구");
+    // 2026년은 KJ 단독 운용 → 5열 + 월 = 6열 (단일 장비군이라 총계열 없음)
+    eq(qa(e, ".bl-yr-tbl tbody tr")[0].children.length, 6, "운용 장비군만 열 구성");
+    ok(!/OZ\+BX/.test(tb.textContent), "2026년 OZ+BX 열 없음");
+    ok(/KJ 통합출범/.test(q(e, ".card").textContent), "통합출범 안내 문구");
     ok(/부품교체 및/.test(tb.textContent), "부품교체 및 수리비 열");
     ok(/소모품비/.test(tb.textContent), "소모품비 열");
     ok(/6,000,000/.test(tb.textContent), "3월 부품교체 반영");
     ok(/7,320,000/.test(tb.textContent), "3월 합계 ①+②");
-    // 연도 이동 (2026 → 2025)
+    // 연도 이동 (2026 → 2025): 통합출범 전환 구간이라 두 장비군 병행 표기
     q(e, "#bl-yprev").click();
     eq(B.year, 2025, "연도 이동");
-    ok(/14,500,000/.test(q(e, ".bl-yr-tbl").textContent), "2025년 소모품비 표시");
+    const tb25 = q(e, ".bl-yr-tbl");
+    ok(/14,500,000/.test(tb25.textContent), "2025년 소모품비 표시");
+    ok(/OZ\+BX/.test(tb25.textContent) && /\(KJ\)/.test(tb25.textContent), "2025년 두 장비군 열");
+    eq(qa(e, ".bl-yr-tbl tbody tr")[0].children.length, 12, "월 + 5열×2 + 총계");
+    ok(/전환 구간/.test(q(e, ".card").textContent), "전환 구간 안내");
     B.setView("month");
+  });
+
+  t("BL16 장비군 운용 기간: 2025-08 KJ 통합출범 · 2025-12 OZ+BX 종료 (연도별 열 구성 + 자동 확정)", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const B = e.w.SemisBilling;
+    eq(B.GROUP_MERGE_YM, "2025-08", "통합출범 시점");
+    const gm = (ym) => B.groupsForMonth("ETD 유지보수", ym).join(",");
+    eq(gm("2023-06"), "OZ+BX", "통합 이전은 OZ+BX 단독");
+    eq(gm("2024-12"), "OZ+BX", "2024년 OZ+BX 단독");
+    eq(gm("2025-07"), "OZ+BX", "통합 직전 OZ+BX 단독");
+    eq(gm("2025-08"), "OZ+BX,KJ", "통합출범 — 병행");
+    eq(gm("2025-12"), "OZ+BX,KJ", "OZ+BX 잔존 청구 종료월까지 병행");
+    eq(gm("2026-01"), "KJ", "2026년부터 KJ 단독");
+    eq(gm("2026-07"), "KJ", "KJ 단독 유지");
+    const gy = (y) => B.groupsForYear("ETD 유지보수", y).join(",");
+    eq(gy(2024), "OZ+BX", "2024년 열: OZ+BX");
+    eq(gy(2025), "OZ+BX,KJ", "2025년 열: 병행");
+    eq(gy(2026), "KJ", "2026년 열: KJ");
+    // 미태깅 구데이터 자동 확정 — 운용 장비군이 하나뿐인 월은 표기 없이도 판정
+    const g = (o) => B.groupOf(Object.assign({ category: "ETD 유지보수" }, o));
+    eq(g({ month: "2024-03", title: "장비 잔존가+수선유지비" }), "OZ+BX", "2024년 미표기 → OZ+BX");
+    eq(g({ month: "2026-05", title: "에어제타-보안장비 대금청구(26년 5월)" }), "KJ", "2026년 미표기 → KJ");
+    eq(g({ month: "2025-09", title: "구분 없는 청구" }), "", "병행 구간은 자동 확정 불가");
+    eq(g({ month: "2025-09", title: "부품교체건 (KJ)" }), "KJ", "병행 구간은 표기로 판정");
+    eq(g({ month: "2026-05", equipGroup: "OZ+BX", title: "특수 정산" }), "OZ+BX", "명시값은 기간 밖이어도 존중");
+    // 연간 비교표: 운용 기간 밖 데이터가 있으면 열을 추가로 노출 (누락 방지)
+    e.S.data.billing = [blSeed({ id: "z1", month: "2026-04", title: "잔여 정산 (OZ+BX)",
+      amount: 100, costKind: "정기 유지보수", equipGroup: "OZ+BX" })];
+    e.S.saveSilent();
+    const t3 = B.yearTable("프로에스콤", 2026);
+    eq(t3.keys.join(","), "KJ,OZ+BX", "기간 밖 데이터도 열 추가");
+    eq(t3.totals["OZ+BX"].base, 100, "누락 없이 집계");
+    // 입력 폼: 단일 운용 월은 장비군 자동 확정 (선택지 1개)
+    B.setVendor("프로에스콤"); B.setMonth("2026-07"); B.setView("month");
+    go(e, "billing");
+    B.itemForm("프로에스콤", "2026-07", "ETD 유지보수", null);
+    eq(qa(e, "#bl-equipgroup option").length, 1, "2026-07은 KJ 선택지 1개");
+    eq(q(e, "#bl-equipgroup").value, "KJ", "자동 확정");
+    ok(/KJ 통합출범/.test(q(e, "#bl-group-hint").textContent), "운용 안내");
+    // 귀속월을 2025년으로 바꾸면 병행 선택지로 갱신
+    q(e, "#bl-month").value = "2025-09";
+    q(e, "#bl-month").dispatchEvent(new e.w.Event("change", { bubbles: true }));
+    eq(qa(e, "#bl-equipgroup option").length, 3, "자동 판별 + OZ+BX + KJ");
+    q(e, "#bl-title").value = "장비 잔존가+수선유지비 (OZ+BX)";
+    q(e, "#bl-amount").value = "8,512,667";
+    q(e, "#bl-equipgroup").value = "OZ+BX";
+    q(e, "#bl-save").click();
+    const saved = e.S.data.billing.find(r => r.month === "2025-09");
+    eq(saved.equipGroup, "OZ+BX", "병행 구간 수동 선택 저장");
   });
 
   t("BL15 비용 기록 탭: 소모품 컬럼 집계 + 청구 연동 장비군 표기", () => {
