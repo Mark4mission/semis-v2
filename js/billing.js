@@ -1,11 +1,17 @@
 /* ═══════════════════════════════════════════════════════
-   SeMIS v2 — 대금 청구 관리 모듈 (v2.16)
+   SeMIS v2 — 대금 청구 관리 모듈 (v2.16 · v2.39 확장)
    협력업체(프로에스콤·인씨스)가 매월 직접 청구 내역을 입력하고,
    에어제타(HQ 이상)가 전체를 확인·정산하는 화면.
 
    데이터: DATA.billing = [{ id, vendor, month "YYYY-MM", category,
      title, amount(원, 숫자), files:[{url,name}](최대 5개, v2.17.1),
-     fileUrl, fileName(구버전 단일 첨부 — filesOf()가 호환 처리), note, by, updated }]
+     fileUrl, fileName(구버전 단일 첨부 — filesOf()가 호환 처리), note, by, updated,
+     costKind(v2.39: 정기 유지보수 / 수리·부품 / 소모품),
+     equipGroup(v2.39: OZ+BX / KJ — ETD 장비군) }]
+
+   v2.39 — "폭발물흔적탐지장비 유지보수비 비교 현황" 대장 기준으로 정렬:
+   ① 장비 잔존가+수선유지비  ② 부품교체 및 수리비  ③ 소모품비 의 3분류와
+   장비군(OZ+BX / KJ) 구분을 필드로 관리하고, 연간 비교표를 대장과 동일 형식으로 제공.
 
    업체/카테고리:
    - 프로에스콤: ETD 유지보수 / 보안검색&경비 / 기타 수익
@@ -54,12 +60,35 @@
 
   /* v2.17: 장비 비용 기록 연동 — 장비 유지보수 성격 카테고리 (도급비·수익은 장비 비용 아님) */
   const MAINT_CATS = ["ETD 유지보수", "X-ray 유지보수"];
-  const COST_KINDS = ["정기 유지보수", "수리/부품"];
-  /* 비용 구분 판정: 항목의 costKind 명시값 우선, 없으면 내용(제목·메모) 기반 자동 분류 */
+  /* v2.39: 유지보수비 대장(폭발물흔적탐지장비 비교 현황)과 동일한 3분류 */
+  const COST_KINDS = ["정기 유지보수", "수리/부품", "소모품"];
+  const KIND_LABEL = { "정기 유지보수": "장비 잔존가+수선유지비",
+    "수리/부품": "부품교체 및 수리비", "소모품": "소모품비" };
+  const KIND_BADGE = { "정기 유지보수": "badge-blue", "수리/부품": "badge-red", "소모품": "badge-amber" };
+  const SUPPLY_RE = /소모품|소모성|스메어|스미어|스와브|swab|건조제|desiccant|카트리지|cartridge|필터|filter|시료|표준시료|샘플\s*트랩|트랩|시약|consumab/i;
+  const REPAIR_RE = /부품|교체|수리|고장|파트|보드|board|part|repair/i;
+  /* 비용 구분 판정: 항목의 costKind 명시값 우선, 없으면 내용(제목·메모) 기반 자동 분류.
+     소모품 키워드를 먼저 확인 — "소모품 교체"처럼 두 키워드가 겹치면 소모품이 우선. */
   function classifyCost(r) {
     if (r && COST_KINDS.includes(r.costKind)) return r.costKind;
     const txt = String((r && r.title) || "") + " " + String((r && r.note) || "");
-    return /부품|교체|수리|파트|part/i.test(txt) ? "수리/부품" : "정기 유지보수";
+    if (SUPPLY_RE.test(txt)) return "소모품";
+    return REPAIR_RE.test(txt) ? "수리/부품" : "정기 유지보수";
+  }
+
+  /* v2.39: 장비군 — ETD는 대장과 동일하게 OZ+BX / KJ 로 구분 집계 */
+  const GROUP_CATS = { "ETD 유지보수": ["OZ+BX", "KJ"] };
+  const groupsOf = (cat) => GROUP_CATS[cat] || [];
+  /* 장비군 판정: equipGroup 명시값 우선, 없으면 제목/메모의 (KJ)·(OZ+BX) 표기로 추론 (구데이터 호환) */
+  function groupOf(r) {
+    const cat = r && r.category;
+    const gs = groupsOf(cat);
+    if (!gs.length) return "";
+    if (r && gs.includes(r.equipGroup)) return r.equipGroup;
+    const txt = String((r && r.title) || "") + " " + String((r && r.note) || "");
+    if (/\bKJ\b|\(\s*KJ\s*\)/i.test(txt)) return "KJ";
+    if (/OZ\s*\+\s*BX|\(\s*OZ\s*\)|\(\s*BX\s*\)/i.test(txt)) return "OZ+BX";
+    return "";
   }
 
   const list = () => (Array.isArray(D().billing) ? D().billing : []);
@@ -114,9 +143,54 @@
     return visible()
       .filter(r => r && MAINT_CATS.includes(r.category) && String(r.month || "").slice(0, 4) === String(year))
       .map(r => ({ id: "bl:" + r.id, srcId: r.id, ym: r.month, kind: classifyCost(r),
-        vendor: r.vendor, amount: Number(r.amount) || 0,
+        vendor: r.vendor, amount: Number(r.amount) || 0, equipGroup: groupOf(r),
         memo: r.title + (r.note ? " · " + r.note : ""), auto: true }));
   }
+  /* v2.39: 유지보수비 연간 비교표 — 대장(엑셀)과 동일 구조.
+     장비군(OZ+BX / KJ) × 비용구분(잔존가+수선유지비 / 부품교체·수리비 / 소모품비) 매트릭스.
+     반환: { year, category, keys, months:[{ym, mon, cells}], totals, grand } */
+  function yearTable(vendor, year, category) {
+    const cfg = VENDORS[vendor] || { cats: [] };
+    const cat = category || cfg.cats.find(c => MAINT_CATS.includes(c)) || "";
+    const base = groupsOf(cat);
+    const recs = visible().filter(r => r && r.vendor === vendor && r.category === cat
+      && String(r.month || "").slice(0, 4) === String(year));
+    const keyOf = (r) => (base.length ? (groupOf(r) || "미지정") : "전체");
+    const keys = base.length ? base.slice() : ["전체"];
+    recs.forEach(r => { const k = keyOf(r); if (!keys.includes(k)) keys.push(k); });
+    const blank = () => ({ base: 0, repair: 0, supply: 0, sub: 0, total: 0 });
+    const add = (c, kind, amt) => {
+      if (kind === "수리/부품") c.repair += amt;
+      else if (kind === "소모품") c.supply += amt;
+      else c.base += amt;
+    };
+    const months = [];
+    for (let m = 1; m <= 12; m++) {
+      const ym = String(year) + "-" + String(m).padStart(2, "0");
+      const cells = {}; keys.forEach(k => { cells[k] = blank(); });
+      recs.filter(r => r.month === ym).forEach(r =>
+        add(cells[keyOf(r)], classifyCost(r), Number(r.amount) || 0));
+      keys.forEach(k => { const c = cells[k]; c.sub = c.repair + c.supply; c.total = c.base + c.sub; });
+      months.push({ ym, mon: m, cells });
+    }
+    const totals = {}; keys.forEach(k => { totals[k] = blank(); });
+    months.forEach(r => keys.forEach(k => {
+      const s = totals[k], c = r.cells[k];
+      s.base += c.base; s.repair += c.repair; s.supply += c.supply; s.sub += c.sub; s.total += c.total;
+    }));
+    return { year: Number(year), category: cat, keys, months, totals,
+      grand: keys.reduce((s, k) => s + totals[k].total, 0) };
+  }
+  /* 청구 입력이 존재하는 연도 목록 (연간 비교표 연도 이동 범위) */
+  function yearsOf(vendor) {
+    const ys = {};
+    visible().forEach(r => {
+      if (r && r.vendor === vendor && /^\d{4}-\d{2}$/.test(String(r.month || "")))
+        ys[String(r.month).slice(0, 4)] = true;
+    });
+    return Object.keys(ys).sort();
+  }
+
   /* v2.17: 연도 내 월별 정산 결과 (settle() 그대로) — 비용 기록 탭 월별 정산표용 */
   function monthlySettles(year) {
     const out = [];
@@ -152,11 +226,18 @@
       <div class="form-row"><label>금액 (원)</label>
         <input id="bl-amount" inputmode="numeric" value="${x ? esc(fmtWon(x.amount)) : ""}" placeholder="예: 5,170,000">
         <div class="form-hint" id="bl-cat-hint"></div></div>
-      <div class="form-row" id="bl-costkind-row"><label>장비 비용 기록 반영 구분 <span style="font-weight:400;color:var(--text-3)">(보안장비 유지관리 · 비용 기록 탭 자동 집계)</span></label>
-        <select id="bl-costkind">
-          <option value="">자동 판별 — 내용에 '부품·교체·수리' 포함 시 수리/부품, 그 외 정기 유지보수</option>
-          ${COST_KINDS.map(k => `<option value="${k}" ${x && x.costKind === k ? "selected" : ""}>${k}</option>`).join("")}
-        </select></div>
+      <div class="form-grid" id="bl-maint-row">
+        <div class="form-row"><label>비용 구분 <span style="font-weight:400;color:var(--text-3)">(유지보수비 대장 3분류 · 비용 기록 탭 자동 집계)</span></label>
+          <select id="bl-costkind">
+            <option value="">자동 판별 — '소모품·건조제·스메어' → 소모품, '부품·교체·수리' → 수리/부품, 그 외 정기 유지보수</option>
+            ${COST_KINDS.map(k => `<option value="${k}" ${x && x.costKind === k ? "selected" : ""}>${k} (${KIND_LABEL[k]})</option>`).join("")}
+          </select></div>
+        <div class="form-row" id="bl-group-row"><label>장비군 <span style="font-weight:400;color:var(--text-3)">(대장 집계 단위)</span></label>
+          <select id="bl-equipgroup">
+            <option value="">자동 판별 — 제목의 (KJ)·(OZ+BX) 표기 기준</option>
+            ${["OZ+BX", "KJ"].map(g => `<option value="${g}" ${x && x.equipGroup === g ? "selected" : ""}>${g}</option>`).join("")}
+          </select></div>
+      </div>
       <div class="form-row"><label>증빙 PDF (선택 — 청구서·명세서 등 · 최대 ${MAX_FILES}개)</label>
         <div id="bl-file-box" class="nb-files-view"></div>
         <label class="btn btn-ghost btn-sm" style="cursor:pointer;align-self:flex-start">📎 PDF 업로드 (각 20MB 이하)
@@ -170,9 +251,11 @@
       </div>`, { wide: true });
 
     const updHint = () => {
-      $("#bl-cat-hint").textContent = cfg.hint[$("#bl-cat").value] || "";
-      // 장비 유지보수 성격 카테고리에서만 비용 반영 구분 노출
-      $("#bl-costkind-row").style.display = MAINT_CATS.includes($("#bl-cat").value) ? "" : "none";
+      const c = $("#bl-cat").value;
+      $("#bl-cat-hint").textContent = cfg.hint[c] || "";
+      // 장비 유지보수 성격 카테고리에서만 비용 구분 노출, 장비군은 구분이 있는 카테고리만
+      $("#bl-maint-row").style.display = MAINT_CATS.includes(c) ? "" : "none";
+      $("#bl-group-row").style.display = groupsOf(c).length ? "" : "none";
     };
     $("#bl-cat").onchange = updHint; updHint();
     const renderFiles = () => {
@@ -221,6 +304,7 @@
       const cat = $("#bl-cat").value;
       const rec = { vendor, month: m, category: cat, title, amount,
         costKind: MAINT_CATS.includes(cat) ? $("#bl-costkind").value : "",
+        equipGroup: groupsOf(cat).length ? $("#bl-equipgroup").value : "",
         files: files.slice(0, MAX_FILES),
         // 구버전 호환 필드 (첫 번째 첨부)
         fileUrl: files.length ? files[0].url : "", fileName: files.length ? files[0].name : "",
@@ -235,6 +319,8 @@
   /* ─────── 화면 구성 ─────── */
   let curVendor = null;   // hq 전용 (vendor 계정은 자기 업체 고정)
   let curMonth = null;
+  let curView = "month";  // v2.39: "month"(월별 입력) | "year"(유지보수비 연간 비교표)
+  let curYear = null;
 
   function catCard(vendor, month, cat, canWrite) {
     const items = recsOf(vendor, month).filter(r => r.category === cat);
@@ -246,8 +332,11 @@
           <span class="spacer"></span>
           ${canWrite ? `<button class="btn btn-primary btn-sm" data-bl-add="${esc(cat)}">+ 항목 추가</button>` : ""}
         </div>
-        ${items.length ? items.map(r => { const fl = filesOf(r); return `
+        ${items.length ? items.map(r => { const fl = filesOf(r);
+          const kd = MAINT_CATS.includes(cat) ? classifyCost(r) : "", gp = groupOf(r); return `
           <div class="bl-item" ${canWrite ? `data-bl-edit="${esc(r.id)}" style="cursor:pointer" title="클릭하여 수정"` : ""}>
+            ${gp ? `<span class="badge badge-gray bl-item-tag">${esc(gp)}</span>` : ""}
+            ${kd ? `<span class="badge ${KIND_BADGE[kd] || "badge-gray"} bl-item-tag" title="${esc(KIND_LABEL[kd] || kd)}">${esc(kd)}</span>` : ""}
             <span class="bl-item-title">${esc(r.title)}${r.note ? `<span class="bl-item-note"> · ${esc(r.note)}</span>` : ""}</span>
             ${fl.map((f, i) => `<a class="nb-file" href="${esc(f.url)}" target="_blank" rel="noopener" title="${esc(f.name)}" onclick="event.stopPropagation()">📎${fl.length > 1 ? i + 1 : ""}</a>`).join("")}
             <b class="bl-item-amt">${fmtWon(r.amount)}원</b>
@@ -284,6 +373,59 @@
       </div>`;
   }
 
+  /* v2.39: 유지보수비 연간 비교표 — 대장(엑셀)과 동일한 3단 헤더 구조 */
+  function yearTableHTML(vendor, year) {
+    const t = yearTable(vendor, year);
+    if (!t.category) return "";
+    // 해당 연도에 청구가 전혀 없는 장비군은 열 생략 (전부 0이면 전체 유지)
+    const shown = t.keys.filter(k => t.totals[k].total);
+    const hidden = t.keys.filter(k => shown.indexOf(k) < 0);
+    const keys = shown.length ? shown : t.keys, multi = keys.length > 1;
+    const cell = (v, cls) => `<td class="${cls}${v ? "" : " bl-yr-zero"}">${v ? fmtWon(v) : "-"}</td>`;
+    const gcls = (i) => (i > 0 ? " bl-yr-gsep" : "");
+    const head = `
+      <thead>
+        <tr><th rowspan="3">월</th>
+          ${keys.map((k, i) => `<th colspan="5" class="bl-yr-gcap${gcls(i)}">${esc(t.category)} (${esc(k)})</th>`).join("")}
+          ${multi ? '<th rowspan="3">총계</th>' : ""}</tr>
+        <tr>${keys.map((k, i) => `
+          <th rowspan="2" class="${gcls(i).trim()}">장비 잔존가<br>+수선유지비 ①</th>
+          <th colspan="2">실비 청구건 ②</th>
+          <th rowspan="2">소계 ②</th>
+          <th rowspan="2">합계 ①+②</th>`).join("")}</tr>
+        <tr>${keys.map(() => "<th>부품교체 및<br>수리비</th><th>소모품비</th>").join("")}</tr>
+      </thead>`;
+    const body = t.months.map(r => `
+      <tr><td class="bl-yr-mon">${r.mon}월</td>
+        ${keys.map((k, i) => { const c = r.cells[k]; return `
+          ${cell(c.base, "bl-yr-base" + gcls(i))}${cell(c.repair, "")}${cell(c.supply, "")}
+          ${cell(c.sub, "bl-yr-sub")}${cell(c.total, "bl-yr-tot")}`; }).join("")}
+        ${multi ? cell(keys.reduce((s, k) => s + r.cells[k].total, 0), "bl-yr-grand") : ""}</tr>`).join("");
+    const foot = `
+      <tr class="bl-yr-sum"><td class="bl-yr-mon">합계</td>
+        ${keys.map((k, i) => { const c = t.totals[k]; return `
+          ${cell(c.base, gcls(i).trim())}${cell(c.repair, "")}${cell(c.supply, "")}
+          ${cell(c.sub, "")}${cell(c.total, "")}`; }).join("")}
+        ${multi ? cell(t.grand, "bl-yr-grand") : ""}</tr>`;
+    const ys = yearsOf(vendor);
+    return `
+      <div class="card">
+        <div class="card-title">📊 유지보수비 연간 비교 현황 — ${esc(t.category)}
+          <span class="badge badge-gray">${t.year}년</span>
+          <span class="spacer"></span>
+          <button class="btn btn-ghost btn-sm" id="bl-yprev">◀</button>
+          <b style="font-size:.88rem">${t.year}년</b>
+          <button class="btn btn-ghost btn-sm" id="bl-ynext">▶</button>
+        </div>
+        <div class="table-wrap"><table class="tbl bl-yr-tbl">${head}<tbody>${body}${foot}</tbody></table></div>
+        <div class="form-hint" style="margin-top:8px">
+          ① 장비 잔존가+수선유지비 · ② 실비 청구건(부품교체 및 수리비 + 소모품비) — 유지보수비 대장과 동일 구조입니다.
+          비용 구분·장비군은 항목의 지정값을 따르며, 미지정 시 제목·메모로 자동 판별합니다.
+          ${hidden.length && shown.length ? `<br>${t.year}년 청구 없음 — 열 생략: ${hidden.map(esc).join(" · ")}` : ""}
+          ${ys.length ? `<br>청구 입력 연도: ${ys.join(" · ")}` : ""}</div>
+      </div>`;
+  }
+
   SeMIS.registerModule("billing", {
     title: "대금 청구 관리",
     render(root) {
@@ -298,9 +440,12 @@
         return;
       }
       if (!curMonth) curMonth = thisMonth();
+      if (!curYear) curYear = Number(curMonth.slice(0, 4));
       const month = curMonth;
       const canWrite = canWriteFor(vendor);
       const cfg = VENDORS[vendor];
+      const hasMaint = cfg.cats.some(c => MAINT_CATS.includes(c));
+      const yearMode = curView === "year" && hasMaint;
 
       root.innerHTML = `
         <div class="page-head">
@@ -310,10 +455,17 @@
             ? "귀사(" + esc(vendor) + ")의 청구 내역만 표시됩니다. 매월 청구 항목을 입력해 주세요."
             : "협력업체별 월 청구 내역 확인 · 정산 (HQ 이상)"}</div>
         </div>
-        ${vendorMode ? "" : `<div class="cal-views" style="margin-bottom:12px;align-self:flex-start;display:inline-flex">
-          ${Object.keys(VENDORS).map(v =>
-            `<button class="cal-viewbtn${vendor === v ? " active" : ""}" data-bl-vendor="${esc(v)}">${esc(VENDORS[v].icon)} ${esc(v)}</button>`).join("")}
-        </div>`}
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+          ${vendorMode ? "" : `<div class="cal-views" style="display:inline-flex">
+            ${Object.keys(VENDORS).map(v =>
+              `<button class="cal-viewbtn${vendor === v ? " active" : ""}" data-bl-vendor="${esc(v)}">${esc(VENDORS[v].icon)} ${esc(v)}</button>`).join("")}
+          </div>`}
+          ${hasMaint ? `<div class="cal-views" style="display:inline-flex">
+            <button class="cal-viewbtn${yearMode ? "" : " active"}" data-bl-view="month">📅 월별 청구</button>
+            <button class="cal-viewbtn${yearMode ? " active" : ""}" data-bl-view="year">📊 연간 비교표</button>
+          </div>` : ""}
+        </div>
+        ${yearMode ? yearTableHTML(vendor, curYear) : `
         <div class="card" style="padding:10px 16px">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" id="bl-prev">◀</button>
@@ -324,23 +476,33 @@
           </div>
         </div>
         ${cfg.cats.map(c => catCard(vendor, month, c, canWrite)).join("")}
-        ${summaryCard(vendor, month)}`;
+        ${summaryCard(vendor, month)}`}`;
+
+      // 업체 전환 (hq) · 뷰 전환
+      $$("[data-bl-vendor]").forEach(b => b.onclick = () => { curVendor = b.dataset.blVendor; SeMIS.renderView(); });
+      $$("[data-bl-view]").forEach(b => b.onclick = () => { curView = b.dataset.blView; SeMIS.renderView(); });
+
+      if (yearMode) {
+        const shiftYear = (d) => { curYear = Number(curYear) + d; SeMIS.renderView(); };
+        if ($("#bl-yprev")) $("#bl-yprev").onclick = () => shiftYear(-1);
+        if ($("#bl-ynext")) $("#bl-ynext").onclick = () => shiftYear(1);
+        return;
+      }
 
       // 월 이동
       const shiftMonth = (d) => {
         const [y, m] = month.split("-").map(Number);
         const nd = new Date(Date.UTC(y, m - 1 + d, 1));
         curMonth = nd.toISOString().slice(0, 7);
+        curYear = Number(curMonth.slice(0, 4));
         SeMIS.renderView();
       };
       $("#bl-prev").onclick = () => shiftMonth(-1);
       $("#bl-next").onclick = () => shiftMonth(1);
       $("#bl-cur-month").onchange = () => {
         const v = $("#bl-cur-month").value;
-        if (/^\d{4}-\d{2}$/.test(v)) { curMonth = v; SeMIS.renderView(); }
+        if (/^\d{4}-\d{2}$/.test(v)) { curMonth = v; curYear = Number(v.slice(0, 4)); SeMIS.renderView(); }
       };
-      // 업체 전환 (hq)
-      $$("[data-bl-vendor]").forEach(b => b.onclick = () => { curVendor = b.dataset.blVendor; SeMIS.renderView(); });
       // 항목 추가/수정
       if (canWrite) {
         $$("[data-bl-add]").forEach(b => b.onclick = () => itemForm(vendor, month, b.dataset.blAdd, null));
@@ -354,10 +516,16 @@
 
   /* ─────── 테스트/외부 노출 ─────── */
   window.SemisBilling = {
-    VENDORS, MAINT_CATS, MAX_FILES, list, visible, recsOf, settle, yearSummary,
-    classifyCost, maintRows, monthlySettles, filesOf, itemForm, parseWon, fmtWon,
+    VENDORS, MAINT_CATS, COST_KINDS, KIND_LABEL, GROUP_CATS, MAX_FILES,
+    list, visible, recsOf, settle, yearSummary,
+    classifyCost, groupOf, groupsOf, yearTable, yearsOf,
+    maintRows, monthlySettles, filesOf, itemForm, parseWon, fmtWon,
     setVendor: (v) => { curVendor = v; },
-    setMonth: (m) => { curMonth = m; },
-    get month() { return curMonth; }
+    setMonth: (m) => { curMonth = m; curYear = Number(String(m).slice(0, 4)); },
+    setView: (v) => { curView = v; },
+    setYear: (y) => { curYear = Number(y); },
+    get month() { return curMonth; },
+    get view() { return curView; },
+    get year() { return curYear; }
   };
 })();

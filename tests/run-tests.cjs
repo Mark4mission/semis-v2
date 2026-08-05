@@ -4041,6 +4041,171 @@ function makeFetchStub(server) {
     eq(r.fileUrl, "https://x/2.pdf", "구버전 필드 첫 첨부 동기화");
   });
 
+  /* ── v2.39: 유지보수비 대장(폭발물흔적탐지장비 비교 현황) 정합 ── */
+  t("BL11 비용 3분류: 소모품 신설 + 자동 판별 우선순위 (소모품 > 수리/부품 > 정기)", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const B = e.w.SemisBilling;
+    eq(B.COST_KINDS.join(","), "정기 유지보수,수리/부품,소모품", "3분류");
+    eq(B.KIND_LABEL["소모품"], "소모품비", "대장 표기 매핑");
+    eq(B.classifyCost({ title: "소모품비 (KJ)" }), "소모품", "소모품비");
+    eq(B.classifyCost({ title: "부품교체건 (KJ)", note: "스메어키트 10, 건조제 45" }), "소모품",
+      "소모품 키워드가 부품 키워드보다 우선");
+    eq(B.classifyCost({ title: "건조제 교체" }), "소모품", "건조제");
+    eq(B.classifyCost({ title: "부품교체건 (KJ)", note: "VDX Board System, BATT Pack" }), "수리/부품", "부품교체");
+    eq(B.classifyCost({ title: "드리프트튜브 부품교체" }), "수리/부품", "기존 규칙 유지");
+    eq(B.classifyCost({ title: "장비 잔존가+수선유지비 (OZ+BX)" }), "정기 유지보수", "기존 규칙 유지");
+    eq(B.classifyCost({ title: "소모품비", costKind: "수리/부품" }), "수리/부품", "명시 override 우선");
+    // 장비 비용 기록(equipment)도 소모품 집계 컬럼 보유
+    eq(e.w.SemisEquipment.COST_KINDS.join(","), "정기 유지보수,수리/부품,소모품,기타", "비용 기록 4구분");
+  });
+
+  t("BL12 장비군(OZ+BX / KJ): 명시값 우선 + 제목 자동 추론 + 카테고리별 적용", () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const B = e.w.SemisBilling;
+    eq(B.groupsOf("ETD 유지보수").join(","), "OZ+BX,KJ", "ETD만 장비군 구분");
+    eq(B.groupsOf("X-ray 유지보수").length, 0, "X-ray는 구분 없음");
+    const g = (o) => B.groupOf(Object.assign({ category: "ETD 유지보수" }, o));
+    eq(g({ equipGroup: "KJ", title: "장비 잔존가+수선유지비 (OZ+BX)" }), "KJ", "명시값 우선");
+    eq(g({ title: "장비 잔존가+수선유지비 (KJ)" }), "KJ", "제목 추론 KJ");
+    eq(g({ title: "부품교체건 (OZ+BX)" }), "OZ+BX", "제목 추론 OZ+BX");
+    eq(g({ title: "에어제타-보안장비 대금청구(26년 3월)" }), "", "추론 불가 → 미지정");
+    eq(B.groupOf({ category: "X-ray 유지보수", title: "정기 (KJ)" }), "", "구분 없는 카테고리는 항상 빈값");
+    // 폼 저장 시 equipGroup 기록, 도급비 카테고리는 저장 안 함
+    e.S.data.billing = []; e.S.saveSilent();
+    B.setVendor("프로에스콤"); B.setMonth("2026-07");
+    go(e, "billing");
+    B.itemForm("프로에스콤", "2026-07", "ETD 유지보수", null);
+    q(e, "#bl-title").value = "소모품비 (KJ)";
+    q(e, "#bl-amount").value = "6,125,000";
+    q(e, "#bl-costkind").value = "소모품";
+    q(e, "#bl-equipgroup").value = "KJ";
+    q(e, "#bl-save").click();
+    const r0 = e.S.data.billing[0];
+    eq(r0.costKind, "소모품", "비용 구분 저장");
+    eq(r0.equipGroup, "KJ", "장비군 저장");
+    B.itemForm("프로에스콤", "2026-07", "보안검색&경비", null);
+    q(e, "#bl-title").value = "도급비";
+    q(e, "#bl-amount").value = "100";
+    q(e, "#bl-save").click();
+    eq(e.S.data.billing[1].equipGroup, "", "도급비는 장비군 미기록");
+  });
+
+  t("BL13 연간 비교표: 대장과 동일한 장비군 × 3분류 매트릭스 (실데이터 대사)", () => {
+    // 유지보수비 대장 2026년 KJ 실측치 (1~7월)
+    const led = [
+      ["2026-01", 5186667, 0, 6125000], ["2026-02", 5170000, 4500000, 0],
+      ["2026-03", 1320000, 6000000, 0], ["2026-04", 1320000, 0, 6125000],
+      ["2026-05", 1320000, 0, 0], ["2026-06", 1320000, 0, 0], ["2026-07", 1320000, 0, 6125000]];
+    const recs = [];
+    led.forEach(([m, b, rp, sp], i) => {
+      if (b) recs.push(blSeed({ id: "y" + i + "b", month: m, title: "장비 잔존가+수선유지비 (KJ)",
+        costKind: "정기 유지보수", equipGroup: "KJ", amount: b }));
+      if (rp) recs.push(blSeed({ id: "y" + i + "r", month: m, title: "부품교체건 (KJ)",
+        costKind: "수리/부품", equipGroup: "KJ", amount: rp }));
+      if (sp) recs.push(blSeed({ id: "y" + i + "s", month: m, title: "소모품비 (KJ)",
+        costKind: "소모품", equipGroup: "KJ", amount: sp }));
+    });
+    // 장비군 미지정 + 도급비(집계 제외) 혼입 케이스
+    recs.push(blSeed({ id: "yx", month: "2026-02", title: "구분불명 청구", amount: 7, costKind: "", equipGroup: "" }));
+    recs.push(blSeed({ id: "yp", month: "2026-02", category: "보안검색&경비", title: "도급비", amount: 99999999 }));
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.billing = recs; return d; })();
+    const e = makeEnv({ preData: pre });
+    loginAs(e, "hq");
+    const B = e.w.SemisBilling;
+    const t2 = B.yearTable("프로에스콤", 2026);
+    eq(t2.category, "ETD 유지보수", "기본 카테고리");
+    eq(t2.keys.join(","), "OZ+BX,KJ,미지정", "장비군 + 미지정 버킷");
+    eq(t2.months.length, 12, "12개월 고정");
+    // 대장 값 대사
+    led.forEach(([m, b, rp, sp]) => {
+      const c = t2.months[Number(m.slice(5, 7)) - 1].cells["KJ"];
+      eq(c.base, b, m + " 잔존가+수선유지비");
+      eq(c.repair, rp, m + " 부품교체·수리비");
+      eq(c.supply, sp, m + " 소모품비");
+      eq(c.sub, rp + sp, m + " 실비 소계 ②");
+      eq(c.total, b + rp + sp, m + " 합계 ①+②");
+    });
+    eq(t2.totals["KJ"].base, 16956667, "대장 H25 잔존가 합계");
+    eq(t2.totals["KJ"].repair, 10500000, "대장 I25 부품교체 합계");
+    eq(t2.totals["KJ"].supply, 18375000, "대장 J25 소모품 합계");
+    eq(t2.totals["KJ"].total, 45831667, "대장 L25 합계");
+    eq(t2.totals["OZ+BX"].total, 0, "2026년 OZ+BX 없음");
+    eq(t2.totals["미지정"].total, 7, "미지정 버킷 분리");
+    eq(t2.grand, 45831674, "총계(도급비 미포함)");
+    eq(B.yearsOf("프로에스콤").join(","), "2026", "청구 입력 연도 목록");
+  });
+
+  t("BL14 연간 비교표 화면: 뷰 전환 + 3단 헤더 + 연도 이동", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.billing = [
+        blSeed({ id: "v1", month: "2026-03", title: "장비 잔존가+수선유지비 (KJ)", amount: 1320000,
+          costKind: "정기 유지보수", equipGroup: "KJ" }),
+        blSeed({ id: "v2", month: "2026-03", title: "부품교체건 (KJ)", amount: 6000000,
+          costKind: "수리/부품", equipGroup: "KJ" }),
+        blSeed({ id: "v3", month: "2025-01", title: "소모품비 (OZ+BX)", amount: 14500000,
+          costKind: "소모품", equipGroup: "OZ+BX" })];
+      return d; })();
+    const e = makeEnv({ preData: pre });
+    loginAs(e, "hq");
+    const B = e.w.SemisBilling;
+    B.setVendor("프로에스콤"); B.setMonth("2026-03"); B.setView("month");
+    go(e, "billing");
+    ok(q(e, '[data-bl-view="year"]'), "연간 비교표 전환 버튼");
+    ok(q(e, "#bl-cur-month"), "월별 뷰 기본");
+    // 항목 카드에 장비군·비용구분 배지
+    ok(qa(e, ".bl-item .bl-item-tag").some(x => x.textContent === "KJ"), "장비군 배지");
+    ok(qa(e, ".bl-item .bl-item-tag").some(x => x.textContent === "수리/부품"), "비용 구분 배지");
+    // 연간 뷰 전환
+    q(e, '[data-bl-view="year"]').click();
+    eq(B.view, "year", "뷰 상태 전환");
+    ok(!q(e, "#bl-cur-month"), "월 선택기 비노출");
+    const tb = q(e, ".bl-yr-tbl");
+    ok(tb, "연간 비교표 렌더");
+    eq(qa(e, ".bl-yr-tbl thead tr").length, 3, "대장과 동일한 3단 헤더");
+    eq(qa(e, ".bl-yr-tbl tbody tr").length, 13, "12개월 + 합계행");
+    // 2026년은 KJ만 청구 → OZ+BX 열 생략 (5열 + 월 = 6열, 단일 장비군이라 총계열 없음)
+    eq(qa(e, ".bl-yr-tbl tbody tr")[0].children.length, 6, "청구 없는 장비군 열 생략");
+    ok(/열 생략: OZ\+BX/.test(q(e, ".card").textContent), "생략 안내 문구");
+    ok(/부품교체 및/.test(tb.textContent), "부품교체 및 수리비 열");
+    ok(/소모품비/.test(tb.textContent), "소모품비 열");
+    ok(/6,000,000/.test(tb.textContent), "3월 부품교체 반영");
+    ok(/7,320,000/.test(tb.textContent), "3월 합계 ①+②");
+    // 연도 이동 (2026 → 2025)
+    q(e, "#bl-yprev").click();
+    eq(B.year, 2025, "연도 이동");
+    ok(/14,500,000/.test(q(e, ".bl-yr-tbl").textContent), "2025년 소모품비 표시");
+    B.setView("month");
+  });
+
+  t("BL15 비용 기록 탭: 소모품 컬럼 집계 + 청구 연동 장비군 표기", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.billing = [
+        blSeed({ id: "s1", month: "2026-04", title: "장비 잔존가+수선유지비 (KJ)", amount: 1320000,
+          costKind: "정기 유지보수", equipGroup: "KJ" }),
+        blSeed({ id: "s2", month: "2026-04", title: "소모품비 (KJ)", amount: 6125000,
+          costKind: "소모품", equipGroup: "KJ" })];
+      return d; })();
+    const e = makeEnv({ preData: pre });
+    loginAs(e, "hq");
+    const yc = e.w.SemisEquipment.yearCosts(2026);
+    eq(yc.byM[4]["정기 유지보수"], 1320000, "4월 정기");
+    eq(yc.byM[4]["소모품"], 6125000, "4월 소모품");
+    eq(yc.byM[4]["수리/부품"], 0, "4월 수리부품 없음");
+    eq(yc.total, 7445000, "연간 합계");
+    eq((yc.autoRows.find(r => r.id === "bl:s2") || {}).equipGroup, "KJ", "연동 행에 장비군 전달");
+    e.w.SemisEquipment.setTab("costs");
+    e.w.SemisEquipment.setCostYear(2026);
+    go(e, "equipment");
+    const body = q(e, "#eq-body").textContent;
+    ok(/소모품/.test(body), "소모품 컬럼 표시");
+    ok(/6,125,000/.test(body), "소모품 금액 집계");
+    ok(qa(e, "#eq-cost-chart title").some(x => /ETD 소모품/.test(x.textContent)), "차트 소모품 스택");
+    e.w.SemisEquipment.setTab("list");
+  });
+
   /* ══════════ [CO] 이수증 선택지 관리 (v2.17) ══════════ */
   t("CO01 이수증 선택지 관리: certOpts 시드/동기화 + 추가·삭제 + 기존 데이터 호환", () => {
     const e = makeEnv();

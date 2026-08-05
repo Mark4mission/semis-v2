@@ -1014,6 +1014,19 @@ a.ct-tel:hover { color: var(--primary); }
 .bl-sum-tbl td.r { text-align: right; white-space: nowrap; }
 .bl-sum-tbl .bl-deduct td { color: var(--danger, #dc2626); }
 .bl-sum-tbl .bl-net td { border-top: 2px solid var(--border); font-size: .95rem; }
+/* v2.39 — 유지보수비 대장(3분류 × 장비군) */
+.bl-item-tag { flex: 0 0 auto; font-size: .66rem; }
+.bl-yr-tbl { font-size: .8rem; border-collapse: collapse; width: 100%; }
+.bl-yr-tbl th, .bl-yr-tbl td { border: 1px solid var(--border); padding: 5px 7px; white-space: nowrap; }
+.bl-yr-tbl thead th { background: var(--bg-2, #f8fafc); font-weight: 700; font-size: .74rem; text-align: center; line-height: 1.25; }
+.bl-yr-tbl td { text-align: right; }
+.bl-yr-tbl td.bl-yr-mon { text-align: center; color: var(--text-2); font-weight: 600; }
+.bl-yr-tbl td.bl-yr-sub { background: var(--bg-2, #f8fafc); }
+.bl-yr-tbl td.bl-yr-tot { font-weight: 700; }
+.bl-yr-tbl td.bl-yr-grand { font-weight: 800; color: var(--primary); background: var(--bg-2, #f8fafc); }
+.bl-yr-tbl tr.bl-yr-sum td { border-top: 2px solid var(--text-3); font-weight: 800; background: var(--bg-2, #f8fafc); }
+.bl-yr-tbl th.bl-yr-gsep, .bl-yr-tbl td.bl-yr-gsep { border-left: 2px solid var(--text-3); }
+.bl-yr-tbl td.bl-yr-zero { color: var(--text-3); }
 
 /* ═══════ 전역 통합 검색 (v2.18) ═══════ */
 .hdr-search {

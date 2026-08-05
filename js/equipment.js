@@ -33,7 +33,8 @@
   const ST_BADGE = { "정상": "badge-green", "주의": "badge-amber", "점검필요": "badge-amber", "고장": "badge-red", "수리중": "badge-blue", "폐기": "badge-gray" };
   const LOG_KINDS = ["점검", "고장", "수리", "기타"];
   const LOG_BADGE = { "점검": "badge-blue", "고장": "badge-red", "수리": "badge-green", "기타": "badge-gray" };
-  const COST_KINDS = ["정기 유지보수", "수리/부품", "기타"];
+  /* v2.39: 유지보수비 대장 3분류(정기·수리/부품·소모품) + 기타(수동 기록 전용) */
+  const COST_KINDS = ["정기 유지보수", "수리/부품", "소모품", "기타"];
 
   const todayISO = () => new Date().toISOString().slice(0, 10);
   function addMonths(dateStr, months) {
@@ -244,7 +245,7 @@
     const excluded = all.filter(c => isDupManual(c, autoRows));
     const rows = all.filter(c => excluded.indexOf(c) < 0);
     const byM = {};
-    for (let i = 1; i <= 12; i++) byM[i] = { "정기 유지보수": 0, "수리/부품": 0, "기타": 0, total: 0 };
+    for (let i = 1; i <= 12; i++) byM[i] = { "정기 유지보수": 0, "수리/부품": 0, "소모품": 0, "기타": 0, total: 0 };
     const addRow = (c) => {
       const mo = Number(String(c.ym || "").slice(5, 7));
       if (!byM[mo]) return;
@@ -706,20 +707,20 @@
     return "기타/수동";
   }
   function costChartHTML(yc) {
-    // 장비별 막대 + 성격별 스택: 아래 = 정기 유지보수(ETD 파랑/X-ray 녹색), 위 = 수리/부품(주황), 기타 성격 = 회색
+    // 장비별 막대 + 성격별 스택: 아래 = 정기 유지보수(ETD 파랑/X-ray 녹색), 위 = 수리/부품(주황) → 소모품(보라) → 기타(회색)
     const GROUPS = [["ETD", "var(--primary)"], ["X-ray", "var(--success)"], ["기타/수동", "var(--text-3)"]];
-    const REPAIR_COL = "var(--warning)", ETC_COL = "var(--text-3)";
-    const kindKey = (k) => k === "정기 유지보수" ? "maint" : k === "수리/부품" ? "repair" : "etc";
+    const REPAIR_COL = "var(--warning)", SUPPLY_COL = "var(--purple, #8b5cf6)", ETC_COL = "var(--text-3)";
+    const kindKey = (k) => k === "정기 유지보수" ? "maint" : k === "수리/부품" ? "repair" : k === "소모품" ? "supply" : "etc";
     const byM = {};
     for (let i = 1; i <= 12; i++) {
       byM[i] = {};
-      GROUPS.forEach(([g]) => { byM[i][g] = { maint: 0, repair: 0, etc: 0 }; });
+      GROUPS.forEach(([g]) => { byM[i][g] = { maint: 0, repair: 0, supply: 0, etc: 0 }; });
     }
     yc.rows.concat(yc.autoRows || []).forEach(r => {
       const mo = Number(String(r.ym || "").slice(5, 7));
       if (byM[mo]) byM[mo][costGroupOf(r)][kindKey(r.kind)] += Number(r.amount) || 0;
     });
-    const gTotal = (c) => c.maint + c.repair + c.etc;
+    const gTotal = (c) => c.maint + c.repair + c.supply + c.etc;
     const vals = [];
     for (let i = 1; i <= 12; i++) vals.push(byM[i]);
     const used = GROUPS.filter(([g]) => vals.some(m => gTotal(m[g])));
@@ -729,6 +730,7 @@
     const bw = Math.min(18, (slot - 10) / used.length);
     const y = (v) => top + (H - top - bot) * (1 - v / max);
     const anyRepair = vals.some(m => used.some(([g]) => m[g].repair));
+    const anySupply = vals.some(m => used.some(([g]) => m[g].supply));
     const anyEtc = vals.some(m => used.some(([g]) => g !== "기타/수동" && m[g].etc));
     // 막대 상단 값 라벨 (백만원 단위 — 0.05M 미만은 생략)
     const lblOf = (v) => {
@@ -744,8 +746,9 @@
         const x = (x0 + j * bw).toFixed(1);
         const cx = (x0 + j * bw + (bw - 1.5) / 2).toFixed(1);
         let acc = 0;
-        // [값, 색, 라벨] — 아래부터 정기 → 수리/부품 → 기타
-        const rects = [[c.maint, col, g + " 정기"], [c.repair, REPAIR_COL, g + " 수리/부품"], [c.etc, ETC_COL, g + " 기타"]]
+        // [값, 색, 라벨] — 아래부터 정기 → 수리/부품 → 소모품 → 기타
+        const rects = [[c.maint, col, g + " 정기"], [c.repair, REPAIR_COL, g + " 수리/부품"],
+                       [c.supply, SUPPLY_COL, g + " 소모품"], [c.etc, ETC_COL, g + " 기타"]]
           .map(([v, scol, lb]) => {
             if (!v) return "";
             const y1 = y(acc + v), h = y(acc) - y(acc + v);
@@ -759,6 +762,7 @@
     }).join("");
     const legend = used.filter(([g]) => g !== "기타/수동").map(([g, col]) => [g + " 정기", col])
       .concat(anyRepair ? [["수리/부품", REPAIR_COL]] : [])
+      .concat(anySupply ? [["소모품", SUPPLY_COL]] : [])
       .concat(used.some(([g]) => g === "기타/수동") || anyEtc ? [["기타/수동", ETC_COL]] : []);
     return `
       <div style="margin:4px 0 10px">
@@ -781,6 +785,7 @@
       monthRows.push(`<tr><td>${i}월</td>
         <td style="text-align:right">${r["정기 유지보수"] ? fmtWon(r["정기 유지보수"]) : "-"}</td>
         <td style="text-align:right">${r["수리/부품"] ? fmtWon(r["수리/부품"]) : "-"}</td>
+        <td style="text-align:right">${r["소모품"] ? fmtWon(r["소모품"]) : "-"}</td>
         <td style="text-align:right">${r["기타"] ? fmtWon(r["기타"]) : "-"}</td>
         <td style="text-align:right"><b>${r.total ? fmtWon(r.total) : "-"}</b></td></tr>`);
     }
@@ -796,7 +801,8 @@
         : (canWrite ? `data-ct="${esc(c.id)}" title="클릭하여 수정"` : "");
       return `<div style="display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:.84rem;${(auto || canWrite) ? "cursor:pointer;" : ""}${excl ? "opacity:.55" : ""}" ${attr}>
         <span style="color:var(--text-3);white-space:nowrap">${esc(c.ym)}</span>
-        <span class="badge ${c.kind === "정기 유지보수" ? "badge-blue" : c.kind === "수리/부품" ? "badge-red" : "badge-gray"}">${esc(c.kind)}</span>
+        <span class="badge ${c.kind === "정기 유지보수" ? "badge-blue" : c.kind === "수리/부품" ? "badge-red" : c.kind === "소모품" ? "badge-amber" : "badge-gray"}">${esc(c.kind)}</span>
+        ${c.equipGroup ? `<span class="badge badge-gray" style="font-size:.64rem">${esc(c.equipGroup)}</span>` : ""}
         ${auto ? '<span class="badge badge-amber" style="font-size:.64rem">🧾 청구 연동</span>' : ""}
         ${excl ? '<span class="badge badge-gray" style="font-size:.64rem">집계 제외 · 청구 중복</span>' : ""}
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${excl ? "text-decoration:line-through" : ""}">${esc(c.vendor || "-")}${c.memo ? " · " + esc(c.memo) : ""}${c.serial ? ` <span style="color:var(--text-3)">(${esc(c.serial)})</span>` : ""}</span>
@@ -814,11 +820,13 @@
       ${costChartHTML(yc)}
       <div class="table-wrap"><table class="tbl tbl-cap" style="font-size:.84rem;--cap:1000px"><thead><tr>
         <th style="width:56px">월</th><th style="text-align:right">정기 유지보수</th>
-        <th style="text-align:right">수리/부품</th><th style="text-align:right">기타</th><th style="text-align:right">계</th></tr></thead>
+        <th style="text-align:right">수리/부품</th><th style="text-align:right">소모품</th>
+        <th style="text-align:right">기타</th><th style="text-align:right">계</th></tr></thead>
         <tbody>${monthRows.join("")}
         <tr style="font-weight:700;border-top:2px solid var(--border)"><td>합계</td>
           <td style="text-align:right">${fmtWon(sum("정기 유지보수"))}</td>
           <td style="text-align:right">${fmtWon(sum("수리/부품"))}</td>
+          <td style="text-align:right">${fmtWon(sum("소모품"))}</td>
           <td style="text-align:right">${fmtWon(sum("기타"))}</td>
           <td style="text-align:right">${fmtWon(yc.total)}</td></tr></tbody></table></div>
       <div style="font-size:.78rem;font-weight:700;color:var(--text-3);margin:12px 0 4px">기록 상세
@@ -1036,7 +1044,7 @@
 
   /* ─────── 테스트/외부 노출 ─────── */
   window.SemisEquipment = {
-    TYPES, STATUSES, TYPE_LIFE, addMonths,
+    TYPES, STATUSES, TYPE_LIFE, COST_KINDS, addMonths,
     lifeBase, lifeYearsOf, replaceDue, isLifeDue,
     stats, list, yearCosts, renderDash, loadCares,
     setFilter: (f) => { stFilter = f; }, setQuery: (q) => { query = String(q || ""); },
