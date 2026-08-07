@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.39.1";
+  const VERSION = "2.40.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -134,6 +134,7 @@ const SeMIS = (() => {
     return [
       m("dashboard", "대시보드", "🏠", "dashboard"),
       m("schedule", "일정관리", "📅", "schedule", "mgr"),
+      m("minutes", "회의록 게시판", "🗒️", "minutes", "mgr"),
       m("kpi", "KPI 현황", "📈", "kpi", "hq"),
 
       g("grp-level", "항공보안등급"),
@@ -231,6 +232,8 @@ const SeMIS = (() => {
       contracts: [],                  // v2.8: 계약서 관리
       equipMaint: { contracts: [], costs: [] }, // v2.10: 장비 유지보수 계약/월별 비용 (SeMIS 고유)
       council: [],                    // v2.24: 보안장비 협의회 회의록 (KPI C6-1 기반)
+      minutes: [],                    // v2.40: 회의록 게시판 (폴더 분류 · 참석자 QR 서명)
+      minuteFolders: [],              // v2.40: 회의록 폴더(그룹) — normalize가 기본 폴더 시드
       regulations: [],                // v2.12: 규정 관리 (국제/국가 + 자체, PDF/링크 + 개정 아이디어 노트)
       policy: { ko: null, en: null }, // v2.14: 에어제타 보안정책 (국문/영문 PDF)
       certs: [],                      // v2.15: 교육 이수증 관리 (외부기관 보안책임자/감독자 등)
@@ -551,6 +554,16 @@ const SeMIS = (() => {
       const mn = DATA.menus.find(m => m && m.id === "equip-council" && m.type === "link");
       if (mn && mn.label === "보안장비 협의체") mn.label = "보안장비 협의체 (구버전)";
     }
+    // v2.40: 회의록 게시판 — 데이터 보정 + 기본 폴더 시드 + 메뉴 자동 삽입(일정관리 다음, mgr 열람)
+    if (!Array.isArray(DATA.minutes)) DATA.minutes = [];
+    if (!Array.isArray(DATA.minuteFolders)) DATA.minuteFolders = [];
+    if (!DATA.minuteFolders.length && typeof window !== "undefined" && window.SemisMinutes)
+      DATA.minuteFolders = window.SemisMinutes.seedFolders();
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "minutes")) {
+      const sc = DATA.menus.find(m => m && m.type === "module" && m.module === "schedule");
+      DATA.menus.push({ id: "minutes", seq: sc ? (sc.seq || 0) + 0.2 : 2.2, type: "module",
+        label: "회의록 게시판", icon: "🗒️", module: "minutes", vis: "mgr", parent: null });
+    }
     /* v2.34: 보안감독자 현황 / 지점 보안담당자 — 구글시트 링크 → 내부 모듈 이관.
        최초 사용 시 시트 내용 시드 + 메뉴 교체(기존 링크 메뉴 제거, idempotent). */
     if (!Array.isArray(DATA.supervisors)) DATA.supervisors = seedSupervisors();
@@ -695,6 +708,14 @@ const SeMIS = (() => {
     if (!/^\d{6}$/.test(code)) return null;
     return (DATA.cars || []).find(c => c && signCodeFor(c) === code) || null;
   }
+  // v2.40: 회의록 게시판 참석 서명 — 회의록 id 기반 6자리 코드 (QR 접속도 동일 코드)
+  function signMinuteFor(pw) {
+    const code = String(pw || "").trim();
+    if (!/^\d{6}$/.test(code)) return null;
+    const list = (DATA.minutes || []).filter(c => c && signCodeFor(c) === code);
+    if (!list.length) return null;
+    return list.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))[0];
+  }
   function signLogin(pw) {
     const m = signMeetingFor(pw);
     if (m) {
@@ -708,7 +729,31 @@ const SeMIS = (() => {
       sessionStorage.setItem(SS_SESSION, JSON.stringify({ uid: "__signer__", signCarId: car.id, ts: Date.now() }));
       return currentUser;
     }
+    const mi = signMinuteFor(pw);
+    if (mi) {
+      currentUser = { id: "__signer__", name: "회의록 참석 서명", role: "signer", signMinuteId: mi.id };
+      sessionStorage.setItem(SS_SESSION, JSON.stringify({ uid: "__signer__", signMinuteId: mi.id, ts: Date.now() }));
+      return currentUser;
+    }
     return null;
+  }
+  /* v2.40: QR 접속 — 주소 #/sign/123456 로 들어오면 코드 입력 없이 서명 화면으로.
+     첫 방문 기기는 공용 DB 동기화 전이라 회의 정보가 없을 수 있어 잠시 재시도한다. */
+  function signCodeFromHash() {
+    const mm = /^#\/sign\/(\d{6})$/.exec(String(location.hash || ""));
+    return mm ? mm[1] : "";
+  }
+  /* QR에 넣을 접속 주소 — 현재 배포 주소를 그대로 사용(로컬 테스트·사내망에서도 동작) */
+  function signUrlFor(rec) {
+    const code = signCodeFor(rec);
+    let base = "https://semis.pe.kr/";
+    try {
+      const l = location;
+      if (l && l.protocol && l.protocol.indexOf("http") === 0)
+        base = l.origin + l.pathname.replace(/index\.html$/i, "");
+    } catch (e) { /* 파일 프로토콜 등 — 기본 주소 사용 */ }
+    if (base.slice(-1) !== "/") base += "/";
+    return base + "#/sign/" + code;
   }
   function restoreSession() {
     try {
@@ -719,6 +764,12 @@ const SeMIS = (() => {
           const car = (DATA.cars || []).find(c => c && c.id === s.signCarId);
           if (!car) return false;
           currentUser = { id: "__signer__", name: "수검조직 서명", role: "signer", signCarId: car.id };
+          return true;
+        }
+        if (s.signMinuteId) {
+          const mi = (DATA.minutes || []).find(c => c && c.id === s.signMinuteId);
+          if (!mi) return false;
+          currentUser = { id: "__signer__", name: "회의록 참석 서명", role: "signer", signMinuteId: mi.id };
           return true;
         }
         const m = (DATA.council || []).find(c => c && c.id === s.signMeetingId);
@@ -829,7 +880,7 @@ const SeMIS = (() => {
     kpi: "wide", policy: "wide", dashboard: "wide",
     passes: "mid", branches: "mid", "contracts-mgmt": "mid", training: "mid",
     supervisors: "mid", "stn-officers": "mid",
-    certs: "mid", contacts: "mid", council: "mid", billing: "mid",
+    certs: "mid", contacts: "mid", council: "mid", billing: "mid", minutes: "mid",
     equipment: "mid", settings: "mid", "regs-intl": "mid", "regs-own": "mid", vault: "mid"
   };
   function applyViewWidth(view, route) {
@@ -858,12 +909,12 @@ const SeMIS = (() => {
       return;
     }
     if (currentUser && currentUser.role === "signer") {
-      // v2.26/v2.29.2: 서명 참석자 — 협의회(signMeetingId) 또는 CAR 접수확인(signCarId) 화면만 접근
-      const isCar = !!currentUser.signCarId;
+      // v2.26/v2.29.2/v2.40: 서명 참석자 — 협의회·CAR 접수확인·회의록 서명 화면만 접근
+      const sRoute = currentUser.signCarId ? "carcap" : (currentUser.signMinuteId ? "minutes" : "council");
       view.classList.remove("view-wide"); view.classList.remove("view-mid"); // 서명 화면은 기본 폭(모바일 중심)
-      const def = isCar ? (modules.carcap || modules.dashboard) : (modules.council || modules.dashboard);
+      const def = modules[sRoute] || modules.dashboard;
       def.render(view);
-      highlightNav(isCar ? "carcap" : "council");
+      highlightNav(sRoute);
       $("#sidebar").classList.remove("open");
       $("#sidebar-backdrop").classList.remove("show");
       $("#main").scrollTop = 0;
@@ -952,13 +1003,14 @@ const SeMIS = (() => {
       return;
     }
     if (currentUser && currentUser.role === "signer") {
-      // v2.26/v2.29.2: 서명 참석자 — 협의회 또는 CAR 접수확인 서명 메뉴만 표시
-      const isCar = !!currentUser.signCarId;
+      // v2.26/v2.29.2/v2.40: 서명 참석자 — 협의회·CAR 접수확인·회의록 서명 메뉴만 표시
+      const isCar = !!currentUser.signCarId, isMin = !!currentUser.signMinuteId;
       const b = document.createElement("button");
       b.className = "nav-item active";
-      b.dataset.route = isCar ? "carcap" : "council";
+      b.dataset.route = isCar ? "carcap" : (isMin ? "minutes" : "council");
       b.innerHTML = isCar ? '<span class="nav-ico">📋</span><span>시정조치 · 접수확인 서명</span>'
-        : '<span class="nav-ico">🤝</span><span>보안장비 협의회 · 서명</span>';
+        : (isMin ? '<span class="nav-ico">🗒️</span><span>회의록 · 참석 서명</span>'
+          : '<span class="nav-ico">🤝</span><span>보안장비 협의회 · 서명</span>');
       b.onclick = () => renderView();
       box.appendChild(b);
       return;
@@ -1135,8 +1187,36 @@ const SeMIS = (() => {
     window.addEventListener("hashchange", () => { if (currentUser) renderView(); });
 
     // 세션 복원
-    if (restoreSession()) enterApp();
-    else setTimeout(() => $("#login-pw") && $("#login-pw").focus(), 100);
+    if (restoreSession()) { enterApp(); return; }
+
+    /* v2.40: QR 접속(#/sign/코드) — 암호 입력 없이 바로 서명 화면.
+       처음 접속한 휴대폰은 공용 DB 동기화가 끝나야 회의 정보가 생기므로
+       최대 12초 동안 짧게 재시도한 뒤, 실패하면 코드를 채워둔 로그인 화면을 남긴다. */
+    const qrCode = signCodeFromHash();
+    if (qrCode) {
+      const pwEl = $("#login-pw"), errEl = $("#login-error");
+      if (pwEl) pwEl.value = qrCode;
+      if (errEl) errEl.textContent = "회의 정보를 불러오는 중입니다…";
+      let tries = 0;
+      const tryIn = () => {
+        const u = signLogin(qrCode);
+        if (u) {
+          if (errEl) errEl.textContent = "";
+          location.hash = "";
+          enterApp();
+          toast("서명 화면입니다. 본인 이름을 찾아 서명해 주세요.");
+          return;
+        }
+        if (++tries >= 16) {
+          if (errEl) errEl.textContent = "회의 정보를 찾지 못했습니다. [로그인]을 눌러 다시 시도해 주세요.";
+          return;
+        }
+        setTimeout(tryIn, 750);
+      };
+      setTimeout(tryIn, 300);
+      return;
+    }
+    setTimeout(() => $("#login-pw") && $("#login-pw").focus(), 100);
   }
 
   /* ─────────── 공개 API ─────────── */
@@ -1147,7 +1227,7 @@ const SeMIS = (() => {
     get user() { return currentUser; },
     allUsers, isAdmin, roleRank, canEdit, canDelete, canSee,
     VENDOR_ACCESS, vendorAccess, vendorHome,
-    pwHash, sha256, signCodeFor, signCarFor,
+    pwHash, sha256, signCodeFor, signCarFor, signMinuteFor, signCodeFromHash, signUrlFor,
     renderNav, renderHeader, renderSecBadge, renderView,
     openModal, closeModal, confirmModal, toast,
     $, $$, esc, fmtDate, sortedMenus,

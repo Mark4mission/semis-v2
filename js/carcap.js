@@ -244,6 +244,12 @@
 
   // 수검조직 접수확인(이의없음) — 발행+ackDays 이내 원격 서명
   const calcAckDue = (r) => r.issuedDate ? addDays(r.issuedDate, cfg().ackDays) : "";
+  /* v2.40: 접수확인 QR — 6자리 코드를 담은 접속 주소. 주소 타이핑 없이 카메라로 바로 진입 */
+  function ackQr(r) {
+    if (!window.SemisQR || !SeMIS.signUrlFor) return "";
+    try { return SemisQR.svg(SeMIS.signUrlFor(r), { size: 104, ecc: "M", margin: 3 }); }
+    catch (e) { return ""; }
+  }
   function ackInfo(r) {
     const acked = !!(r.signs && r.signs.orgAck);
     const due = calcAckDue(r);
@@ -844,8 +850,9 @@
           <span class="cr-ack-ic">📱</span>
           <div class="cr-ack-body">${ack.acked
             ? `<b>수검조직 접수확인 완료</b> — ${esc((x.signs.orgAck && x.signs.orgAck.name) || "")} · ${esc((ack.at || "").slice(0, 10))} (이의 없음)`
-            : `<b>수검조직 원격 접수확인 대기</b> — 모바일에서 <b>semis.pe.kr</b> 접속 → 코드 <b class="cr-ackcode">${esc(ack.code)}</b> 입력 → 접수확인 서명${ack.due ? ` · 기한 ${esc(ack.due)}${ack.days != null ? ` (${ack.days < 0 ? "D+" + (-ack.days) + " 경과" : "D-" + ack.days})` : ""}` : ""}`}</div>
-          ${!ack.acked ? '<button class="btn btn-ghost btn-sm" id="cd-copycode">📋 코드 복사</button>' : ""}
+            : `<b>수검조직 원격 접수확인 대기</b> — 휴대폰 카메라로 오른쪽 <b>QR</b>을 비추거나, <b>semis.pe.kr</b> 접속 → 코드 <b class="cr-ackcode">${esc(ack.code)}</b> 입력 → 접수확인 서명${ack.due ? ` · 기한 ${esc(ack.due)}${ack.days != null ? ` (${ack.days < 0 ? "D+" + (-ack.days) + " 경과" : "D-" + ack.days})` : ""}` : ""}`}</div>
+          ${!ack.acked ? `<div class="cr-ack-qr">${ackQr(x)}</div>
+            <button class="btn btn-ghost btn-sm" id="cd-copycode">📋 코드 복사</button>` : ""}
         </div>` : ""}
 
         ${timelineHTML(x)}

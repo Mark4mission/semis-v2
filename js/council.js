@@ -160,6 +160,43 @@
     });
   }
 
+  /* ══════════ 참석자 서명 QR (v2.40) ══════════
+     회의별 6자리 코드는 그대로 두고, 같은 코드를 담은 접속 주소를 QR로도 제공.
+     휴대폰에서 주소를 타이핑할 필요 없이 카메라로 스캔하면 서명 화면이 열린다. */
+  function qrSvg(text, px) {
+    if (!window.SemisQR) return "";
+    try { return SemisQR.svg(text, { size: px || 132, ecc: "M", margin: 3 }); }
+    catch (e) { return ""; }
+  }
+  function signBoxHTML(x) {
+    const code = SeMIS.signCodeFor(x), url = SeMIS.signUrlFor(x);
+    const qr = qrSvg(url, 132);
+    return `<div class="mn-signbox">
+      <div class="mn-qr">${qr || '<div class="mn-qr-na">QR 생성 불가</div>'}</div>
+      <div class="mn-signbox-body">
+        <div class="mn-signbox-h">📱 참석자 서명 안내</div>
+        <ol class="mn-signbox-steps">
+          <li>휴대폰 <b>카메라</b>로 왼쪽 QR을 비추면 서명 화면이 바로 열립니다.</li>
+          <li>QR이 안 될 때는 <b>semis.pe.kr</b> 접속 후 암호 <b class="cn-signcode-code">${esc(code)}</b> 입력.</li>
+          <li>명단에서 본인 이름을 선택(없으면 직접 입력)하고 소속·직책 확인 후 서명 — 사전등록은 필수가 아닙니다.</li>
+        </ol>
+        <div class="mn-signbox-act">
+          <span class="cn-signcode-copy" data-copy="${esc(code)}" title="코드 복사">📋 코드 복사</span>
+          <span class="cn-signcode-copy" data-copy="${esc(url)}" data-copy-label="접속 주소" title="주소 복사">🔗 주소 복사</span>
+          <button class="btn btn-ghost btn-sm" id="cn-qr-print">🖨 QR 안내문 인쇄</button>
+        </div>
+      </div></div>`;
+  }
+  /* QR 안내문 A4 인쇄 — 회의록 게시판 모듈의 공용 인쇄 화면을 재사용 */
+  function printQrSheet(x) {
+    if (!window.SemisMinutes || !SemisMinutes.printQrSheet) { toast("QR 안내문을 열 수 없습니다.", true); return; }
+    SemisMinutes.printQrSheet(null, {
+      rec: x, url: SeMIS.signUrlFor(x), code: SeMIS.signCodeFor(x),
+      title: meetTitle(x),
+      sub: ["보안장비 협의회", x.date, x.time, x.place].filter(Boolean).join(" · ")
+    });
+  }
+
   /* ══════════ CARES 고장·수리 이력 동기화 ══════════ */
   const CAUSE_SHORT = { environmental: "환경", mechanical: "기계", human: "인적", other: "기타" };
   const pad2 = (n) => String(n).padStart(2, "0");
@@ -314,10 +351,7 @@
         ${x.scribe ? `<span>✍️ 작성 ${esc(x.scribe)}</span>` : ""}
         <span>👥 참석 ${att.length}명</span>
       </div>
-      ${canWrite() ? `<div class="cn-signcode">
-        <span class="cn-signcode-ic">📱</span>
-        <div>참석자 서명 안내 — 모바일에서 <b>semis.pe.kr</b> 접속 후 암호 <b class="cn-signcode-code">${esc(SeMIS.signCodeFor(x))}</b> 입력 → 본인 이름을 선택(명단에 없으면 직접 입력)하고 소속·직책 확인 후 서명합니다. 사전등록은 필수가 아닙니다. <span class="cn-signcode-copy" data-copy="${esc(SeMIS.signCodeFor(x))}" title="코드 복사">📋 복사</span></div>
-      </div>` : ""}
+      ${canWrite() ? signBoxHTML(x) : ""}
       ${sec("참석자", attHTML)}
       ${sec("안건", richView(x.agendaHtml, x.agenda))}
       ${sec("① 고장·수리·유지보수 사례 근본원인", caseHTML)}
@@ -339,6 +373,7 @@
 
     $("#cn-close").onclick = closeModal;
     $("#cn-print").onclick = () => printMinutes(x.id);
+    if ($("#cn-qr-print")) $("#cn-qr-print").onclick = () => printQrSheet(x);
     decorateLinks("#modal-box");  // 본문 링크 뒤 📋 복사 버튼 삽입
     wireCopies("#modal-box");     // 서명 코드 복사 + 본문 링크 복사 버튼 배선
     if (canWrite()) {
@@ -1054,6 +1089,7 @@
 
   /* ══════════ 테스트/외부 노출 ══════════ */
   window.SemisCouncil = { CATS, stats, all, sorted, nextRound, printMinutes, setSign, renderSigning,
+    signBoxHTML, printQrSheet, qrSvg,
     repairToCase, mergeCaresIntoCases, repairsInPeriod, prevMeetingDate, catNorm,
     ORG_PRESETS, orgToCat, knownPeople, saveSignEntry, propagatePersonInfo };
 })();

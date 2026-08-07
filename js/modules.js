@@ -1105,6 +1105,7 @@
   const FOLDER_LABEL = {
     "regs": "보안규정 파일", "regs-diff": "규정 개정 대비표", "branch-train": "지점 교육 첨부",
     "schedules": "일정 메모 첨부", "council": "협의회 회의록", "council-sign": "협의회 서명",
+    "minutes": "회의록 첨부", "minutes-sign": "회의록 서명",
     "certs": "교육 이수증", "billing": "대금 청구 증빙", "policy": "보안정책 PDF",
     "car-sign": "CAR 서명", "car-att": "CAR 첨부", "notices": "공지 이미지",
     "attach": "공지 첨부", "files": "기타", "": "(루트)"

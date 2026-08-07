@@ -31,6 +31,8 @@ const plJS = read("js/policy.js");
 const ctcJS = read("js/certs.js");
 const blJS = read("js/billing.js");
 const cnclJS = read("js/council.js");
+const qrJS = read("js/qr.js");
+const mnJS = read("js/minutes.js");
 const vtJS = read("js/vault.js");
 const caresJS = read("js/cares.js");
 const newsJS = read("js/news.js");
@@ -72,7 +74,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + slJS + "\n;" + iosaJS + "\n;" + pdJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + chatJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + slJS + "\n;" + iosaJS + "\n;" + pdJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + qrJS + "\n;" + mnJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + chatJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS);
   const S = w.SeMIS;
   if (opts.boot !== false) { S.boot(); if (w.SemisSearch) w.SemisSearch.init(); }
   return { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -2399,7 +2401,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "billing,branches,carCfg,cars,certOpts,certs,contacts,contracts,council,customUsers,equipMaint,equipment,gcal,inspections,kpis,levelHistory,menus,notices,passOwners,passes,policy,pwOverrides,regulations,schedules,stationOfficers,supervisors,trainings,userOverrides,vault");
+    eq(keys, "billing,branches,carCfg,cars,certOpts,certs,contacts,contracts,council,customUsers,equipMaint,equipment,gcal,inspections,kpis,levelHistory,menus,minuteFolders,minutes,notices,passOwners,passes,policy,pwOverrides,regulations,schedules,stationOfficers,supervisors,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -5051,7 +5053,7 @@ function makeFetchStub(server) {
     loginAs(e, "hq");
     go(e, "council");
     q(e, "[data-cn-row]").click();
-    ok(q(e, "#modal-box .cn-signcode"), "hq 상세에 코드 안내");
+    ok(q(e, "#modal-box .mn-signbox"), "hq 상세에 코드 안내");
     const code15 = e.S.signCodeFor(e.S.data.council[0]);
     ok(q(e, "#modal-box").innerHTML.indexOf(code15) >= 0, "서명 코드(6자리) 표시");
     ok(q(e, "#modal-box .cn-signcode-copy"), "코드 복사 버튼");
@@ -5063,7 +5065,7 @@ function makeFetchStub(server) {
     loginAs(e2, "manager");
     go(e2, "council");
     q(e2, "[data-cn-row]").click();
-    ok(!q(e2, "#modal-box .cn-signcode"), "manager 상세에는 코드 안내 없음");
+    ok(!q(e2, "#modal-box .mn-signbox"), "manager 상세에는 코드 안내 없음");
   });
 
   t("CN19 운영사→운영자 rename + catNorm 하위호환", () => {
@@ -7165,6 +7167,566 @@ function makeFetchStub(server) {
     });
   }
 
+
+  /* ══════════════════════════════════════════════════════
+     [Q] QR 코드 생성기 (js/qr.js)  — v2.40
+     ══════════════════════════════════════════════════════ */
+  {
+    const e = makeEnv();
+    const QR = e.w.SemisQR;
+
+    t("Q01 버전·크기 자동 선택 (byte 모드, ECC M)", () => {
+      const m1 = QR.matrix("A", { ecc: "M" });
+      eq(m1.version, 1, "짧은 문자열 = 버전 1");
+      eq(m1.size, 21, "버전 1 = 21×21");
+      const m2 = QR.matrix("https://semis.pe.kr/#/sign/123456", { ecc: "M" });
+      eq(m2.size, m2.version * 4 + 17, "크기 = 4V+17");
+      ok(m2.version >= 2 && m2.version <= 4, "33자 URL은 버전 2~4 (got v" + m2.version + ")");
+    });
+
+    t("Q02 파인더 패턴 3곳이 규격대로 배치", () => {
+      const m = QR.matrix("https://semis.pe.kr/#/sign/246813", { ecc: "M" });
+      const S = m.size;
+      [[0, 0], [0, S - 7], [S - 7, 0]].forEach(([r0, c0], i) => {
+        ok(m.get(r0, c0) && m.get(r0 + 6, c0 + 6), "파인더" + i + " 모서리 검정");
+        ok(!m.get(r0 + 1, c0 + 1), "파인더" + i + " 흰 링");
+        ok(m.get(r0 + 3, c0 + 3), "파인더" + i + " 중심 검정");
+      });
+      ok(m.get(S - 8, 8), "다크 모듈(항상 검정) 존재");
+      // 타이밍 패턴 — 6행/6열 교대
+      for (let i = 8; i < S - 8; i++) eq(m.get(6, i), i % 2 === 0, "가로 타이밍 " + i);
+    });
+
+    t("Q03 마스크 자동 선택 결과가 결정적 + 유효 범위", () => {
+      const a = QR.matrix("https://semis.pe.kr/#/sign/135790", { ecc: "M" });
+      const b = QR.matrix("https://semis.pe.kr/#/sign/135790", { ecc: "M" });
+      eq(a.mask, b.mask, "같은 입력 → 같은 마스크");
+      ok(a.mask >= 0 && a.mask <= 7, "마스크 0~7");
+      let same = true;
+      for (let r = 0; r < a.size && same; r++) for (let c = 0; c < a.size; c++)
+        if (a.get(r, c) !== b.get(r, c)) { same = false; break; }
+      ok(same, "동일 매트릭스 재현");
+    });
+
+    t("Q04 ECC 레벨을 올리면 같은 내용도 용량이 커진다", () => {
+      const txt = "x".repeat(100);
+      const l = QR.matrix(txt, { ecc: "L" }).version;
+      const h = QR.matrix(txt, { ecc: "H" }).version;
+      ok(h > l, "H 버전(" + h + ") > L 버전(" + l + ")");
+      eq(QR._dataCapacity(1, "L"), 19, "v1-L 데이터 코드워드 19");
+      eq(QR._dataCapacity(1, "M"), 16, "v1-M 16");
+      eq(QR._dataCapacity(1, "H"), 9, "v1-H 9");
+    });
+
+    t("Q05 한글(UTF-8 3바이트) 인코딩", () => {
+      const m = QR.matrix("제3차 항공보안파트 정례회의 참석 서명", { ecc: "M" });
+      ok(m.size >= 25, "한글은 버전이 올라감 (size " + m.size + ")");
+      // 3바이트/자 기준으로 버전이 선택되었는지
+      const bytes = Buffer.from("제3차 항공보안파트 정례회의 참석 서명", "utf8").length;
+      ok(QR._pickVersion(bytes, "M") === m.version, "UTF-8 바이트 기준 버전 선택");
+    });
+
+    t("Q06 용량 초과는 예외 (버전 10 한계)", () => {
+      let err = null;
+      try { QR.matrix("x".repeat(400), { ecc: "H" }); } catch (ex) { err = ex; }
+      ok(err && /너무 깁니다/.test(err.message), "초과 시 한국어 예외");
+    });
+
+    t("Q07 SVG 출력 — 뷰박스·경로·quiet zone", () => {
+      const svg = QR.svg("https://semis.pe.kr/#/sign/123456", { size: 200, margin: 4 });
+      ok(svg.indexOf("<svg") === 0, "svg 태그로 시작");
+      ok(svg.indexOf("</svg>") > 0, "닫힘");
+      ok(/width="200" height="200"/.test(svg), "지정 픽셀 크기");
+      const m = QR.matrix("https://semis.pe.kr/#/sign/123456", { ecc: "M" });
+      const vb = /viewBox="0 0 (\d+) (\d+)"/.exec(svg);
+      eq(Number(vb[1]), m.size + 8, "viewBox = 모듈수 + quiet zone×2");
+      ok(svg.indexOf('shape-rendering="crispEdges"') > 0, "픽셀 경계 선명");
+      ok(/<path d="M[\d ]/.test(svg), "모듈 경로 생성");
+    });
+
+    t("Q08 포맷 정보 BCH(15,5) 값 검증", () => {
+      // ISO/IEC 18004 표준 표 값 (ECC M, 마스크 0~2)
+      eq(QR._formatBits("M", 0), 0x5412, "M/mask0");
+      eq(QR._formatBits("M", 1), 0x5125, "M/mask1");
+      eq(QR._formatBits("L", 0), 0x77C4, "L/mask0");
+      eq(QR._formatBits("H", 0), 0x1689, "H/mask0");
+      eq(QR._formatBits("Q", 6), 0x2EDA, "Q/mask6");
+      eq(QR._formatBits("Q", 7), 0x2BED, "Q/mask7");
+      eq(QR._formatBits("Q", 0), 0x355F, "Q/mask0");
+    });
+
+    t("Q09 dataUri — img src 로 바로 사용 가능", () => {
+      const u = QR.dataUri("https://semis.pe.kr/#/sign/999999");
+      ok(u.indexOf("data:image/svg+xml;charset=utf-8,") === 0, "data URI 접두사");
+      const pre = "data:image/svg+xml;charset=utf-8,";
+      ok(decodeURIComponent(u.slice(pre.length)).indexOf("<svg") === 0, "디코드 시 SVG");
+    });
+  }
+
+  /* ══════════════════════════════════════════════════════
+     [MN] 회의록 게시판 (js/minutes.js) — v2.40
+     ══════════════════════════════════════════════════════ */
+
+  /* 폴더 1개 + 회의록 n건을 가진 환경 */
+  function mnEnv(role) {
+    const e = makeEnv();
+    loginAs(e, role || "hq");
+    return e;
+  }
+  const MF = "mf-part";
+
+  t("MN01 기본 폴더 시드 + 메뉴 자동 등록(일정관리 다음, mgr)", () => {
+    const e = makeEnv();
+    const fs = e.S.data.minuteFolders;
+    ok(Array.isArray(fs) && fs.length >= 5, "기본 폴더 시드 (" + (fs || []).length + "개)");
+    ok(fs.some(f => f.id === "mf-part"), "항공보안파트 정례회의 폴더");
+    const mn = e.S.data.menus.find(m => m.type === "module" && m.module === "minutes");
+    ok(mn, "메뉴 등록");
+    eq(mn.vis, "mgr", "보안관리자 이상 열람");
+    const sc = e.S.data.menus.find(m => m.type === "module" && m.module === "schedule");
+    ok(mn.seq > sc.seq, "일정관리 다음 순서");
+    ok(Array.isArray(e.S.data.minutes), "minutes 배열");
+  });
+
+  t("MN02 폴더별 회차 자동 계산(nextNo)", () => {
+    const e = mnEnv();
+    const M = e.w.SemisMinutes;
+    eq(M.nextNo(MF), 1, "첫 회의는 1차");
+    e.S.data.minutes = [
+      { id: "m1", folder: MF, no: 3, date: "2026-05-01", title: "A" },
+      { id: "m2", folder: MF, no: 7, date: "2026-06-01", title: "B" },
+      { id: "m3", folder: "mf-edu", no: 20, date: "2026-06-02", title: "C" }
+    ];
+    eq(M.nextNo(MF), 8, "같은 폴더 최대+1");
+    eq(M.nextNo("mf-edu"), 21, "폴더별 독립 채번");
+    eq(M.nextNo("mf-agency"), 1, "빈 폴더는 1");
+  });
+
+  t("MN03 draftFrom — 직전 회의에서 제목·장소·주재·참석자·미결 자동 승계", () => {
+    const e = mnEnv();
+    const M = e.w.SemisMinutes;
+    e.S.data.minutes = [{
+      id: "m1", folder: MF, no: 4, date: "2026-06-10", title: "이전 회의",
+      time: "14:00~15:00", place: "3층 회의실", chair: "최상일",
+      attendees: [{ name: "홍길동", org: "항공보안파트", role: "과장", sign: "https://x/s.png" },
+                  { name: "김철수", org: "인천화물팀", role: "대리", sign: "" }],
+      decisions: [{ task: "규정 개정안 검토", owner: "홍길동", due: "2026-06-30", done: false },
+                  { task: "완료된 건", owner: "김철수", due: "", done: true }]
+    }];
+    const d = M.draftFrom({ folder: MF, date: "2026-07-08", inherit: true, carry: true });
+    eq(d.no, 5, "회차 +1");
+    ok(d.title.indexOf("제5차") > 0, "제목 자동 생성: " + d.title);
+    eq(d.place, "3층 회의실", "장소 승계");
+    eq(d.chair, "최상일", "주재 승계");
+    eq(d.time, "14:00~15:00", "시간 승계");
+    eq(d.attendees.length, 2, "참석자 명단 승계");
+    eq(d.attendees[0].sign, "", "서명은 반드시 초기화");
+    eq(d.attendees[0].name, "홍길동", "이름 유지");
+    eq(d.decisions.length, 1, "미완료 결정만 이월");
+    eq(d.decisions[0].task, "규정 개정안 검토", "이월 내용");
+    eq(d.decisions[0].done, false, "이월분은 미완료 상태");
+    eq(d.decisions[0].from, "이전 회의", "이월 출처 표시");
+    eq(d.status, "draft", "신규는 초안");
+    // 승계 끄기
+    const d2 = M.draftFrom({ folder: MF, date: "2026-07-08", inherit: false, carry: false });
+    eq(d2.attendees.length, 0, "승계 해제 시 빈 명단");
+    eq(d2.decisions.length, 0, "이월 해제");
+  });
+
+  t("MN04 목록 렌더 + 폴더 필터 + 통계", () => {
+    const e = mnEnv();
+    e.S.data.minutes = [
+      { id: "m1", folder: MF, no: 1, date: "2026-06-10", title: "정례회의 1차", place: "3층",
+        attendees: [{ name: "홍", org: "A", sign: "u" }], decisions: [{ task: "T", done: false }], status: "final" },
+      { id: "m2", folder: "mf-edu", no: 1, date: "2026-06-11", title: "교육 강평", place: "강당",
+        attendees: [], decisions: [], status: "draft" }
+    ];
+    go(e, "minutes");
+    const view = q(e, "#view");
+    ok(view.textContent.indexOf("회의록 게시판") >= 0, "제목");
+    eq(qa(e, "#mn-body [data-mn-row]").length, 2, "전체 2건");
+    ok(view.textContent.indexOf("정례회의 1차") >= 0 && view.textContent.indexOf("교육 강평") >= 0, "두 건 모두 표시");
+    ok(qa(e, ".mn-fitem").length >= 6, "폴더 사이드 렌더");
+    // 폴더 클릭 → 필터
+    const btn = qa(e, ".mn-fitem").find(b => b.dataset.fid === "mf-edu");
+    btn.click();
+    eq(qa(e, "#mn-body [data-mn-row]").length, 1, "폴더 필터 1건");
+    ok(q(e, "#mn-body").textContent.indexOf("교육 강평") >= 0, "해당 폴더 회의만");
+    // 통계
+    const s = e.w.SemisMinutes.stats();
+    eq(s.total, 2, "총 2건");
+    eq(s.open, 1, "미완료 결정 1건");
+    eq(s.draft, 1, "초안 1건");
+    e.w.SemisMinutes.view.folder = ""; // 상태 초기화
+  });
+
+  t("MN05 검색 — 제목·참석자·결정사항·태그 다중 단어 AND", () => {
+    const e = mnEnv();
+    const M = e.w.SemisMinutes;
+    const rec = { id: "m1", folder: MF, no: 1, date: "2026-06-10", title: "출입증 개선 회의",
+      place: "3층", chair: "최상일", tags: ["출입증", "2026상반기"],
+      attendees: [{ name: "홍길동", org: "항공보안파트", role: "과장" }],
+      decisions: [{ task: "신청서 양식 개정", owner: "김철수", done: false }],
+      body: "출입증 발급 지연 사례 논의" };
+    ok(M.matches(rec, "출입증"), "제목 매칭");
+    ok(M.matches(rec, "홍길동"), "참석자 매칭");
+    ok(M.matches(rec, "양식 개정"), "결정사항 매칭");
+    ok(M.matches(rec, "2026상반기"), "태그 매칭");
+    ok(M.matches(rec, "지연"), "본문 매칭");
+    ok(M.matches(rec, "출입증 홍길동"), "다중 단어 AND");
+    ok(!M.matches(rec, "출입증 존재하지않는말"), "한 단어라도 없으면 제외");
+    ok(M.matches(rec, ""), "빈 검색어는 전체 통과");
+  });
+
+  t("MN06 결정사항 추적 탭 — 미완료 우선 + 기한 초과 표시", () => {
+    const e = mnEnv();
+    e.S.data.minutes = [
+      { id: "m1", folder: MF, no: 1, date: "2026-06-10", title: "회의1",
+        decisions: [{ task: "지난 기한 과제", owner: "홍", due: "2020-01-01", done: false },
+                    { task: "끝난 과제", owner: "김", due: "2026-01-01", done: true }] }
+    ];
+    go(e, "minutes");
+    qa(e, "[data-mn-tab]").find(b => b.dataset.mnTab === "act").click();
+    const body = q(e, "#mn-body");
+    ok(body.textContent.indexOf("지난 기한 과제") >= 0, "미완료 표시");
+    ok(body.innerHTML.indexOf("⚠️") >= 0, "기한 초과 경고");
+    ok(body.textContent.indexOf("미완료 1건") >= 0, "요약 카운트");
+    eq(qa(e, "#mn-body [data-mn-act]").length, 2, "완료분도 함께(후순위)");
+    e.w.SemisMinutes.view.tab = "list";
+  });
+
+  t("MN07 작성 → 저장 → 상세 (자동 채움 값 반영)", () => {
+    const e = mnEnv("hq");
+    go(e, "minutes");
+    q(e, "#mn-add").click();
+    ok(q(e, "#mn-np").textContent.indexOf("제1차") >= 0, "미리보기에 자동 회차");
+    q(e, "#mn-ngo").click();
+    ok(q(e, "#mn-title").value.indexOf("제1차") > 0, "제목 자동 입력");
+    eq(q(e, "#mn-scribe").value, "Thq", "작성자 자동 = 로그인 사용자");
+    q(e, "#mn-title").value = "항공보안파트 제1차 정례회의";
+    q(e, "#mn-date").value = "2026-08-07";
+    q(e, "#mn-place").value = "본사 3층";
+    q(e, "#mn-att-add").click();
+    const row = q(e, "#mn-att .mn-att-row");
+    row.querySelector(".mn-a-name").value = "홍길동";
+    row.querySelector(".mn-a-org").value = "항공보안파트";
+    row.querySelector(".mn-a-role").value = "과장";
+    q(e, "#mn-dec-add").click();
+    const drow = q(e, "#mn-dec .mn-dec-row");
+    drow.querySelector(".mn-d-task").value = "출입증 절차 개선안 작성";
+    drow.querySelector(".mn-d-owner").value = "홍길동";
+    q(e, "#mn-tags").value = "정례, 출입증";
+    q(e, "#mn-save").click();
+    eq(e.S.data.minutes.length, 1, "1건 저장");
+    const x = e.S.data.minutes[0];
+    eq(x.title, "항공보안파트 제1차 정례회의");
+    eq(x.folder, MF, "폴더 기록");
+    eq(x.attendees.length, 1, "참석자 저장");
+    eq(x.attendees[0].name, "홍길동");
+    eq(x.decisions.length, 1, "결정사항 저장");
+    eq(x.status, "draft", "기본 초안");
+    eq(x.tags.join(","), "정례,출입증", "태그 파싱");
+    eq(x.byId, "thq", "작성자 계정 기록");
+    // 상세 열람
+    q(e, "#mn-body [data-mn-row]").click();
+    ok(q(e, "#modal-box").textContent.indexOf("항공보안파트 제1차 정례회의") >= 0, "상세 렌더");
+    ok(q(e, "#modal-box").textContent.indexOf("홍길동") >= 0, "참석자 표");
+    ok(q(e, "#modal-box .mn-signbox"), "서명 QR 안내 박스");
+    ok(q(e, "#modal-box .mn-qr svg"), "QR SVG 삽입");
+    e.S.closeModal();
+  });
+
+  t("MN08 권한 — manager 작성 가능 / 남의 회의록은 수정 불가", () => {
+    const e = mnEnv("manager");
+    e.S.data.minutes = [
+      { id: "mine", folder: MF, no: 1, date: "2026-06-01", title: "내 회의록", byId: "tmanager", attendees: [], decisions: [] },
+      { id: "other", folder: MF, no: 2, date: "2026-06-02", title: "남의 회의록", byId: "someoneelse", attendees: [], decisions: [] }
+    ];
+    go(e, "minutes");
+    ok(q(e, "#mn-add"), "manager도 작성 버튼 노출");
+    qa(e, "#mn-body [data-mn-row]").find(r => r.dataset.mnRow === "mine").click();
+    ok(q(e, "#mn-edit"), "본인 작성분은 수정 가능");
+    ok(q(e, "#modal-box .mn-signbox"), "본인 작성분은 서명 코드 열람");
+    e.S.closeModal();
+    go(e, "minutes");
+    qa(e, "#mn-body [data-mn-row]").find(r => r.dataset.mnRow === "other").click();
+    ok(!q(e, "#mn-edit"), "타인 작성분은 수정 버튼 없음");
+    ok(!q(e, "#modal-box .mn-signbox"), "타인 작성분은 서명 코드 미노출");
+    e.S.closeModal();
+    // hq 는 전체 수정 가능
+    const e2 = mnEnv("hq");
+    e2.S.data.minutes = [{ id: "other", folder: MF, no: 2, date: "2026-06-02", title: "남의 회의록", byId: "x", attendees: [], decisions: [] }];
+    go(e2, "minutes");
+    q(e2, "#mn-body [data-mn-row]").click();
+    ok(q(e2, "#mn-edit"), "hq는 전체 수정 가능");
+    e2.S.closeModal();
+  });
+
+  t("MN09 열람 권한 — user 계정은 메뉴 접근 차단", () => {
+    const e = mnEnv("user");
+    go(e, "minutes");
+    ok(q(e, "#view").textContent.indexOf("회의록 게시판") < 0, "일반 사용자는 대시보드로 우회");
+  });
+
+  t("MN10 차기 회의 → 일정관리 자동 등록·해제", () => {
+    const e = mnEnv("hq");
+    const M = e.w.SemisMinutes;
+    const rec = { id: "mx", folder: MF, no: 3, date: "2026-08-07", title: "정례회의",
+      chair: "최상일", nextDate: "2026-09-04", nextTime: "14:00", nextPlace: "3층 회의실",
+      nextPlan: "하반기 계획 검토", linkCal: true };
+    e.S.data.minutes = [rec];
+    M.syncCalendar(rec);
+    const sid = M.SID("mx");
+    const sc = e.S.data.schedules.find(s => s.id === sid);
+    ok(sc, "일정 생성");
+    eq(sc.start, "2026-09-04", "차기 회의일");
+    eq(sc.time, "14:00", "시간 반영");
+    ok(sc.title.indexOf("제4차") >= 0, "다음 회차 제목: " + sc.title);
+    ok(sc.memo.indexOf("하반기 계획 검토") >= 0, "메모 반영");
+    // 연동 해제
+    rec.linkCal = false;
+    M.syncCalendar(rec);
+    ok(!e.S.data.schedules.some(s => s.id === sid), "연동 해제 시 일정 삭제");
+    // 회의록 삭제 시에도 정리
+    rec.linkCal = true; M.syncCalendar(rec);
+    ok(e.S.data.schedules.some(s => s.id === sid), "재등록");
+    M.removeCalendar("mx");
+    ok(!e.S.data.schedules.some(s => s.id === sid), "회의록 삭제 시 일정 제거");
+  });
+
+  t("MN11 서명 코드·QR 주소 — 결정적이고 회의록마다 다름", () => {
+    const e = mnEnv();
+    const a = { id: "ma1" }, b = { id: "ma2" };
+    const ca = e.S.signCodeFor(a), cb = e.S.signCodeFor(b);
+    ok(/^\d{6}$/.test(ca), "6자리 숫자");
+    ok(ca !== cb, "회의록마다 다른 코드");
+    eq(ca, e.S.signCodeFor({ id: "ma1" }), "결정적");
+    const url = e.S.signUrlFor(a);
+    ok(url.indexOf("#/sign/" + ca) > 0, "주소에 코드 포함: " + url);
+    eq(e.S.signCodeFromHash("#/sign/" + ca), "", "hash 미설정 시 빈 값");
+    e.w.location.hash = "#/sign/" + ca;
+    eq(e.S.signCodeFromHash(), ca, "hash에서 코드 추출");
+    e.w.location.hash = "#/minutes";
+    eq(e.S.signCodeFromHash(), "", "일반 라우트는 미추출");
+  });
+
+  t("MN12 6자리 코드 로그인 → 회의록 서명 화면 (타 모듈 차단)", () => {
+    const e = makeEnv();
+    e.S.data.minutes = [{ id: "ms1", folder: MF, no: 2, date: "2026-08-07", title: "제2차 정례회의",
+      place: "3층", attendees: [{ name: "홍길동", org: "항공보안파트", role: "과장" }], decisions: [] }];
+    const code = e.S.signCodeFor(e.S.data.minutes[0]);
+    submitLogin(e, code);
+    ok(e.S.user && e.S.user.role === "signer", "서명 세션 진입");
+    eq(e.S.user.signMinuteId, "ms1", "대상 회의록 지정");
+    const view = q(e, "#view");
+    ok(view.textContent.indexOf("참석 서명") >= 0, "서명 화면");
+    ok(view.textContent.indexOf("제2차 정례회의") >= 0, "회의 제목");
+    ok(view.textContent.indexOf("홍길동") >= 0, "참석자 목록");
+    ok(q(e, ".cn-sign-list [data-sign]"), "서명 버튼");
+    go(e, "kpi");
+    ok(q(e, "#view").textContent.indexOf("참석 서명") >= 0, "타 모듈로 못 나감");
+    ok(q(e, "#nav-menu").textContent.indexOf("회의록") >= 0, "서명 전용 메뉴만 표시");
+  });
+
+  t("MN13 saveSignEntry — 기존 항목 갱신 / 미등록자 신규 추가 / 정보만 저장", () => {
+    const e = mnEnv();
+    const M = e.w.SemisMinutes;
+    e.S.data.minutes = [{ id: "ms2", folder: MF, no: 1, date: "2026-08-07", title: "T",
+      attendees: [{ name: "홍길동", org: "항공보안파트", role: "과장", sign: "" }], decisions: [] }];
+    const rec = e.S.data.minutes[0];
+    // 명단의 본인 서명
+    M.saveSignEntry("ms2", 0, { name: "홍길동", org: "항공보안파트", role: "차장" }, "https://x/a.png");
+    eq(rec.attendees[0].sign, "https://x/a.png", "서명 저장");
+    eq(rec.attendees[0].role, "차장", "직책 갱신");
+    eq(rec.attendees.length, 1, "행 추가 없음");
+    // 미등록자 직접 입력
+    M.saveSignEntry("ms2", -1, { name: "김철수", org: "인천화물팀", role: "대리" }, "https://x/b.png");
+    eq(rec.attendees.length, 2, "신규 참석자 추가");
+    eq(rec.attendees[1].name, "김철수");
+    // 동명이인 아닌 같은 사람 재서명 → 병합
+    M.saveSignEntry("ms2", -1, { name: "김철수", org: "인천화물팀", role: "과장" }, "https://x/c.png");
+    eq(rec.attendees.length, 2, "동일인은 병합(중복 없음)");
+    eq(rec.attendees[1].sign, "https://x/c.png", "서명 갱신");
+    eq(rec.attendees[1].role, "과장", "직책 갱신");
+    // 정보만 저장 (sign=null) → 기존 서명 유지
+    M.saveSignEntry("ms2", 1, { name: "김철수", org: "인천화물팀", role: "부장" }, null);
+    eq(rec.attendees[1].sign, "https://x/c.png", "기존 서명 유지");
+    eq(rec.attendees[1].role, "부장", "정보만 갱신");
+  });
+
+  await ta("MN14 QR 접속(#/sign/코드) — 암호 입력 없이 서명 화면 자동 진입", async () => {
+    const e = makeEnv({ boot: false });
+    e.S.load();                                   // boot 전 데이터 준비
+    e.S.data.minutes = [{ id: "ms3", folder: MF, no: 1, date: "2026-08-07", title: "QR 회의",
+      attendees: [{ name: "홍길동", org: "A" }], decisions: [] }];
+    e.S.saveSilent();                             // localStorage 반영 (boot 가 다시 읽음)
+    const code = e.S.signCodeFor({ id: "ms3" });
+    e.w.location.hash = "#/sign/" + code;
+    e.S.boot();
+    eq(q(e, "#login-pw").value, code, "코드 자동 입력");
+    ok(q(e, "#login-error").textContent.indexOf("불러오는 중") >= 0, "로딩 안내");
+    await new Promise((res) => setTimeout(res, 700));   // 재시도 타이머(300ms) 경과
+    ok(e.S.user && e.S.user.role === "signer", "자동 서명 세션 진입");
+    eq(e.S.user.signMinuteId, "ms3", "대상 회의록");
+    ok(q(e, "#view").textContent.indexOf("QR 회의") >= 0, "서명 화면 렌더");
+    eq(e.w.location.hash, "", "진입 후 주소에서 코드 제거");
+  });
+
+  t("MN15 회의록 A4 인쇄 — iframe 문서 생성", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "mp1", folder: MF, no: 5, date: "2026-08-07", title: "인쇄 대상 회의",
+      place: "3층", chair: "최상일", scribe: "홍길동", time: "14:00",
+      attendees: [{ name: "홍길동", org: "항공보안파트", role: "과장", sign: "https://x/s.png" }],
+      agenda: "출입증 절차 개선", body: "논의 내용 본문",
+      decisions: [{ task: "양식 개정", owner: "김철수", due: "2026-09-01", done: false }],
+      nextDate: "2026-09-04", tags: ["정례"], status: "final" }];
+    const before = e.w.document.querySelectorAll("iframe").length;
+    e.w.SemisMinutes.printMinute("mp1");
+    const frames = e.w.document.querySelectorAll("iframe");
+    eq(frames.length, before + 1, "인쇄 iframe 생성");
+    const html = frames[frames.length - 1].contentWindow.document.documentElement.innerHTML;
+    ok(html.indexOf("인쇄 대상 회의") >= 0, "제목");
+    ok(html.indexOf("홍길동") >= 0, "참석자");
+    ok(html.indexOf("양식 개정") >= 0, "결정사항");
+    ok(html.indexOf("논의 내용 본문") >= 0, "본문");
+    ok(html.indexOf("A4") >= 0 || html.indexOf("size: A4") >= 0, "A4 용지 설정");
+  });
+
+  t("MN16 QR 안내문 인쇄 — QR·코드·주소 모두 포함", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "mq1", folder: MF, no: 1, date: "2026-08-07", title: "QR 안내 회의",
+      place: "3층", attendees: [], decisions: [] }];
+    const code = e.S.signCodeFor(e.S.data.minutes[0]);
+    const before = e.w.document.querySelectorAll("iframe").length;
+    e.w.SemisMinutes.printQrSheet("mq1");
+    const frames = e.w.document.querySelectorAll("iframe");
+    eq(frames.length, before + 1, "인쇄 iframe 생성");
+    const html = frames[frames.length - 1].contentWindow.document.documentElement.innerHTML;
+    ok(html.indexOf("<svg") >= 0, "QR SVG 포함");
+    ok(html.indexOf(code) >= 0, "6자리 코드 표기");
+    ok(html.indexOf("#/sign/" + code) >= 0, "접속 주소 표기");
+    ok(html.indexOf("QR 안내 회의") >= 0, "회의 제목");
+    ok(html.indexOf("카메라") >= 0, "사용 안내 문구");
+  });
+
+  t("MN17 폴더 관리 — 추가·저장·삭제 시 회의록은 미분류로 보존", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "mf1", folder: "mf-edu", no: 1, date: "2026-06-01", title: "교육 강평", attendees: [], decisions: [] }];
+    go(e, "minutes");
+    q(e, "#mn-folders").click();
+    const n0 = qa(e, "#mn-fl .mn-frow").length;
+    q(e, "#mn-fadd").click();
+    eq(qa(e, "#mn-fl .mn-frow").length, n0 + 1, "폴더 행 추가");
+    const rows = qa(e, "#mn-fl .mn-frow");
+    rows[rows.length - 1].querySelector(".mn-f-name").value = "신규 회의체";
+    rows[rows.length - 1].querySelector(".mn-f-place").value = "5층 대회의실";
+    q(e, "#mn-fsave").click();
+    ok(e.S.data.minuteFolders.some(f => f.name === "신규 회의체"), "새 폴더 저장");
+    const nf = e.S.data.minuteFolders.find(f => f.name === "신규 회의체");
+    eq(nf.place, "5층 대회의실", "기본 장소 저장");
+    // 폴더 삭제 → 회의록 보존 + 미분류
+    q(e, "#mn-folders").click();
+    const eduIdx = qa(e, "#mn-fl .mn-frow").findIndex(r => r.querySelector(".mn-f-name").value === "교육·훈련 강평");
+    qa(e, "#mn-fl [data-fdel]")[eduIdx].click();
+    q(e, "#mn-fsave").click();
+    ok(!e.S.data.minuteFolders.some(f => f.id === "mf-edu"), "폴더 제거");
+    eq(e.S.data.minutes.length, 1, "회의록은 보존");
+    eq(e.w.SemisMinutes.folderName("mf-edu"), "미분류", "없는 폴더는 미분류로 표기");
+    go(e, "minutes");
+    ok(qa(e, ".mn-fitem").some(b => b.dataset.fid === "__none__"), "미분류 항목 노출");
+  });
+
+  t("MN18 전역 검색 연동 — 제목·참석자·결정사항으로 회의록 검색", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "msr1", folder: MF, no: 1, date: "2026-08-07", title: "출입증 개선 회의",
+      place: "3층", attendees: [{ name: "홍길동", org: "항공보안파트" }],
+      decisions: [{ task: "신청서 양식 개정", owner: "김철수", done: false }], tags: ["출입증"] }];
+    const hit = (kw) => e.w.SemisSearch.search(kw).some(r => (r.title || "").indexOf("출입증 개선 회의") >= 0);
+    ok(hit("출입증 개선"), "제목 검색");
+    ok(hit("홍길동"), "참석자 검색");
+    ok(hit("양식 개정"), "결정사항 검색");
+  });
+
+  t("MN19 회의록 삭제 — 연동 일정도 함께 정리", () => {
+    const e = mnEnv("hq");
+    const M = e.w.SemisMinutes;
+    e.S.data.minutes = [{ id: "md1", folder: MF, no: 1, date: "2026-08-07", title: "삭제 대상",
+      attendees: [], decisions: [], nextDate: "2026-09-01", linkCal: true }];
+    M.syncCalendar(e.S.data.minutes[0]);
+    ok(e.S.data.schedules.some(s => s.id === M.SID("md1")), "연동 일정 존재");
+    go(e, "minutes");
+    q(e, "#mn-body [data-mn-row]").click();
+    q(e, "#mn-del").click();
+    q(e, "#modal-box [data-act=ok]").click();
+    eq(e.S.data.minutes.length, 0, "회의록 삭제");
+    ok(!e.S.data.schedules.some(s => s.id === M.SID("md1")), "연동 일정도 삭제");
+  });
+
+  t("MN20 참석자 이름 입력 시 지난 회의 소속·직책 자동 채움", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "mk1", folder: MF, no: 1, date: "2026-06-01", title: "이전",
+      attendees: [{ name: "홍길동", org: "항공보안파트", role: "과장" }], decisions: [] }];
+    const dir = e.w.SemisMinutes.knownPeople();
+    ok(dir.has("홍길동"), "이력 디렉터리 등록");
+    eq(dir.get("홍길동").org, "항공보안파트", "소속 기억");
+    eq(dir.get("홍길동").role, "과장", "직책 기억");
+    // 폼에서 자동 채움 동작
+    go(e, "minutes");
+    q(e, "#mn-add").click(); q(e, "#mn-ninherit").checked = false; q(e, "#mn-ngo").click();
+    q(e, "#mn-att-add").click();
+    const row = q(e, "#mn-att .mn-att-row");
+    const nameEl = row.querySelector(".mn-a-name");
+    nameEl.value = "홍길동";
+    nameEl.dispatchEvent(new e.w.Event("change", { bubbles: true }));
+    eq(row.querySelector(".mn-a-org").value, "항공보안파트", "소속 자동 입력");
+    eq(row.querySelector(".mn-a-role").value, "과장", "직책 자동 입력");
+    e.S.closeModal();
+  });
+
+  t("MN21 협의회 상세 — 6자리 코드 + QR 병행 제공", () => {
+    const e = mnEnv("hq");
+    e.S.data.council = [{ id: "cq1", round: 9, date: "2026-08-07", place: "B동",
+      attendees: [], cases: [], actions: [], files: [] }];
+    go(e, "council");
+    q(e, "[data-cn-row]").click();
+    const box = q(e, "#modal-box");
+    ok(box.querySelector(".mn-signbox"), "서명 안내 박스");
+    ok(box.querySelector(".mn-qr svg"), "QR 코드 삽입");
+    ok(box.innerHTML.indexOf(e.S.signCodeFor(e.S.data.council[0])) >= 0, "6자리 코드 유지");
+    ok(box.querySelector("#cn-qr-print"), "QR 안내문 인쇄 버튼");
+    // 인쇄 실행
+    const before = e.w.document.querySelectorAll("iframe").length;
+    box.querySelector("#cn-qr-print").click();
+    const frames = e.w.document.querySelectorAll("iframe");
+    eq(frames.length, before + 1, "협의회 QR 안내문 인쇄");
+    const html = frames[frames.length - 1].contentWindow.document.documentElement.innerHTML;
+    ok(html.indexOf("제9차") >= 0, "협의회 회차 제목");
+    ok(html.indexOf("<svg") >= 0, "QR 포함");
+  });
+
+  t("MN22 CAR 접수확인 안내에도 QR 병행 제공", () => {
+    const e = mnEnv("hq");
+    e.S.data.cars = [{ id: "cr1", year: new Date().getFullYear(), no: "26-TST-OM-01F", stage: "CAR", target: "인천지점",
+      domain: "출입통제", issuedDate: new Date().toISOString().slice(0, 10), classification: "시정", findingLevel: "",
+      nonconformance: "출입통제 절차 미준수", reference: "", risk: {},
+      signs: {}, caps: [], attachments: [] }];
+    go(e, "carcap");
+    const row = q(e, "#car-body [data-car]");
+    ok(row, "CAR 목록 행 존재");
+    row.click();
+    const box = q(e, "#modal-box");
+    ok(box.querySelector(".cr-ackbox"), "접수확인 안내 박스");
+    ok(box.querySelector(".cr-ack-qr svg"), "접수확인 QR 삽입");
+    ok(box.innerHTML.indexOf(e.S.signCodeFor(e.S.data.cars[0])) >= 0, "6자리 코드 병행 표시");
+    e.S.closeModal();
+  });
+
+  t("MN23 동기화 키에 회의록 포함 (기기 간 공유)", () => {
+    const e = mnEnv();
+    const keys = e.w.SemisSync.SYNC_KEYS;
+    ok(keys.indexOf("minutes") >= 0, "minutes 동기화");
+    ok(keys.indexOf("minuteFolders") >= 0, "minuteFolders 동기화");
+  });
 
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");

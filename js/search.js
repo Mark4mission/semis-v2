@@ -144,6 +144,20 @@ const SemisSearch = (() => {
       title: s.title, sub: [s.start + (s.end && s.end !== s.start ? "~" + s.end : ""), s.assignee, s.memo].filter(Boolean).join(" · "),
       text: [s.title, s.memo, s.assignee] })) });
 
+  // v2.40: 회의록 게시판 — 제목·본문·참석자·결정사항·태그 통합 검색
+  register({ id: "minutes", group: "회의록", icon: "🗒️", module: "minutes",
+    items: () => A(D().minutes).map(x => {
+      const fn = window.SemisMinutes ? SemisMinutes.folderName(x.folder) : "";
+      return {
+        title: x.title || "(제목 없음)",
+        sub: [fn, x.date, x.place].filter(Boolean).join(" · "),
+        text: [x.title, fn, x.date, x.place, x.chair, x.scribe, x.agenda, x.body,
+          A(x.tags).join(" "),
+          A(x.attendees).map(a => [a.name, a.org, a.role].join(" ")).join(" "),
+          A(x.decisions).map(d => [d.task, d.owner].join(" ")).join(" ")],
+        route: "minutes" };
+    }) });
+
   register({ id: "inspections", group: "보안점검", icon: "🕵️", module: "inspection",
     items: () => A(D().inspections).map(x => ({
       title: "[" + x.category + "] " + x.target,
