@@ -144,9 +144,10 @@ const SemisSearch = (() => {
       title: s.title, sub: [s.start + (s.end && s.end !== s.start ? "~" + s.end : ""), s.assignee, s.memo].filter(Boolean).join(" · "),
       text: [s.title, s.memo, s.assignee] })) });
 
-  // v2.40: 회의록 게시판 — 제목·본문·참석자·결정사항·태그 통합 검색
+  /* v2.40: 회의록 게시판 — 제목·본문·참석자·결정사항·태그 통합 검색
+     v2.40.2: 검색으로 열람 제한을 우회하지 못하도록 모듈의 열람 판정(visibleAll)을 그대로 사용 */
   register({ id: "minutes", group: "회의록", icon: "🗒️", module: "minutes",
-    items: () => A(D().minutes).map(x => {
+    items: () => (window.SemisMinutes ? SemisMinutes.visibleAll() : A(D().minutes)).map(x => {
       const fn = window.SemisMinutes ? SemisMinutes.folderName(x.folder) : "";
       return {
         title: x.title || "(제목 없음)",

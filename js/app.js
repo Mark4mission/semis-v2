@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.40.1";
+  const VERSION = "2.40.2";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -562,7 +562,15 @@ const SeMIS = (() => {
     if (!DATA.menus.some(m => m && m.type === "module" && m.module === "minutes")) {
       const sc = DATA.menus.find(m => m && m.type === "module" && m.module === "schedule");
       DATA.menus.push({ id: "minutes", seq: sc ? (sc.seq || 0) + 0.2 : 2.2, type: "module",
-        label: "회의록 게시판", icon: "🗒️", module: "minutes", vis: "mgr", parent: null });
+        label: "회의록 게시판", icon: "🗒️", module: "minutes", vis: "all", parent: null });
+    }
+    /* v2.40.2: 회의록 열람은 "직급"이 아니라 "참석 사실"로 통제한다(모듈이 내부에서 판정).
+       참석자가 일반사용자여도 본인 회의는 봐야 하므로 메뉴는 전 계정에 열어 둔다.
+       ※ 1회성 플래그로 처리하면 원격 pull이 menus를 덮어쓸 때 되돌아가므로(플래그는 이미 소진됨)
+         "mgr로는 제한할 수 없다"를 불변식으로 두고 매번 보정한다. hq·admin 제한은 그대로 존중. */
+    {
+      const mn = DATA.menus.find(m => m && m.type === "module" && m.module === "minutes");
+      if (mn && (mn.vis === "mgr" || !mn.vis)) mn.vis = "all";
     }
     /* v2.34: 보안감독자 현황 / 지점 보안담당자 — 구글시트 링크 → 내부 모듈 이관.
        최초 사용 시 시트 내용 시드 + 메뉴 교체(기존 링크 메뉴 제거, idempotent). */
@@ -795,7 +803,10 @@ const SeMIS = (() => {
   const roleRank = () => {
     if (!currentUser) return 0;
     if (currentUser.role === "vendor") return vendorAccess(currentUser).edit ? 3 : 1;
-    return ROLE_RANK[currentUser.role] || 1;
+    /* v2.40.2: signer는 등급 0이 정의값인데 `|| 1` 이 이를 1(일반사용자)로 끌어올리고 있었다.
+       미지정 역할만 1로 보정하도록 수정 — 서명 참석자는 어떤 모듈 데이터도 등급으로 얻지 못한다. */
+    const r = ROLE_RANK[currentUser.role];
+    return (r == null) ? 1 : r;
   };
   const canEdit = () => roleRank() >= 3; // 편집 권한: hq 이상 (v2.11)
   /* v2.32.1: 레코드 삭제 — 편집 권한 + 내부 계정만 (협력업체는 등록·수정만) */

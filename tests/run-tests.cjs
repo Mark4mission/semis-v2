@@ -7275,14 +7275,14 @@ function makeFetchStub(server) {
   }
   const MF = "mf-part";
 
-  t("MN01 기본 폴더 시드 + 메뉴 자동 등록(일정관리 다음, mgr)", () => {
+  t("MN01 기본 폴더 시드 + 메뉴 자동 등록(일정관리 다음, 전 계정)", () => {
     const e = makeEnv();
     const fs = e.S.data.minuteFolders;
     ok(Array.isArray(fs) && fs.length >= 5, "기본 폴더 시드 (" + (fs || []).length + "개)");
     ok(fs.some(f => f.id === "mf-part"), "항공보안파트 정례회의 폴더");
     const mn = e.S.data.menus.find(m => m.type === "module" && m.module === "minutes");
     ok(mn, "메뉴 등록");
-    eq(mn.vis, "mgr", "보안관리자 이상 열람");
+    eq(mn.vis, "all", "메뉴는 전 계정 개방 — 실제 열람은 참석 여부로 모듈이 통제");
     const sc = e.S.data.menus.find(m => m.type === "module" && m.module === "schedule");
     ok(mn.seq > sc.seq, "일정관리 다음 순서");
     ok(Array.isArray(e.S.data.minutes), "minutes 배열");
@@ -7463,10 +7463,15 @@ function makeFetchStub(server) {
     e2.S.closeModal();
   });
 
-  t("MN09 열람 권한 — user 계정은 메뉴 접근 차단", () => {
+  t("MN09 일반사용자도 모듈 접근 가능 — 단 참석 이력이 없으면 아무것도 안 보임", () => {
     const e = mnEnv("user");
+    e.S.data.minutes = [{ id: "mu1", folder: MF, no: 1, date: "2026-08-07", title: "남의 회의",
+      attendees: [{ name: "다른사람", org: "A" }], decisions: [], byId: "someone" }];
     go(e, "minutes");
-    ok(q(e, "#view").textContent.indexOf("회의록 게시판") < 0, "일반 사용자는 대시보드로 우회");
+    ok(q(e, "#view").textContent.indexOf("회의록 게시판") >= 0, "일반사용자도 화면 진입 가능");
+    eq(qa(e, "#mn-body [data-mn-row]").length, 0, "미참석 회의는 목록에 없음");
+    ok(q(e, "#mn-body").textContent.indexOf("열람 가능한 회의록이 없습니다") >= 0, "사유 안내");
+    ok(!q(e, "#mn-add"), "작성 버튼 없음(mgr 미만)");
   });
 
   t("MN10 차기 회의 → 일정관리 자동 등록·해제", () => {
@@ -7856,14 +7861,207 @@ function makeFetchStub(server) {
     e.S.closeModal();
   });
 
-  t("MS08 열람 전용(manager 아닌) 계정에는 QR 진입점 미노출", () => {
+  t("MS08 미참석 회의는 보안관리자여도 목록에 뜨지 않는다", () => {
     const e = mnEnv("manager");
-    e.S.data.minutes = [{ id: "ms15", folder: MF, no: 1, date: "2026-08-07", title: "T",
-      attendees: [], decisions: [], byId: "other" }];
+    e.S.data.minutes = [{ id: "ms15", folder: MF, no: 1, date: "2026-08-07", title: "남의 회의",
+      attendees: [{ name: "다른사람", org: "A" }], decisions: [], byId: "other" }];
     go(e, "minutes");
-    ok(q(e, "#mn-body [data-mn-sign]"), "manager(작성 권한)에는 QR 버튼 노출");
-    // user 계정은 모듈 자체 접근 불가 (MN09에서 검증)
-    eq(e.w.SemisMinutes.canWrite(), true, "manager는 canWrite");
+    eq(qa(e, "#mn-body [data-mn-row]").length, 0, "미참석 회의 미노출");
+    ok(!q(e, "#mn-body [data-mn-sign]"), "QR 버튼도 없음");
+    eq(e.w.SemisMinutes.canWrite(), true, "작성 권한 자체는 보유");
+  });
+
+  /* ══════════════════════════════════════════════════════
+     [AC] 회의록 열람 권한 (v2.40.2)
+       ① hq 이상 전체 / ② 작성자 본인 / ③ 참석자 본인(등급 무관)
+       ④ 본인이 참석한 회의체(폴더)의 다른 회차 / ⑤ 그 외 차단
+     ══════════════════════════════════════════════════════ */
+
+  /* 폴더 A(정례회의)·B(교육강평)에 회의록 4건을 깔아둔 표준 픽스처 */
+  function acData() {
+    return [
+      { id: "a1", folder: "mf-part", no: 1, date: "2026-05-01", title: "정례 1차",
+        attendees: [{ name: "Tuser", org: "지점" }, { name: "박철성", org: "항공보안파트" }],
+        decisions: [{ task: "A안", done: false }], byId: "hqperson" },
+      { id: "a2", folder: "mf-part", no: 2, date: "2026-06-01", title: "정례 2차 (본인 미참)",
+        attendees: [{ name: "박철성", org: "항공보안파트" }],
+        decisions: [{ task: "B안", done: false }], byId: "hqperson" },
+      { id: "b1", folder: "mf-edu", no: 1, date: "2026-06-10", title: "교육 강평",
+        attendees: [{ name: "박철성", org: "항공보안파트" }], decisions: [], byId: "hqperson" },
+      { id: "c1", folder: "mf-agency", no: 1, date: "2026-07-01", title: "유관기관 협의",
+        attendees: [{ name: "이은우", org: "항공보안파트" }], decisions: [], byId: "hqperson" }
+    ];
+  }
+  const acIds = (e) => e.w.SemisMinutes.visibleAll().map(x => x.id).sort().join(",");
+
+  t("AC01 항공보안HQ 이상은 전체 열람", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = acData();
+    eq(acIds(e), "a1,a2,b1,c1", "hq 전체");
+    const e2 = mnEnv("admin");
+    e2.S.data.minutes = acData();
+    eq(acIds(e2), "a1,a2,b1,c1", "admin 전체");
+  });
+
+  t("AC02 참석자 본인은 등급과 무관하게 열람 (일반사용자)", () => {
+    const e = mnEnv("user");                    // 계정 이름 = "Tuser" = a1 참석자
+    e.S.data.minutes = acData();
+    ok(e.w.SemisMinutes.canSeeRec(e.S.data.minutes[0]), "본인 참석 회의 열람 가능");
+    go(e, "minutes");
+    const rows = qa(e, "#mn-body [data-mn-row]").map(r => r.dataset.mnRow);
+    ok(rows.indexOf("a1") >= 0, "목록에 본인 참석 회의 노출");
+    q(e, "#mn-body [data-mn-row]").click();
+    ok(q(e, "#modal-box .mn-view"), "상세 열람 가능");
+    e.S.closeModal();
+  });
+
+  t("AC03 본인이 참석한 회의체의 미참석 회차도 열람 (직전 회의 미참)", () => {
+    const e = mnEnv("user");
+    e.S.data.minutes = acData();
+    // a1 참석 → 같은 폴더 mf-part 의 a2(미참석)도 열람 가능
+    eq(acIds(e), "a1,a2", "같은 회의체는 전 회차 열람");
+    ok(e.w.SemisMinutes.canSeeRec(e.S.data.minutes[1]), "미참석 직전 회의 열람 가능");
+  });
+
+  t("AC04 참석 이력 없는 다른 회의체는 차단 (보안관리자여도)", () => {
+    const e = mnEnv("user");
+    e.S.data.minutes = acData();
+    ok(!e.w.SemisMinutes.canSeeRec(e.S.data.minutes[2]), "교육 강평(mf-edu) 차단");
+    ok(!e.w.SemisMinutes.canSeeRec(e.S.data.minutes[3]), "유관기관(mf-agency) 차단");
+    // 보안관리자도 동일 — 직급이 아니라 참석 사실 기준
+    const e2 = mnEnv("manager");
+    e2.S.data.minutes = acData();
+    eq(acIds(e2), "", "미참석 보안관리자는 전부 차단");
+    ok(!e2.w.SemisMinutes.canSeeRec(e2.S.data.minutes[0]), "mgr도 남의 회의 차단");
+  });
+
+  t("AC05 작성자(서기)는 참석 명단에 없어도 본인이 쓴 회의록 열람", () => {
+    const e = mnEnv("manager");
+    e.S.data.minutes = acData();
+    e.S.data.minutes[2].byId = "tmanager";       // 교육 강평을 이 계정이 작성
+    ok(e.w.SemisMinutes.canSeeRec(e.S.data.minutes[2]), "작성자 본인 열람");
+    eq(acIds(e), "b1", "작성한 건만 보임");
+  });
+
+  t("AC06 QR 서명 이력이 있는 기기는 공용 계정에서도 본인으로 인식", () => {
+    const e = mnEnv("user");                      // 계정 이름 Tuser — 명단엔 없는 회의들
+    e.S.data.minutes = acData();
+    e.S.data.minutes[0].attendees = [{ name: "홍길동", org: "지점" }];   // Tuser 제거
+    eq(acIds(e), "", "서명 이력 없으면 아무것도 안 보임");
+    // 이 기기에서 '홍길동'으로 서명한 이력 기록
+    e.w.localStorage.setItem("semis2:signedAs", JSON.stringify(["홍길동"]));
+    ok(e.w.SemisMinutes.myNames().indexOf("홍길동") >= 0, "서명 이력이 본인 이름에 포함");
+    eq(acIds(e), "a1,a2", "서명한 회의 + 같은 회의체 열람");
+    ok(!e.w.SemisMinutes.canSeeRec(e.S.data.minutes[3]), "다른 회의체는 여전히 차단");
+  });
+
+  t("AC07 서명하면 그 기기에 본인 이름이 기록된다", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "sg1", folder: MF, no: 1, date: "2026-08-07", title: "T",
+      attendees: [{ name: "김서명", org: "지점", sign: "" }], decisions: [] }];
+    eq(e.w.SemisMinutes.signedNames().length, 0, "처음엔 이력 없음");
+    e.w.SemisMinutes.saveSignEntry("sg1", 0, { name: "김서명", org: "지점", role: "" }, "https://x/s.png");
+    ok(e.w.SemisMinutes.signedNames().indexOf("김서명") >= 0, "서명 후 이력 기록");
+    // 정보만 저장(sign=null)은 기록하지 않음 — 실제 서명한 사람만 인정
+    e.w.localStorage.removeItem("semis2:signedAs");
+    e.w.SemisMinutes.saveSignEntry("sg1", 0, { name: "김서명", org: "지점", role: "" }, null);
+    eq(e.w.SemisMinutes.signedNames().length, 0, "정보만 저장은 신원 인정 안 함");
+  });
+
+  t("AC08 전역 검색으로 열람 제한을 우회할 수 없다", () => {
+    const e = mnEnv("user");
+    e.S.data.minutes = acData();
+    const titles = e.w.SemisSearch.search("회의").concat(e.w.SemisSearch.search("협의"))
+      .map(r => r.title || "");
+    ok(titles.some(t2 => t2.indexOf("정례") >= 0), "본인 참석 회의는 검색됨");
+    ok(!titles.some(t2 => t2.indexOf("유관기관 협의") >= 0), "미참석 회의는 검색 결과에서 제외");
+    ok(!titles.some(t2 => t2.indexOf("교육 강평") >= 0), "다른 회의체도 제외");
+  });
+
+  t("AC09 detail() 직접 호출도 차단된다", () => {
+    const e = mnEnv("user");
+    e.S.data.minutes = acData();
+    e.w.SemisMinutes.detail("c1");                 // 미열람 대상 강제 호출
+    ok(!q(e, "#modal-box .mn-view"), "상세 모달이 열리지 않음");
+    e.w.SemisMinutes.detail("a1");
+    ok(q(e, "#modal-box .mn-view"), "열람 가능 건은 정상 오픈");
+    e.S.closeModal();
+  });
+
+  t("AC10 통계·폴더 사이드·결정사항도 열람 범위만 반영", () => {
+    const e = mnEnv("user");
+    e.S.data.minutes = acData();
+    const s = e.w.SemisMinutes.stats();
+    eq(s.total, 2, "통계는 열람 가능 2건만");
+    eq(s.open, 2, "미완료 결정도 열람 범위 내(A안·B안)");
+    go(e, "minutes");
+    const fids = qa(e, ".mn-fitem").map(b => b.dataset.fid);
+    ok(fids.indexOf("mf-part") >= 0, "참석한 회의체 폴더 노출");
+    ok(fids.indexOf("mf-agency") < 0, "미참석 회의체 폴더는 숨김");
+    ok(fids.indexOf("mf-edu") < 0, "미참석 회의체 폴더는 숨김");
+    // 결정사항 추적 탭
+    qa(e, "[data-mn-tab]").find(b => b.dataset.mnTab === "act").click();
+    const body = q(e, "#mn-body").textContent;
+    ok(body.indexOf("A안") >= 0 && body.indexOf("B안") >= 0, "열람 가능 결정만 표시");
+    e.w.SemisMinutes.view.tab = "list";
+  });
+
+  t("AC11 서명 화면·인쇄도 열람 범위를 따른다", () => {
+    const e = mnEnv("manager");
+    e.S.data.minutes = acData();                   // manager 는 어디에도 미참석
+    const before = e.w.document.querySelectorAll("iframe").length;
+    e.w.SemisMinutes.signModal("a1");
+    ok(!q(e, "#modal-box #mn-signview"), "미열람 건은 서명 화면 안 열림");
+    e.w.SemisMinutes.printMinute("a1");
+    eq(e.w.document.querySelectorAll("iframe").length, before, "인쇄도 차단");
+  });
+
+  t("AC12 회차 채번은 전체 기준 (열람 못 해도 번호 중복 금지)", () => {
+    const e = mnEnv("manager");
+    e.S.data.minutes = acData();                   // mf-part 에 1·2차 존재(미열람)
+    eq(e.w.SemisMinutes.nextNo("mf-part"), 3, "안 보이는 회차도 채번에 반영");
+    eq(e.w.SemisMinutes.prevMeeting("mf-part"), null, "단 승계는 열람 가능한 것만");
+  });
+
+  t("AC13 signer(QR 접속) 세션은 서명 화면 밖으로 못 나간다", () => {
+    const e = makeEnv();
+    e.S.data.minutes = acData();
+    const code = e.S.signCodeFor({ id: "c1" });
+    submitLogin(e, code);
+    ok(e.S.user && e.S.user.role === "signer", "서명 세션");
+    eq(e.S.roleRank(), 0, "signer 등급 0");
+    go(e, "minutes");
+    ok(q(e, "#view").textContent.indexOf("참석 서명") >= 0, "서명 화면 고정");
+    ok(!q(e, "#mn-body"), "회의록 목록 접근 불가");
+  });
+
+  t("AC14 회의록 메뉴 vis는 mgr로 제한될 수 없다 (원격 덮어쓰기 후에도 유지)", () => {
+    const e = makeEnv();
+    const mn = () => e.S.data.menus.find(m => m && m.module === "minutes");
+    eq(mn().vis, "all", "기본 개방");
+    // 구버전 배포본이 저장해 둔 vis:"mgr" 가 원격 pull 로 다시 들어오는 상황
+    const menus = JSON.parse(JSON.stringify(e.S.data.menus));
+    menus.find(m => m.module === "minutes").vis = "mgr";
+    e.w.SemisSync.applyRemote("menus", menus);
+    eq(mn().vis, "all", "원격 반영 후에도 개방 유지(정규화 불변식)");
+    // hq/admin 제한은 관리자 의도로 보고 존중
+    const menus2 = JSON.parse(JSON.stringify(e.S.data.menus));
+    menus2.find(m => m.module === "minutes").vis = "hq";
+    e.w.SemisSync.applyRemote("menus", menus2);
+    eq(mn().vis, "hq", "hq 제한은 유지");
+  });
+
+  t("AC15 참석자(일반사용자)는 메뉴가 보이고 본인 회의로 진입 가능", () => {
+    const e = mnEnv("user");
+    e.S.data.minutes = acData();
+    e.S.renderNav();
+    const mn = e.S.data.menus.find(m => m && m.module === "minutes");
+    eq(e.S.canSee(mn), true, "일반사용자도 메뉴 열람 가능");
+    ok(q(e, "#nav-menu").textContent.indexOf("회의록 게시판") >= 0, "사이드바에 메뉴 노출");
+    go(e, "minutes");
+    ok(q(e, "#view").textContent.indexOf("회의록 게시판") >= 0, "라우트 진입 성공(대시보드 우회 아님)");
+    ok(q(e, ".page-desc").textContent.indexOf("본인이 참석한 회의") >= 0, "열람 범위 안내 문구");
+    eq(qa(e, "#mn-body [data-mn-row]").length, 2, "본인 참석 회의체 2건");
   });
 
   /* ══════════ 결과 ══════════ */

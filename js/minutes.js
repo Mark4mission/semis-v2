@@ -60,11 +60,12 @@
     String(b.id || "").localeCompare(String(a.id || "")));
 
   const inFolder = (fid) => all().filter(x => x && (fid ? x.folder === fid : true));
+  /* 회차 채번은 전체 기준 — 열람 못 하는 회차가 있어도 번호가 겹치면 안 되므로 */
   const nextNo = (fid) => inFolder(fid).reduce((mx, x) => Math.max(mx, Number(x.no) || 0), 0) + 1;
 
-  /* 같은 폴더의 직전 회의 (자동 채움 기준) */
+  /* 같은 폴더의 직전 회의 (자동 채움 기준) — 승계는 열람 가능한 회의에서만 */
   function prevMeeting(fid, exceptId) {
-    return sorted(inFolder(fid).filter(x => x.id !== exceptId))[0] || null;
+    return sorted(visibleAll().filter(x => x.folder === fid && x.id !== exceptId))[0] || null;
   }
 
   const rank = () => SeMIS.roleRank();
@@ -73,6 +74,64 @@
   const canEditRec = (x) => rank() >= 3 || (!!x && x.byId && x.byId === me());
   const canDelRec = (x) => SeMIS.canDelete() || (canWrite() && !!x && x.byId && x.byId === me());
   const canManageFolders = () => rank() >= 3;
+
+  /* ══════════ 열람 권한 (v2.40.2) ══════════
+     회의록은 참석자의 기록이므로 "직급"이 아니라 "참석 사실"로 열람 범위를 정한다.
+
+       ① 항공보안HQ 이상          → 전체 열람
+       ② 작성자(서기) 본인          → 열람 (참석 명단에 없어도 본인이 쓴 기록)
+       ③ 참석자 명단에 본인이 있음  → 열람 (계정 등급과 무관 — 일반사용자도 가능)
+       ④ 본인이 한 번이라도 참석한 같은 회의체(폴더) → 그 폴더의 다른 회차도 열람
+          (부득이 참석 못한 직전 회의 등을 확인할 수 있도록)
+       ⑤ 그 외                     → 차단 (보안관리자여도 남의 회의는 볼 수 없음)
+
+     본인 식별 — 두 경로를 함께 사용한다.
+       (가) 로그인 계정 이름이 참석자 이름과 같을 때 (실명 계정)
+       (나) QR로 서명한 이력이 있는 기기 (공용 계정 대응)
+            서명할 때 그 기기에 이름을 남겨두고, 이후 같은 기기로 접속하면 본인으로 인식.
+            실제로 참석해서 서명한 사람만 인식되므로 자가 신고보다 확실하다. */
+  const LS_SIGNED = "semis2:signedAs";
+  const norm = (s) => String(s || "").replace(/\s+/g, "").toLowerCase();
+
+  function signedNames() {
+    try { const v = JSON.parse(localStorage.getItem(LS_SIGNED)); return Array.isArray(v) ? v : []; }
+    catch (e) { return []; }
+  }
+  /* 서명 완료 시 호출 — 이 기기의 '본인'으로 이름을 기억(최근 5명, 기기 공용 사용 대비) */
+  function rememberSigner(name) {
+    const n = String(name || "").trim();
+    if (!n) return;
+    const list = signedNames().filter(v => norm(v) !== norm(n));
+    list.unshift(n);
+    try { localStorage.setItem(LS_SIGNED, JSON.stringify(list.slice(0, 5))); } catch (e) { /* 저장 불가 무시 */ }
+  }
+  /* 현재 사용자로 인정되는 이름들 (계정 이름 + 이 기기의 서명 이력) */
+  function myNames() {
+    const out = [];
+    const u = SeMIS.user;
+    if (u && u.name) out.push(norm(u.name));
+    signedNames().forEach(n => { const k = norm(n); if (k && out.indexOf(k) < 0) out.push(k); });
+    return out.filter(Boolean);
+  }
+  const attendedBy = (x, names) => (x.attendees || []).some(a => names.indexOf(norm(a.name)) >= 0);
+  /* 본인과 직접 관련된 회의(참석 or 작성) */
+  function isMineRec(x, names, uid) {
+    return (!!uid && x.byId === uid) || attendedBy(x, names);
+  }
+  /* 열람 가능한 회의록 목록 — 화면·검색·통계가 모두 이 결과만 사용한다 */
+  function visibleAll() {
+    if (rank() >= 3) return all();
+    const names = myNames(), uid = me();
+    const mine = all().filter(x => isMineRec(x, names, uid));
+    if (!mine.length) return [];
+    const myFolders = new Set(mine.map(x => x.folder));
+    return all().filter(x => isMineRec(x, names, uid) || myFolders.has(x.folder));
+  }
+  function canSeeRec(x) {
+    if (!x) return false;
+    if (rank() >= 3) return true;
+    return visibleAll().some(v => v.id === x.id);
+  }
 
   const nl2br = (s) => esc(String(s || "")).replace(/\n/g, "<br>");
   const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -144,7 +203,7 @@
   /* ══════════ 참석자 이력 디렉터리 (이름 → 최근 소속·직책) ══════════ */
   function knownPeople() {
     const dir = new Map();
-    sorted().forEach(m => (m.attendees || []).forEach(a => {
+    sorted(visibleAll()).forEach(m => (m.attendees || []).forEach(a => {
       const nm = String(a.name || "").trim();
       if (!nm || dir.has(nm)) return;
       dir.set(nm, { name: nm, org: String(a.org || "").trim(), role: String(a.role || "").trim() });
@@ -159,7 +218,7 @@
   }
   const orgPresets = () => {
     const s = new Set();
-    all().forEach(m => (m.attendees || []).forEach(a => { const o = String(a.org || "").trim(); if (o) s.add(o); }));
+    visibleAll().forEach(m => (m.attendees || []).forEach(a => { const o = String(a.org || "").trim(); if (o) s.add(o); }));
     ["항공보안파트", "인천화물팀", "운항품질팀", "객실승무팀", "지점", "프로에스콤", "인씨스", "국토교통부", "인천국제공항공사", "한국공항공사"]
       .forEach(o => s.add(o));
     return Array.from(s);
@@ -167,7 +226,7 @@
 
   /* ══════════ 통계 ══════════ */
   function stats() {
-    const items = all();
+    const items = visibleAll();
     const yr = new Date().getFullYear();
     const ym = todayStr().slice(0, 7);
     let open = 0, overdue = 0;
@@ -202,13 +261,13 @@
   const folderHit = (x) => !view.folder
     || (view.folder === "__none__" ? !folderOf(x.folder) : x.folder === view.folder);
   function filtered() {
-    return sorted(all().filter(x =>
+    return sorted(visibleAll().filter(x =>
       folderHit(x) &&
       (!view.year || String(x.date || "").slice(0, 4) === view.year) &&
       (!view.status || (x.status || "final") === view.status) &&
       matches(x, view.q)));
   }
-  const years = () => Array.from(new Set(all().map(x => String(x.date || "").slice(0, 4)).filter(Boolean))).sort().reverse();
+  const years = () => Array.from(new Set(visibleAll().map(x => String(x.date || "").slice(0, 4)).filter(Boolean))).sort().reverse();
 
   /* ══════════ 목록 ══════════ */
   function listHTML() {
@@ -216,6 +275,21 @@
     if (!items.length) {
       if (view.q || view.folder || view.year || view.status)
         return '<div class="empty">조건에 맞는 회의록이 없습니다.</div>';
+      // 회의록은 있는데 본인에게 보이는 게 없는 경우 — 왜 비었는지 분명히 알린다
+      if (all().length && !visibleAll().length) return `<div class="mn-guide">
+        <div class="mn-guide-h">🔒 열람 가능한 회의록이 없습니다</div>
+        <div class="mn-guide-sub">회의록은 <b>본인이 참석한 회의</b>만 열람할 수 있습니다.</div>
+        <div class="mn-guide-steps">
+          <div class="mn-gs"><span class="mn-gs-n">1</span><div>
+            회의에서 <b>QR로 참석 서명</b>을 하면, 그 회의와 <b>같은 회의체의 다른 회차</b>까지 열람할 수 있게 됩니다
+            (부득이 참석하지 못한 직전 회의도 포함).</div></div>
+          <div class="mn-gs"><span class="mn-gs-n">2</span><div>
+            <b>서명했는데도 보이지 않는다면</b> — 서명한 기기(휴대폰)와 다른 기기로 접속했거나,
+            계정 이름이 참석자 명단의 이름과 다른 경우입니다. 서명한 기기에서 다시 접속해 보세요.</div></div>
+          <div class="mn-gs"><span class="mn-gs-n">3</span><div>
+            그래도 필요하면 <b>항공보안파트</b>에 문의해 주세요. 전체 열람은 항공보안HQ 권한입니다.</div></div>
+        </div>
+      </div>`;
       // 첫 사용자를 위한 사용법 안내 — 서명 흐름이 어디에 있는지 여기서 알려준다
       return `<div class="mn-guide">
         <div class="mn-guide-h">🗒️ 아직 등록된 회의록이 없습니다</div>
@@ -277,7 +351,7 @@
   /* ══════════ 결정사항 추적 (전체 회의 통합) ══════════ */
   function actionsHTML() {
     const rows = [];
-    sorted().forEach(x => (x.decisions || []).forEach((d, i) => {
+    sorted(visibleAll()).forEach(x => (x.decisions || []).forEach((d, i) => {
       if (folderHit(x)) rows.push({ x, d, i });
     }));
     const open = rows.filter(r => !r.d.done);
@@ -343,6 +417,7 @@
   function signModal(id) {
     const x = all().find(c => c.id === id);
     if (!x) { toast("회의록을 찾을 수 없습니다.", true); return; }
+    if (!canWrite() || !canSeeRec(x)) { toast("서명 화면을 열 권한이 없습니다.", true); return; }
     const url = signUrl(x), code = signCode(x);
 
     openModal(`<div class="mn-signview" id="mn-signview"></div>`, { wide: true });
@@ -418,9 +493,11 @@
       if (u && u.role === "signer" && u.signMinuteId) { renderSigning(root, u.signMinuteId); return; }
 
       const s = stats();
-      const fs = folders();
+      const vis = visibleAll();
       const counts = {};
-      all().forEach(x => { counts[x.folder] = (counts[x.folder] || 0) + 1; });
+      vis.forEach(x => { counts[x.folder] = (counts[x.folder] || 0) + 1; });
+      // hq 이상은 전체 폴더, 그 외는 본인이 열람 가능한 폴더만 노출
+      const fs = rank() >= 3 ? folders() : folders().filter(f => counts[f.id]);
 
       root.innerHTML = `
         <div class="page-head">
@@ -428,7 +505,8 @@
           <span class="spacer"></span>
           ${canManageFolders() ? '<button class="btn btn-ghost" id="mn-folders">🗂 폴더 관리</button>' : ""}
           ${canWrite() ? '<button class="btn btn-primary" id="mn-add">+ 새 회의록</button>' : ""}
-          <div class="page-desc">회의마다 빈 회의록을 열어 바로 기록 — 폴더 분류 · 참석자 QR 서명 · A4 인쇄</div>
+          <div class="page-desc">회의마다 빈 회의록을 열어 바로 기록 — 폴더 분류 · 참석자 QR 서명 · A4 인쇄
+            ${rank() >= 3 ? "" : " · <b>본인이 참석한 회의</b>만 표시됩니다"}</div>
         </div>
 
         <div class="stat-row">
@@ -442,11 +520,11 @@
           <aside class="mn-side">
             <div class="mn-side-h">🗂 분류 폴더</div>
             <button class="mn-fitem${view.folder ? "" : " active"}" data-fid="">
-              <span class="mn-fi-ico">📚</span><span class="mn-fi-name">전체 회의록</span><span class="mn-fi-n">${all().length}</span></button>
+              <span class="mn-fi-ico">📚</span><span class="mn-fi-name">전체 회의록</span><span class="mn-fi-n">${vis.length}</span></button>
             ${fs.map(f => `<button class="mn-fitem${view.folder === f.id ? " active" : ""}" data-fid="${esc(f.id)}" title="${esc(f.desc || f.name)}">
               <span class="mn-fi-ico">${esc(f.icon || "🗒")}</span><span class="mn-fi-name">${esc(f.name)}</span><span class="mn-fi-n">${counts[f.id] || 0}</span></button>`).join("")}
             ${Object.keys(counts).some(k => !folderOf(k)) ? `<button class="mn-fitem${view.folder === "__none__" ? " active" : ""}" data-fid="__none__">
-              <span class="mn-fi-ico">❔</span><span class="mn-fi-name">미분류</span><span class="mn-fi-n">${all().filter(x => !folderOf(x.folder)).length}</span></button>` : ""}
+              <span class="mn-fi-ico">❔</span><span class="mn-fi-name">미분류</span><span class="mn-fi-n">${vis.filter(x => !folderOf(x.folder)).length}</span></button>` : ""}
           </aside>
 
           <section class="mn-main card">
@@ -676,6 +754,7 @@
   function detail(id) {
     const x = all().find(c => c.id === id);
     if (!x) return;
+    if (!canSeeRec(x)) { toast("본인이 참석한 회의의 회의록만 열람할 수 있습니다.", true); return; }
     const att = x.attendees || [];
     const dec = x.decisions || [];
     const signed = att.filter(a => a.sign).length;
@@ -1119,7 +1198,7 @@
   /* ── A4 회의록 ── */
   function printMinute(id) {
     const x = all().find(c => c.id === id);
-    if (!x) return;
+    if (!x || !canSeeRec(x)) return;
     const att = x.attendees || [], dec = x.decisions || [];
     const today = new Date().toISOString().slice(0, 10);
     const P = (s) => esc(String(s || "")).replace(/\n/g, "<br>");
@@ -1177,6 +1256,7 @@
     const o = opts || {};
     const x = o.rec || all().find(c => c.id === id);
     if (!x) return;
+    if (!o.rec && !canSeeRec(x)) return;   // 회의록 게시판 경로만 검사 (o.rec = 협의회 등 외부 호출)
     const url = o.url || signUrl(x), code = o.code || signCode(x);
     const qr = qrSvg(url, 420);
     const title = o.title || x.title || "회의";
@@ -1336,7 +1416,11 @@
       m.attendees.push(target);
     }
     target.name = person.name; target.org = person.org; target.role = person.role;
-    if (sign !== null && sign !== undefined) target.sign = sign || "";
+    if (sign !== null && sign !== undefined) {
+      target.sign = sign || "";
+      // 실제로 서명한 사람 = 이 기기의 본인. 이후 로그인 시 열람 권한 판정에 쓰인다.
+      if (sign) rememberSigner(person.name);
+    }
     SeMIS.save();
     return true;
   }
@@ -1408,5 +1492,5 @@
     nextNo, prevMeeting, draftFrom, matches, knownPeople, signCode, signUrl, view, filtered,
     syncCalendar, removeCalendar, SID, detail, form, newMinute, folderModal,
     printMinute, printQrSheet, renderSigning, saveSignEntry, orgPresets, qrSvg, signBoxHTML,
-    signModal, canWrite, listHTML };
+    signModal, canWrite, listHTML, visibleAll, canSeeRec, myNames, signedNames, rememberSigner };
 })();
