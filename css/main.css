@@ -223,6 +223,8 @@ input, select, textarea { font-family: inherit; font-size: .95rem; }
 .btn-ghost:hover { background: var(--surface-2); }
 .btn-danger { background: var(--danger-soft); color: var(--danger); border-color: #fecaca; }
 .btn-danger:hover { background: #fee2e2; }
+.btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-accent:hover { background: #0284c7; border-color: #0284c7; }
 .btn-sm { padding: 5px 10px; font-size: .8rem; }
 
 .form-row { margin-bottom: 14px; }
@@ -1464,6 +1466,64 @@ a.ct-tel:hover { color: var(--primary); }
 .mn-signbox-steps { margin: 0; padding-left: 18px; font-size: .82rem; color: var(--text-2); line-height: 1.65; }
 .mn-signbox-act { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 9px; }
 
+/* 목록 — 서명 현황 배지 + QR 버튼 */
+.mn-signpill { display: inline-block; margin-top: 2px; font-size: .72rem; font-weight: 700;
+  border-radius: 999px; padding: 1px 7px; background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); }
+.mn-signpill.part { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+.mn-signpill.ok { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+.mn-signbtn { white-space: nowrap; border-color: var(--accent) !important; color: var(--accent) !important; }
+.mn-signbtn:hover { background: #f0f9ff !important; }
+.mn-sign-stat { font-size: .74rem; font-weight: 700; margin-left: 8px; color: var(--warning);
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 999px; padding: 1px 8px; }
+.mn-sign-stat.ok { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+.mn-att-none { font-size: .85rem; color: var(--text-2); background: var(--surface-2);
+  border: 1px dashed var(--border-strong); border-radius: 8px; padding: 12px 14px; line-height: 1.6; }
+
+/* 빈 게시판 — 사용법 안내 */
+.mn-guide { padding: 26px 20px; text-align: center; }
+.mn-guide-h { font-size: 1.05rem; font-weight: 800; color: var(--text); }
+.mn-guide-sub { font-size: .88rem; color: var(--text-2); margin: 6px 0 18px; }
+.mn-guide-steps { display: flex; flex-direction: column; gap: 10px; max-width: 620px; margin: 0 auto 18px; text-align: left; }
+.mn-gs { display: flex; gap: 11px; align-items: flex-start; font-size: .86rem; color: var(--text-2);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; line-height: 1.6; }
+.mn-gs b { color: var(--text); }
+.mn-gs-n { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: #fff;
+  font-size: .76rem; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+
+/* 서명 받기 화면 (대형 QR) */
+.mn-signview h3 { margin: 0 0 2px; }
+.mn-sv-sub { font-size: .86rem; color: var(--text-2); margin-bottom: 14px; }
+.mn-sv-grid { display: grid; grid-template-columns: 340px 1fr; gap: 18px; align-items: start; }
+.mn-sv-left { text-align: center; background: #f0f9ff; border: 1.5px solid var(--accent);
+  border-radius: 12px; padding: 16px 14px; }
+.mn-sv-qr { width: 300px; height: 300px; margin: 0 auto; background: #fff;
+  border: 1px solid var(--border-strong); border-radius: 10px; padding: 8px; }
+.mn-sv-qr svg { width: 100%; height: 100%; display: block; }
+.mn-sv-codelabel { font-size: .74rem; color: var(--text-3); margin-top: 12px; }
+.mn-sv-code { font-size: 2rem; font-weight: 800; letter-spacing: .14em; color: var(--accent); line-height: 1.2; }
+.mn-sv-url { font-size: .7rem; color: var(--text-3); word-break: break-all; margin-top: 2px; }
+.mn-sv-right { min-width: 0; }
+.mn-sv-progress { border: 1.5px solid var(--border-strong); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+.mn-sv-progress.done { border-color: var(--success); background: #f0fdf4; }
+.mn-sv-pnum { font-size: 1.9rem; font-weight: 800; color: var(--primary); }
+.mn-sv-progress.done .mn-sv-pnum { color: var(--success); }
+.mn-sv-pof { font-size: 1.1rem; font-weight: 700; color: var(--text-3); }
+.mn-sv-plabel { font-size: .84rem; color: var(--text-2); margin-left: 6px; }
+.mn-sv-bar { height: 7px; border-radius: 4px; background: var(--border); margin-top: 8px; overflow: hidden; }
+.mn-sv-bar i { display: block; height: 100%; background: var(--primary); border-radius: 4px; transition: width .4s ease; }
+.mn-sv-progress.done .mn-sv-bar i { background: var(--success); }
+.mn-sv-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.mn-sv-item { display: flex; align-items: center; gap: 9px; padding: 8px 11px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: .85rem; }
+.mn-sv-item.ok { border-color: #bbf7d0; background: #f0fdf4; }
+.mn-sv-mark { flex-shrink: 0; }
+.mn-sv-who { flex: 1; min-width: 0; }
+.mn-sv-who span { display: block; font-size: .75rem; color: var(--text-3); }
+.mn-sv-wait { font-size: .76rem; color: var(--text-3); }
+.mn-sv-empty { font-size: .85rem; color: var(--text-2); text-align: center; line-height: 1.7;
+  border: 1px dashed var(--border-strong); border-radius: 10px; padding: 18px 14px; }
+.mn-sv-hint { font-size: .78rem; color: var(--text-3); margin-top: 10px; line-height: 1.6; }
+
 /* 새 회의록 — 자동 채움 미리보기 */
 .mn-preview { border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2);
   padding: 10px 12px; font-size: .83rem; color: var(--text-2); line-height: 1.7; margin: 4px 0 10px; }
@@ -1494,6 +1554,11 @@ a.ct-tel:hover { color: var(--primary); }
   .mn-side-h { width: 100%; }
   .mn-fitem { width: auto; flex: 0 1 auto; }
   .mn-fi-name { max-width: 130px; }
+}
+@media (max-width: 860px) {
+  .mn-sv-grid { grid-template-columns: 1fr; }
+  .mn-sv-qr { width: min(300px, 78vw); height: min(300px, 78vw); }
+  .mn-sv-list { max-height: none; }
 }
 @media (max-width: 768px) {
   .mn-signbox { flex-direction: column; align-items: center; text-align: center; }

@@ -213,18 +213,36 @@
   /* ══════════ 목록 ══════════ */
   function listHTML() {
     const items = filtered();
-    if (!items.length) return `<div class="empty">${view.q || view.folder || view.year || view.status
-      ? "조건에 맞는 회의록이 없습니다."
-      : "등록된 회의록이 없습니다." + (canWrite() ? " 우측 상단 <b>+ 새 회의록</b>으로 시작하세요." : "")}</div>`;
+    if (!items.length) {
+      if (view.q || view.folder || view.year || view.status)
+        return '<div class="empty">조건에 맞는 회의록이 없습니다.</div>';
+      // 첫 사용자를 위한 사용법 안내 — 서명 흐름이 어디에 있는지 여기서 알려준다
+      return `<div class="mn-guide">
+        <div class="mn-guide-h">🗒️ 아직 등록된 회의록이 없습니다</div>
+        <div class="mn-guide-sub">회의 시작 전에 회의록을 하나 열어두고, 참석자에게는 QR만 보여주면 됩니다.</div>
+        <div class="mn-guide-steps">
+          <div class="mn-gs"><span class="mn-gs-n">1</span><div>
+            <b>+ 새 회의록</b> — 폴더만 고르면 회차·제목·장소·참석자 명단이 지난 회의에서 자동으로 채워집니다.</div></div>
+          <div class="mn-gs"><span class="mn-gs-n">2</span><div>
+            <b>✍️ 서명 받기</b> — 회의록을 열면 <b>QR 코드</b>가 나옵니다. 회의실 화면에 크게 띄우거나 안내문으로 인쇄해 두세요.</div></div>
+          <div class="mn-gs"><span class="mn-gs-n">3</span><div>
+            참석자는 <b>휴대폰 카메라로 QR을 비추기만</b> 하면 됩니다. 암호 입력 없이 서명 화면이 열리고, 서명 현황이 실시간으로 표시됩니다.</div></div>
+          <div class="mn-gs"><span class="mn-gs-n">4</span><div>
+            논의 내용과 결정사항을 적고 <b>확정</b>하면, A4 회의록으로 바로 인쇄됩니다.</div></div>
+        </div>
+        ${canWrite() ? '<button class="btn btn-primary" id="mn-guide-add">+ 첫 회의록 만들기</button>' : ""}
+      </div>`;
+    }
     return `<div class="table-wrap"><table class="tbl mn-list-tbl tbl-cap" style="--cap:1420px"><thead><tr>
         <th style="width:150px">분류</th>
         <th style="width:112px">회의일</th>
         <th>제목<span class="col-sub"> / 장소</span></th>
         <th class="col-ext" style="width:120px">장소</th>
         <th class="col-ext" style="width:96px">주재</th>
-        <th style="width:78px">참석</th>
+        <th style="width:104px">참석 · 서명</th>
+        <th style="width:96px">서명 받기</th>
         <th style="width:104px">결정</th>
-        <th style="width:70px">첨부</th>
+        <th style="width:66px">첨부</th>
         <th class="col-ext" style="width:110px">작성</th></tr></thead><tbody>
       ${items.map(x => {
         const att = (x.attendees || []).length;
@@ -241,7 +259,12 @@
             ${(x.tags || []).length ? `<div class="mn-tags">${(x.tags || []).map(t => `<span class="mn-tag">#${esc(t)}</span>`).join("")}</div>` : ""}</td>
           <td class="col-ext" style="font-size:.82rem">${esc(x.place || "-")}</td>
           <td class="col-ext" style="font-size:.82rem">${esc(x.chair || "-")}</td>
-          <td style="font-size:.82rem">${att ? `${att}명${signed ? `<div style="font-size:.72rem;color:var(--success)">✍ ${signed}</div>` : ""}` : "-"}</td>
+          <td style="font-size:.82rem">${att
+            ? `${att}명<div class="mn-signpill${signed && signed === att ? " ok" : (signed ? " part" : "")}">✍ ${signed}/${att}</div>`
+            : '<span style="color:var(--text-3)">-</span>'}</td>
+          <td>${canWrite()
+            ? `<button class="btn btn-ghost btn-sm mn-signbtn" data-mn-sign="${esc(x.id)}" title="QR 서명 화면 띄우기">✍️ QR</button>`
+            : "-"}</td>
           <td style="font-size:.82rem">${dec.length
             ? `${dec.length}건${openN ? `<div style="font-size:.72rem;color:var(--warning)">미완 ${openN}</div>` : '<div style="font-size:.72rem;color:var(--success)">완료</div>'}`
             : "-"}</td>
@@ -287,26 +310,104 @@
     try { return SemisQR.svg(text, { size: px || 150, ecc: "M", margin: 3 }); }
     catch (e) { return ""; }
   }
-  /* 상세·인쇄 공용 QR 안내 박스 */
+  /* 상세용 QR 안내 박스 — 박스 전체가 [서명 받기] 진입점 */
   function signBoxHTML(x, opts) {
     const o = opts || {};
     const url = signUrl(x), code = signCode(x);
     const qr = qrSvg(url, o.qrSize || 132);
+    const att = x.attendees || [];
+    const signed = att.filter(a => a.sign).length;
     return `<div class="mn-signbox">
       <div class="mn-qr">${qr || '<div class="mn-qr-na">QR 생성 불가</div>'}</div>
       <div class="mn-signbox-body">
-        <div class="mn-signbox-h">📱 참석자 서명 안내</div>
+        <div class="mn-signbox-h">📱 참석자 서명 받기
+          <span class="mn-sign-stat${att.length && signed === att.length ? " ok" : ""}">${signed}/${att.length}명 서명 완료</span></div>
         <ol class="mn-signbox-steps">
           <li>휴대폰 카메라로 <b>왼쪽 QR</b>을 비추면 서명 화면이 바로 열립니다.</li>
           <li>QR이 안 될 때는 <b>semis.pe.kr</b> 접속 후 암호 <b class="cn-signcode-code">${esc(code)}</b> 입력.</li>
           <li>명단에서 본인 이름을 눌러 서명 (명단에 없으면 직접 입력).</li>
         </ol>
         ${o.noBtn ? "" : `<div class="mn-signbox-act">
+          <button class="btn btn-primary btn-sm" id="mn-signbig">🔍 QR 크게 띄우기</button>
           <span class="cn-signcode-copy" data-copy="${esc(code)}" title="코드 복사">📋 코드 복사</span>
           <span class="cn-signcode-copy" data-copy="${esc(url)}" data-copy-label="접속 주소" title="주소 복사">🔗 주소 복사</span>
-          <button class="btn btn-ghost btn-sm" id="mn-qr-print">🖨 QR 안내문 인쇄</button>
+          <button class="btn btn-ghost btn-sm" id="mn-qr-print">🖨 안내문 인쇄</button>
         </div>`}
       </div></div>`;
+  }
+
+  /* ══════════ 서명 받기 화면 (대형 QR) ══════════
+     회의실 화면·빔프로젝터에 띄워 두면 참석자들이 각자 스캔해서 서명한다.
+     서명이 들어오는 대로 현황이 자동으로 갱신된다(공용 DB 실시간 동기화 → 3초 폴링 재렌더). */
+  let signTimer = null;
+  function signModal(id) {
+    const x = all().find(c => c.id === id);
+    if (!x) { toast("회의록을 찾을 수 없습니다.", true); return; }
+    const url = signUrl(x), code = signCode(x);
+
+    openModal(`<div class="mn-signview" id="mn-signview"></div>`, { wide: true });
+    paint();
+    if (signTimer) clearInterval(signTimer);
+    signTimer = setInterval(() => {
+      // 모달이 닫혔으면 타이머 정리
+      if (!document.getElementById("mn-signview")) { clearInterval(signTimer); signTimer = null; return; }
+      paint();
+    }, 3000);
+
+    function paint() {
+      const cur = all().find(c => c.id === id) || x;
+      const att = cur.attendees || [];
+      const signed = att.filter(a => a.sign).length;
+      const done = att.length > 0 && signed === att.length;
+      const box = document.getElementById("mn-signview");
+      if (!box) return;
+      box.innerHTML = `
+        <h3>✍️ 참석자 서명 받기</h3>
+        <div class="mn-sv-sub">${esc(folderIcon(cur.folder))} ${esc(cur.title || "회의")}
+          · ${esc(cur.date || "")}${cur.time ? " " + esc(cur.time) : ""}${cur.place ? " · " + esc(cur.place) : ""}</div>
+        <div class="mn-sv-grid">
+          <div class="mn-sv-left">
+            <div class="mn-sv-qr">${qrSvg(url, 300) || '<div class="mn-qr-na">QR 생성 불가</div>'}</div>
+            <div class="mn-sv-codelabel">QR이 안 될 때 · semis.pe.kr 접속 후 입력</div>
+            <div class="mn-sv-code">${esc(code)}</div>
+            <div class="mn-sv-url">${esc(url)}</div>
+          </div>
+          <div class="mn-sv-right">
+            <div class="mn-sv-progress${done ? " done" : ""}">
+              <span class="mn-sv-pnum">${signed}<span class="mn-sv-pof"> / ${att.length}</span></span>
+              <span class="mn-sv-plabel">${done ? "전원 서명 완료 ✅" : "명 서명 완료"}</span>
+              <div class="mn-sv-bar"><i style="width:${att.length ? Math.round(signed / att.length * 100) : 0}%"></i></div>
+            </div>
+            <div class="mn-sv-list">
+              ${att.length ? att.map(a => `
+                <div class="mn-sv-item${a.sign ? " ok" : ""}">
+                  <span class="mn-sv-mark">${a.sign ? "✅" : "⬜"}</span>
+                  <span class="mn-sv-who"><b>${esc(a.name || "(이름 없음)")}</b>
+                    <span>${esc(a.org || "")}${a.role ? " · " + esc(a.role) : ""}</span></span>
+                  ${a.sign ? `<img class="cn-sign-thumb" src="${esc(a.sign)}" alt="서명">` : '<span class="mn-sv-wait">대기</span>'}
+                </div>`).join("")
+                : `<div class="mn-sv-empty">등록된 참석자가 없습니다.<br>
+                     참석자가 QR로 접속해 <b>직접 입력 후 서명</b>하면 명단에 자동으로 추가됩니다.</div>`}
+            </div>
+            <div class="mn-sv-hint">① 휴대폰 카메라로 QR 비추기 → ② 뜨는 링크 누르기 → ③ 본인 이름 눌러 서명<br>
+              서명이 들어오면 이 화면이 자동으로 갱신됩니다.</div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <span class="cn-signcode-copy" data-copy="${esc(code)}" title="코드 복사" style="margin-right:auto">📋 코드 복사</span>
+          <span class="cn-signcode-copy" data-copy="${esc(url)}" data-copy-label="접속 주소" title="주소 복사">🔗 주소 복사</span>
+          <button class="btn btn-ghost" id="mn-sv-print">🖨 안내문 인쇄</button>
+          <button class="btn btn-primary" id="mn-sv-close">닫기</button>
+        </div>`;
+      wireCopies("#mn-signview");
+      const pb = document.getElementById("mn-sv-print");
+      if (pb) pb.onclick = () => printQrSheet(id);
+      const cb = document.getElementById("mn-sv-close");
+      if (cb) cb.onclick = () => {
+        if (signTimer) { clearInterval(signTimer); signTimer = null; }
+        closeModal(); SeMIS.renderView();
+      };
+    }
   }
 
   /* ══════════ 모듈 렌더 ══════════ */
@@ -394,6 +495,12 @@
   function bindRows() {
     $$("#mn-body [data-mn-row]").forEach(el => el.onclick = () => detail(el.dataset.mnRow));
     $$("#mn-body [data-mn-act]").forEach(el => el.onclick = () => detail(el.dataset.mnAct));
+    // 목록의 ✍️ QR 버튼 — 행 클릭(상세 열기)과 충돌하지 않도록 전파 차단
+    $$("#mn-body [data-mn-sign]").forEach(el => el.onclick = (ev) => {
+      ev.stopPropagation(); signModal(el.dataset.mnSign);
+    });
+    const ga = $("#mn-guide-add");
+    if (ga) ga.onclick = () => newMinute();
   }
 
   /* ══════════ 폴더 관리 ══════════ */
@@ -617,8 +724,9 @@
         ${x.no ? `<span>🔢 제${esc(String(x.no))}차</span>` : ""}
       </div>
       ${(x.tags || []).length ? `<div class="mn-tags" style="margin-top:6px">${(x.tags || []).map(tg => `<span class="mn-tag">#${esc(tg)}</span>`).join("")}</div>` : ""}
-      ${canEditRec(x) ? signBoxHTML(x) : ""}
-      ${sec("참석자", attHTML)}
+      ${canWrite() ? signBoxHTML(x) : ""}
+      ${sec("참석자", attHTML || `<div class="mn-att-none">아직 등록된 참석자가 없습니다.
+        ${canWrite() ? '위 <b>QR 크게 띄우기</b>로 참석자에게 QR을 보여주면, 각자 서명하면서 명단에 자동으로 등록됩니다.' : ""}</div>`)}
       ${sec("안건", richView(x.agendaHtml, x.agenda))}
       ${sec("논의 내용", richView(x.bodyHtml, x.body))}
       ${sec("결정사항 / 조치사항", decHTML)}
@@ -629,6 +737,7 @@
       ${x.updated ? `<div class="form-hint" style="margin-top:10px">최종 수정 ${esc(String(x.updated).slice(0, 10))}${x.by ? " · " + esc(x.by) : ""}</div>` : ""}
       <div class="modal-actions">
         ${canDelRec(x) ? '<button class="btn btn-danger" id="mn-del" style="margin-right:auto">삭제</button>' : ""}
+        ${canWrite() ? '<button class="btn btn-accent" id="mn-signbig2">✍️ 서명 받기</button>' : ""}
         <button class="btn btn-ghost" id="mn-print">🖨 회의록 인쇄</button>
         ${canEditRec(x) ? '<button class="btn btn-ghost" id="mn-edit">✎ 수정</button>' : ""}
         <button class="btn btn-primary" id="mn-close">닫기</button>
@@ -638,6 +747,8 @@
     $("#mn-close").onclick = () => { closeModal(); SeMIS.renderView(); };
     $("#mn-print").onclick = () => printMinute(x.id);
     if ($("#mn-qr-print")) $("#mn-qr-print").onclick = () => printQrSheet(x.id);
+    if ($("#mn-signbig")) $("#mn-signbig").onclick = () => signModal(x.id);
+    if ($("#mn-signbig2")) $("#mn-signbig2").onclick = () => signModal(x.id);
     wireCopies("#modal-box");
     $$("#modal-box .cn-rich a[href]").forEach(a => { a.target = "_blank"; a.rel = "noopener"; });
     if (canEditRec(x)) $("#mn-edit").onclick = () => form(x.id);
@@ -694,6 +805,8 @@
         <div class="mn-att-bar">
           <button type="button" class="btn btn-ghost btn-sm" id="mn-att-add">+ 참석자 추가</button>
           <button type="button" class="btn btn-ghost btn-sm" id="mn-att-prev">↩ 직전 회의 명단 불러오기</button>
+          ${x ? '<button type="button" class="btn btn-accent btn-sm" id="mn-att-qr">✍️ QR로 서명 받기</button>'
+              : '<span class="form-hint">저장하면 <b>QR 서명</b> 화면이 바로 열립니다.</span>'}
           <span class="form-hint" id="mn-att-n"></span>
         </div>
         <div class="form-row" style="margin-top:10px"><label>불참자 (선택)</label>
@@ -790,6 +903,11 @@
       attendees.push({ name: "", org: "", role: "", note: "", sign: "" }); attPaint();
       const rows = $$("#mn-att .mn-a-name");
       if (rows.length) rows[rows.length - 1].focus();
+    };
+    /* 회의 중 작성하다가 바로 QR을 띄우는 경로 — 입력분을 먼저 저장해 명단이 어긋나지 않게 한다 */
+    if ($("#mn-att-qr")) $("#mn-att-qr").onclick = () => {
+      if (!save({ silent: true })) return;
+      signModal(x.id);
     };
     $("#mn-att-prev").onclick = () => {
       attCollect();
@@ -892,12 +1010,14 @@
       D().minutes = all().filter(c => c.id !== x.id);
       SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
     });
-    $("#mn-save").onclick = () => {
+    /* 저장 — opts.silent 면 모달을 닫지 않고 값만 반영(QR 띄우기 경로). 성공 시 true */
+    function save(opts) {
+      const o = opts || {};
       attCollect(); decCollect();
       const title = $("#mn-title").value.trim();
       const date = $("#mn-date").value;
-      if (!title) { toast("제목을 입력하세요.", true); return; }
-      if (!date) { toast("회의일을 입력하세요.", true); return; }
+      if (!title) { toast("제목을 입력하세요.", true); return false; }
+      if (!date) { toast("회의일을 입력하세요.", true); return false; }
       const stEl = $('input[name="mn-st"]:checked');
       const ag = richOut("agenda"), bd = richOut("body");
       const rec = {
@@ -932,12 +1052,25 @@
         updated: new Date().toISOString()
       };
       let saved;
+      const isNew = !x;
       if (x) { Object.assign(x, rec); saved = x; }
       else { saved = Object.assign({ id: uid("mn"), created: new Date().toISOString() }, rec); D().minutes.push(saved); }
       syncCalendar(saved);
-      SeMIS.save(); closeModal(); SeMIS.renderView();
-      toast(rec.status === "draft" ? "초안으로 저장되었습니다." : "회의록이 확정 저장되었습니다.");
-    };
+      SeMIS.save();
+      if (o.silent) { toast("저장되었습니다."); return true; }
+      closeModal();
+      if (isNew) {
+        // 새 회의록은 상세를 바로 열어 QR 서명 안내가 곧장 눈에 들어오게 한다
+        SeMIS.renderView();
+        detail(saved.id);
+        toast("회의록이 만들어졌습니다. QR을 보여주면 참석자가 바로 서명할 수 있습니다.");
+      } else {
+        SeMIS.renderView();
+        toast(rec.status === "draft" ? "초안으로 저장되었습니다." : "회의록이 확정 저장되었습니다.");
+      }
+      return true;
+    }
+    $("#mn-save").onclick = () => save();
   }
 
   /* ══════════ 인쇄 공통 — 숨김 iframe 으로 인쇄 대화상자 ══════════ */
@@ -1274,5 +1407,6 @@
   window.SemisMinutes = { seedFolders, all, sorted, folders, folderOf, folderName, stats,
     nextNo, prevMeeting, draftFrom, matches, knownPeople, signCode, signUrl, view, filtered,
     syncCalendar, removeCalendar, SID, detail, form, newMinute, folderModal,
-    printMinute, printQrSheet, renderSigning, saveSignEntry, orgPresets, qrSvg, signBoxHTML };
+    printMinute, printQrSheet, renderSigning, saveSignEntry, orgPresets, qrSvg, signBoxHTML,
+    signModal, canWrite, listHTML };
 })();

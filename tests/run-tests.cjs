@@ -7451,7 +7451,8 @@ function makeFetchStub(server) {
     go(e, "minutes");
     qa(e, "#mn-body [data-mn-row]").find(r => r.dataset.mnRow === "other").click();
     ok(!q(e, "#mn-edit"), "타인 작성분은 수정 버튼 없음");
-    ok(!q(e, "#modal-box .mn-signbox"), "타인 작성분은 서명 코드 미노출");
+    // v2.40.1: 회의 진행자가 누구든 QR을 띄울 수 있어야 하므로 서명 안내는 mgr 이상 전원 노출
+    ok(q(e, "#modal-box .mn-signbox"), "타인 작성분도 서명 QR은 열람 가능");
     e.S.closeModal();
     // hq 는 전체 수정 가능
     const e2 = mnEnv("hq");
@@ -7726,6 +7727,143 @@ function makeFetchStub(server) {
     const keys = e.w.SemisSync.SYNC_KEYS;
     ok(keys.indexOf("minutes") >= 0, "minutes 동기화");
     ok(keys.indexOf("minuteFolders") >= 0, "minuteFolders 동기화");
+  });
+
+  /* ── [MS] 서명 진입점 개선 (v2.40.1) ── */
+
+  t("MS01 빈 게시판에 사용법 안내 + 첫 회의록 버튼 노출", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [];
+    go(e, "minutes");
+    const body = q(e, "#mn-body");
+    ok(body.querySelector(".mn-guide"), "안내 카드 렌더");
+    ok(body.textContent.indexOf("QR") >= 0, "QR 서명 흐름 안내 포함");
+    ok(body.textContent.indexOf("휴대폰 카메라") >= 0, "참석자 사용법 안내");
+    eq(body.querySelectorAll(".mn-gs").length, 4, "4단계 안내");
+    ok(q(e, "#mn-guide-add"), "첫 회의록 만들기 버튼");
+    q(e, "#mn-guide-add").click();
+    ok(q(e, "#mn-ngo"), "버튼이 새 회의록 모달을 연다");
+    e.S.closeModal();
+  });
+
+  t("MS02 목록 행마다 ✍️ QR 버튼 — 상세를 열지 않고 서명 화면 진입", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "ms10", folder: MF, no: 1, date: "2026-08-07", title: "정례회의",
+      attendees: [{ name: "홍길동", org: "A", sign: "" }, { name: "김철수", org: "B", sign: "https://x/s.png" }],
+      decisions: [] }];
+    go(e, "minutes");
+    const btn = q(e, "#mn-body [data-mn-sign]");
+    ok(btn, "목록에 QR 버튼 노출");
+    ok(q(e, "#mn-body .mn-signpill"), "서명 현황 배지");
+    ok(q(e, "#mn-body .mn-signpill").textContent.indexOf("1/2") >= 0, "서명 1/2 표시");
+    btn.click();
+    const box = q(e, "#modal-box");
+    ok(box.querySelector("#mn-signview"), "서명 받기 화면이 열림");
+    ok(box.textContent.indexOf("참석자 서명 받기") >= 0, "제목");
+    ok(!box.querySelector(".mn-view"), "상세 모달이 아니라 서명 화면");
+    e.S.closeModal();
+  });
+
+  t("MS03 서명 받기 화면 — 대형 QR·코드·주소·현황·명단", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "ms11", folder: MF, no: 4, date: "2026-08-07", time: "14:00",
+      title: "제4차 정례회의", place: "3층",
+      attendees: [{ name: "홍길동", org: "항공보안파트", role: "과장", sign: "https://x/a.png" },
+                  { name: "김철수", org: "인천화물팀", role: "대리", sign: "" },
+                  { name: "이영희", org: "운항품질팀", role: "차장", sign: "" }],
+      decisions: [] }];
+    e.w.SemisMinutes.signModal("ms11");
+    const box = q(e, "#modal-box");
+    const code = e.S.signCodeFor(e.S.data.minutes[0]);
+    ok(box.querySelector(".mn-sv-qr svg"), "대형 QR SVG");
+    eq(box.querySelector(".mn-sv-code").textContent, code, "6자리 코드 표기");
+    ok(box.querySelector(".mn-sv-url").textContent.indexOf("#/sign/" + code) >= 0, "접속 주소 표기");
+    ok(box.querySelector(".mn-sv-pnum").textContent.indexOf("1") === 0, "서명 1명");
+    ok(box.textContent.indexOf("/ 3") >= 0, "전체 3명");
+    eq(box.querySelectorAll(".mn-sv-item").length, 3, "참석자 3행");
+    eq(box.querySelectorAll(".mn-sv-item.ok").length, 1, "서명 완료 1행 강조");
+    ok(box.textContent.indexOf("제4차 정례회의") >= 0, "회의 제목");
+    ok(box.querySelector("#mn-sv-print"), "안내문 인쇄 버튼");
+    e.S.closeModal();
+  });
+
+  await ta("MS04 서명이 들어오면 현황이 자동 갱신 (3초 폴링)", async () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "ms12", folder: MF, no: 1, date: "2026-08-07", title: "T",
+      attendees: [{ name: "홍길동", org: "A", sign: "" }], decisions: [] }];
+    e.w.SemisMinutes.signModal("ms12");
+    ok(q(e, "#modal-box .mn-sv-pnum").textContent.indexOf("0") === 0, "처음엔 0명");
+    ok(!q(e, "#modal-box .mn-sv-item.ok"), "미서명 상태");
+    // 다른 기기에서 서명이 들어온 상황 (동기화로 데이터만 바뀜)
+    e.S.data.minutes[0].attendees[0].sign = "https://x/new.png";
+    await new Promise(r => setTimeout(r, 3300));
+    const box = q(e, "#modal-box");
+    ok(box && box.querySelector(".mn-sv-item.ok"), "자동 갱신으로 완료 표시");
+    ok(box.textContent.indexOf("전원 서명 완료") >= 0, "전원 완료 문구");
+    e.S.closeModal();
+  });
+
+  t("MS05 참석자 0명이어도 서명 받기 가능 (직접 입력 안내)", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "ms13", folder: MF, no: 1, date: "2026-08-07", title: "신규 회의",
+      attendees: [], decisions: [] }];
+    go(e, "minutes");
+    q(e, "#mn-body [data-mn-row]").click();
+    ok(q(e, "#modal-box .mn-signbox"), "참석자 없어도 QR 안내 노출");
+    ok(q(e, "#modal-box .mn-att-none"), "참석자 안내 문구");
+    ok(q(e, "#modal-box .mn-att-none").textContent.indexOf("자동으로 등록") >= 0, "자동 등록 안내");
+    ok(q(e, "#modal-box #mn-signbig"), "QR 크게 띄우기 버튼");
+    ok(q(e, "#modal-box #mn-signbig2"), "하단 서명 받기 버튼");
+    q(e, "#mn-signbig").click();
+    ok(q(e, "#modal-box .mn-sv-empty"), "명단 없음 안내");
+    e.S.closeModal();
+  });
+
+  t("MS06 새 회의록 저장 직후 상세가 열려 QR이 바로 보인다", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [];
+    go(e, "minutes");
+    q(e, "#mn-add").click();
+    q(e, "#mn-ngo").click();
+    ok(q(e, "#mn-title").value, "제목 자동 입력");
+    ok(q(e, ".mn-att-bar").textContent.indexOf("저장하면") >= 0, "신규엔 저장 안내 문구");
+    q(e, "#mn-save").click();
+    eq(e.S.data.minutes.length, 1, "저장됨");
+    const box = q(e, "#modal-box");
+    ok(box.querySelector(".mn-view"), "상세가 자동으로 열림");
+    ok(box.querySelector(".mn-signbox"), "QR 안내가 바로 노출");
+    ok(box.querySelector(".mn-qr svg"), "QR 렌더");
+    e.S.closeModal();
+  });
+
+  t("MS07 수정 폼에서 [QR로 서명 받기] — 입력분 저장 후 서명 화면", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "ms14", folder: MF, no: 1, date: "2026-08-07", title: "수정 대상",
+      attendees: [], decisions: [], byId: "thq" }];
+    go(e, "minutes");
+    q(e, "#mn-body [data-mn-row]").click();
+    q(e, "#mn-edit").click();
+    ok(q(e, "#mn-att-qr"), "수정 폼에 QR 버튼");
+    q(e, "#mn-att-add").click();
+    const row = q(e, "#mn-att .mn-att-row");
+    row.querySelector(".mn-a-name").value = "신규참석";
+    row.querySelector(".mn-a-org").value = "항공보안파트";
+    q(e, "#mn-att-qr").click();
+    eq(e.S.data.minutes[0].attendees.length, 1, "입력분이 먼저 저장됨");
+    eq(e.S.data.minutes[0].attendees[0].name, "신규참석");
+    ok(q(e, "#modal-box #mn-signview"), "서명 화면으로 전환");
+    ok(q(e, "#modal-box").textContent.indexOf("신규참석") >= 0, "방금 넣은 참석자가 명단에 보임");
+    e.S.closeModal();
+  });
+
+  t("MS08 열람 전용(manager 아닌) 계정에는 QR 진입점 미노출", () => {
+    const e = mnEnv("manager");
+    e.S.data.minutes = [{ id: "ms15", folder: MF, no: 1, date: "2026-08-07", title: "T",
+      attendees: [], decisions: [], byId: "other" }];
+    go(e, "minutes");
+    ok(q(e, "#mn-body [data-mn-sign]"), "manager(작성 권한)에는 QR 버튼 노출");
+    // user 계정은 모듈 자체 접근 불가 (MN09에서 검증)
+    eq(e.w.SemisMinutes.canWrite(), true, "manager는 canWrite");
   });
 
   /* ══════════ 결과 ══════════ */
