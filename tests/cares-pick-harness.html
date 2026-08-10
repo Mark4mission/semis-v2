@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SeMIS · CARES 고장이력 조회·선택 수동 검증 하네스</title>
+<link rel="stylesheet" href="../css/main.css">
+<style>
+  body { padding: 16px; background: var(--bg); }
+  #log { font: 12px/1.6 ui-monospace, monospace; background: #0f172a; color: #e2e8f0; padding: 10px;
+    border-radius: 8px; margin-top: 12px; max-height: 160px; overflow: auto; white-space: pre-wrap; }
+  .hz { display: flex; gap: 8px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<!-- 실제 js/council.js 를 그대로 로드해 CARES 고장이력 피커/상세 오버레이만 격리 검증.
+     로그인·공용 DB 없이 동작하며, CARES 호출은 아래 loadCares 스텁으로 대체된다.
+     사용법: 로컬 http 서버로 이 파일을 열고 아래 버튼을 누른다. -->
+<h3 style="margin:0 0 10px">CARES 고장이력 조회·선택 — 수동 검증</h3>
+<div class="hz">
+  <button class="btn btn-primary" id="h-detail">회의록 상세 열기 (사례 행 클릭 → 원본)</button>
+  <button class="btn btn-ghost" id="h-form">편집 폼 열기 (골라 담기)</button>
+  <button class="btn btn-ghost" id="h-pick">피커 단독 열기</button>
+</div>
+<div id="app"></div>
+<div id="log">준비됨.</div>
+
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div id="modal-box" class="modal-box" role="dialog" aria-modal="true"></div>
+</div>
+
+<script>
+(() => {
+  const log = (m) => { const el = document.getElementById("log"); el.textContent = m + "\n" + el.textContent; };
+  const $  = (sel, el) => (el || document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el || document).querySelectorAll(sel));
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const modules = {};
+
+  window.SeMIS = {
+    $, $$, esc,
+    toast: (m) => log("toast: " + m),
+    openModal(html, opts) {
+      const box = $("#modal-box");
+      box.classList.toggle("wide", !!(opts && opts.wide));
+      box.innerHTML = html;
+      $("#modal-overlay").classList.remove("hidden");
+    },
+    closeModal() {
+      $("#modal-overlay").classList.add("hidden");
+      $("#modal-box").className = "modal-box";
+      $("#modal-box").innerHTML = "";
+    },
+    confirmModal: (m, cb) => { log("confirm: " + m); cb(); },
+    canEdit: () => true, canDelete: () => true, roleRank: () => 4,
+    user: { id: "hq", name: "최상일", role: "hq" },
+    registerModule: (id, def) => { modules[id] = def; },
+    renderView: () => modules.council.render(document.getElementById("app")),
+    navigate: (r) => log("navigate: " + r),
+    save: () => log("save() 호출 (하네스: 저장 안 함) — 사례 " +
+      (SeMIS.data.council[0].cases || []).map(c => c.equip + "/" + (c.caresId || "수기")).join(", ")),
+    saveSilent: () => {},
+    signUrlFor: () => "https://semis.pe.kr/#/sign/123456",
+    signCodeFor: () => "123456",
+    data: {
+      council: [{
+        id: "m1", round: 7, date: "2026-05-25", time: "14:00~16:00", place: "인천화물터미널 B동",
+        chair: "최상일 프로", scribe: "최상일 프로",
+        attendees: [{ cat: "본사", org: "항공보안파트", name: "최상일", role: "프로" }],
+        agenda: "1. 고장 사례 검토\n2. 사용환경 개선",
+        cases: [
+          { date: "2026-05-10", equip: "ETD 1호기", symptom: "알람 빈발", cause: "멤브레인 노즐 오염 [환경]",
+            action: "처리: 홍진의 · 수리완료 · 부품: 멤브레인×2", caresId: "r1",
+            caresSnap: { date: "2026-05-10", equip: "ETD 1호기", symptom: "알람 빈발",
+              cause: "멤브레인 노즐 오염 [환경]", action: "처리: 홍진의 · 수리완료 · 부품: 멤브레인×2" } },
+          { date: "2026-05-18", equip: "검색대 게이트", symptom: "수기로 적은 사례", cause: "회의 중 구두 보고", action: "차기 점검 시 확인" },
+          { date: "2026-04-30", equip: "ETD 4호기", symptom: "삭제된 원본", cause: "-", action: "-", caresId: "없는id" }
+        ],
+        actions: [{ task: "멤브레인 예비품 2세트 확보", owner: "프로에스콤", due: "2026-06-10", done: false }],
+        files: [], nextPlan: "2026-06-22"
+      }]
+    }
+  };
+  window.SemisNotice = {
+    sanitizeHtml: (h) => h, looksLikeHtml: () => false,
+    wireRichMedia: () => ({ insert: () => {} })
+  };
+  /* CARES 스텁 — 실제 Firestore 호출 없이 표본 이력 제공 */
+  const D = (y, m, d, h) => Date.UTC(y, m - 1, d, (h || 12) - 9); // KST 기준 시각
+  window.SemisEquipment = {
+    loadCares: async () => {
+      await new Promise(r => setTimeout(r, 250)); // 로딩 표시 확인용
+      return { err: null, repairs: [
+        { id: "r1", equipmentName: "ETD 1호기", equipmentSerial: "IONAB-0231", reporter: "김검색",
+          symptom: "검색 중 알람이 반복 발생하고 재부팅해도 동일 증상", handlingType: "manufacturer",
+          occurredAtMs: D(2026, 5, 10, 9), reportedAtMs: D(2026, 5, 10, 11), reportDelayMs: 2 * 3600e3,
+          acceptedAtMs: D(2026, 5, 10, 14), acceptedBy: "프로에스콤 이기사",
+          repairStartedAtMs: D(2026, 5, 11, 9), repairStartedBy: "뉴원 홍진의",
+          resolvedAtMs: D(2026, 5, 11, 16), resolvedBy: "홍진의",
+          causeCategory: "environmental", rootCause: "화물터미널 분진 유입으로 멤브레인 노즐 오염",
+          parts: [{ part: "멤브레인", qty: 2, isPaid: true }, { part: "노즐 캡", qty: 1, isPaid: false }],
+          reportPhotoCount: 2, repairPhotoCount: 1,
+          editedAt: "2026-05-12 09:30", editedBy: "최상일", editCount: 2 },
+        { id: "r2", equipmentName: "X-Ray 2호기", equipmentSerial: "RAP638DV-77", reporter: "박감독",
+          symptom: "가동 중 전원이 꺼지는 현상 반복", handlingType: "manufacturer",
+          reportedAtMs: D(2026, 5, 20, 8), status: "in_repair",
+          acceptedAtMs: D(2026, 5, 20, 10), acceptedBy: "인씨스",
+          causeCategory: "mechanical", rootCause: "파워서플라이 노후 (내용연수 8년 초과)",
+          parts: [{ part: "파워서플라이", qty: 1, isPaid: true }] },
+        { id: "r3", equipmentName: "ETD 3호기", reporter: "이보안", symptom: "배터리 충전 불가",
+          handlingType: "internal", reportedAtMs: D(2026, 3, 2, 10), causeCategory: "human",
+          rootCause: "충전 거치대 미체결 상태로 보관", resolvedAtMs: D(2026, 3, 2, 15), resolvedBy: "자체" },
+        { id: "r4", equipmentName: "X-Ray 1호기", symptom: "영상 판독 화면 잔상", reporter: "정검색",
+          reportedAtMs: D(2026, 4, 18, 13), status: "accepted" },
+        { id: "r5", equipmentName: "ETD 1호기", symptom: "프린터 용지 걸림", reporter: "김검색",
+          reportedAtMs: D(2026, 5, 22, 9), causeCategory: "other", rootCause: "규격 외 용지 사용" }
+      ]};
+    }
+  };
+  window.addEventListener("error", (e) => log("ERROR: " + e.message));
+})();
+</script>
+<script src="../js/council.js"></script>
+<script>
+  SeMIS.renderView();
+  document.getElementById("h-detail").onclick = () => document.querySelector('[data-cn-row="m1"]').click();
+  document.getElementById("h-form").onclick = () => {
+    document.querySelector('[data-cn-row="m1"]').click();
+    document.querySelector("#cn-edit").click();
+  };
+  document.getElementById("h-pick").onclick = () => SemisCouncil.caresPicker({
+    from: "2026-04-01", to: "2026-05-25",
+    existing: ["r1"],
+    onPick: (rs) => alert("선택 " + rs.length + "건: " + rs.map(r => r.equipmentName).join(", "))
+  });
+</script>
+</body>
+</html>

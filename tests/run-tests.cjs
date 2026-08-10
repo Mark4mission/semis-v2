@@ -5138,6 +5138,183 @@ function makeFetchStub(server) {
     ok(m2.cases[0].caresSnap && m2.cases[0].caresSnap.symptom === "알람", "snapshot 저장");
   });
 
+  /* ─ v2.42: CARES 고장이력 조회·선택 (반자동 불러오기) + 회의 중 원본 열람 ─ */
+  /* 시각은 정오 UTC — 어느 시간대에서 돌려도 날짜가 밀리지 않도록 */
+  const RP = [
+    { id: "r1", equipmentName: "ETD 1호기", equipmentSerial: "ETD-001", symptom: "알람 빈발", reporter: "김신고",
+      reportedAtMs: Date.UTC(2026, 4, 10, 12), occurredAtMs: Date.UTC(2026, 4, 10, 9), rootCause: "멤브레인 노즐 오염",
+      causeCategory: "environmental", resolvedAtMs: Date.UTC(2026, 4, 11, 12), resolvedBy: "홍진의",
+      parts: [{ part: "멤브레인", qty: 2, isPaid: true }] },
+    { id: "r2", equipmentName: "X-Ray 2호기", symptom: "전원 꺼짐 반복", reportedAtMs: Date.UTC(2026, 4, 20, 12),
+      rootCause: "파워서플라이 노후", causeCategory: "mechanical", status: "in_repair" },
+    { id: "r3", equipmentName: "ETD 1호기", symptom: "충전 불가", reportedAtMs: Date.UTC(2026, 2, 2, 12),
+      causeCategory: "human", handlingType: "internal" }
+  ];
+  const stubCares = (e) => { e.w.SemisEquipment.loadCares = async () => ({ err: null, repairs: RP.map(r => Object.assign({}, r)) }); };
+  const setF = (e, sel, v, ev) => { const el = q(e, sel); el.value = v; el.dispatchEvent(new e.w.Event(ev || "change", { bubbles: true })); };
+
+  await ta("CN60 CARES 이력 피커: 전체 목록 + 기간/장비/상태/원인/검색 필터", async () => {
+    const e = makeEnv();
+    stubCares(e);
+    e.w.SemisCouncil.caresPicker({});
+    await new Promise(r => setTimeout(r, 20));
+    ok(q(e, ".cn-pk-box"), "피커 오버레이 표시");
+    eq(qa(e, ".cn-pk-row").length, 3, "기본 = 전체 3건");
+    ok(/전체 3건/.test(q(e, ".cn-pk-count").textContent), "건수 표시");
+    ok(!q(e, ".cn-pk-ok"), "읽기 전용 = 불러오기 버튼 없음");
+    ok(!q(e, ".cn-pk-ck"), "읽기 전용 = 체크박스 없음");
+    setF(e, ".cn-pk-from", "2026-05-01");
+    eq(qa(e, ".cn-pk-row").length, 2, "시작일 필터 (3월분 제외)");
+    setF(e, ".cn-pk-to", "2026-05-15");
+    eq(qa(e, ".cn-pk-row").length, 1, "종료일 필터");
+    q(e, ".cn-pk-allp").click();
+    eq(qa(e, ".cn-pk-row").length, 3, "전체 기간 복귀");
+    setF(e, ".cn-pk-equip", "ETD 1호기");
+    eq(qa(e, ".cn-pk-row").length, 2, "장비 필터");
+    setF(e, ".cn-pk-st", "resolved");
+    eq(qa(e, ".cn-pk-row").length, 1, "상태 필터(수리 완료)");
+    q(e, ".cn-pk-reset").click();
+    setF(e, ".cn-pk-cause", "mechanical");
+    eq(qa(e, ".cn-pk-row").length, 1, "원인 분류 필터");
+    q(e, ".cn-pk-reset").click();
+    setF(e, ".cn-pk-q", "노즐", "input");
+    eq(qa(e, ".cn-pk-row").length, 1, "근본원인 검색");
+    setF(e, ".cn-pk-q", "없는말", "input");
+    eq(qa(e, ".cn-pk-row").length, 0, "검색 결과 없음");
+    ok(q(e, ".cn-pk-body .empty"), "빈 안내 표시");
+    e.w.SemisCouncil.closeAllSub();
+    ok(!q(e, ".cn-pk-box"), "닫힘");
+  });
+
+  await ta("CN61 피커 선택: 체크 → 선택분만 전달 / 이미 있는 사례는 중복 차단", async () => {
+    const e = makeEnv();
+    stubCares(e);
+    let picked = null;
+    e.w.SemisCouncil.caresPicker({ existing: ["r1"], onPick: (rs) => { picked = rs; } });
+    await new Promise(r => setTimeout(r, 20));
+    eq(qa(e, ".cn-pk-ck").length, 2, "이미 추가된 1건은 체크박스 없음");
+    eq(qa(e, ".cn-pk-dup").length, 1, "추가됨 표시");
+    q(e, '.cn-pk-ck[data-rid="r2"]').click();
+    ok(/선택 1건/.test(q(e, ".cn-pk-count").textContent), "선택 건수 갱신");
+    q(e, ".cn-pk-all").click();  // 표시분 전체 선택 (중복 제외)
+    ok(/선택 2건/.test(q(e, ".cn-pk-count").textContent), "전체 선택 = 중복 제외 2건");
+    q(e, ".cn-pk-ok").click();
+    ok(picked && picked.length === 2, "선택 2건 전달");
+    eq(picked.map(r => r.id).sort().join(","), "r2,r3", "선택된 id");
+    ok(!q(e, ".cn-pk-box"), "불러오기 후 피커 닫힘");
+  });
+
+  await ta("CN62 편집폼 '이력에서 골라 담기' → 선택분만 사례 추가 + caresId 저장", async () => {
+    const e = makeEnv();
+    e.S.data.council = [
+      { id: "m0", round: 1, date: "2026-04-01", attendees: [], cases: [], actions: [], files: [] },
+      { id: "m1", round: 2, date: "2026-05-25", attendees: [], cases: [], actions: [], files: [] }];
+    stubCares(e);
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, '[data-cn-row="m1"]').click();
+    q(e, "#cn-edit").click();
+    ok(q(e, "#cn-cares-sync"), "자동 불러오기 버튼 유지");
+    ok(q(e, "#cn-cares-pick"), "골라 담기 버튼 추가");
+    q(e, "#cn-cares-pick").click();
+    await new Promise(r => setTimeout(r, 20));
+    ok(q(e, "#cn-cases"), "편집 폼이 유지됨 (오버레이 방식)");
+    eq(qa(e, ".cn-pk-row").length, 2, "기본 기간 = 직전 회의(4/1) 다음날 ~ 이번 회의일 (3월분 제외)");
+    q(e, ".cn-pk-allp").click();
+    eq(qa(e, ".cn-pk-row").length, 3, "전체 기간 3건");
+    q(e, '.cn-pk-ck[data-rid="r3"]').click();
+    q(e, ".cn-pk-ok").click();
+    eq(qa(e, "#cn-cases .cn-case-row").length, 1, "선택 1건만 사례로 추가");
+    eq(q(e, "#cn-cases .cn-c-equip").value, "ETD 1호기", "장비 채움");
+    q(e, "#cn-save").click();
+    const m1 = e.S.data.council.find(c => c.id === "m1");
+    eq(m1.cases.length, 1, "저장 1건");
+    eq(m1.cases[0].caresId, "r3", "caresId 저장");
+    ok(m1.cases[0].caresSnap, "스냅샷 저장");
+  });
+
+  await ta("CN63 회의록 상세: CARES 연동 사례 행 클릭 → 원본 상세 오버레이", async () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "m1", round: 3, date: "2026-05-25", place: "B동", attendees: [],
+      cases: [{ date: "2026-05-10", equip: "ETD 1호기", symptom: "알람 빈발", cause: "노즐 오염", action: "청소", caresId: "r1" },
+              { date: "2026-05-12", equip: "수기 장비", symptom: "수기 작성", cause: "", action: "" }],
+      actions: [], files: [] }];
+    stubCares(e);
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, '[data-cn-row="m1"]').click();
+    ok(q(e, "#cn-view-cares"), "회의 중 CARES 이력 조회 버튼");
+    eq(qa(e, "#modal-box [data-cn-case]").length, 1, "CARES 연동 사례만 클릭 가능");
+    q(e, '#modal-box [data-cn-case="0"]').click();
+    await new Promise(r => setTimeout(r, 20));
+    ok(q(e, ".cn-rd-box"), "상세 오버레이 표시");
+    const tx = q(e, ".cn-rd-box").textContent;
+    ok(/ETD 1호기/.test(tx), "장비명");
+    ok(/멤브레인 노즐 오염/.test(tx), "CARES 원본 근본원인");
+    ok(/수리 완료/.test(tx), "상태 배지");
+    ok(/김신고/.test(tx), "신고자");
+    ok(q(e, "#modal-box .cn-view"), "본 회의록 상세 모달 유지");
+    e.w.SemisCouncil.closeAllSub();
+  });
+
+  await ta("CN64 원본을 못 찾으면 회의록에 저장된 사례 내용으로 대체 표시", async () => {
+    const e = makeEnv();
+    e.w.SemisEquipment.loadCares = async () => ({ err: null, repairs: [] });
+    e.w.SemisCouncil.openRepairById("없는id", { date: "2026-05-10", equip: "ETD 9호기", symptom: "보존된 증상", cause: "보존된 원인", action: "보존된 조치" });
+    await new Promise(r => setTimeout(r, 20));
+    const tx = q(e, ".cn-rd-box").textContent;
+    ok(/찾지 못했습니다/.test(tx), "경고 표시");
+    ok(/보존된 증상/.test(tx) && /ETD 9호기/.test(tx), "회의록 저장분 표시");
+    e.w.SemisCouncil.closeAllSub();
+  });
+
+  t("CN65 repairHTML: 타임라인·부품·원인분류·처리유형 렌더", () => {
+    const e = makeEnv();
+    const h = e.w.SemisCouncil.repairHTML(RP[0], {});
+    ok(h.indexOf("ETD-001") >= 0, "S/N");
+    ok(h.indexOf("제작사 수리") >= 0, "처리 유형 기본값");
+    ok(h.indexOf("환경적 요인") >= 0, "원인 분류");
+    ok(h.indexOf("멤브레인") >= 0, "부품");
+    ok(h.indexOf("유상") >= 0, "부품 유·무상");
+    ok(h.indexOf("홍진의") >= 0, "완료 처리자");
+    const h2 = e.w.SemisCouncil.repairHTML(RP[2], {});
+    ok(h2.indexOf("자체 점검") >= 0, "자체 점검 처리 유형");
+    ok(h2.indexOf("미분류") < 0 || h2.indexOf("인적 오류") >= 0, "인적 오류 분류");
+    eq(e.w.SemisCouncil.repStatus(RP[1]), "in_repair", "수리중 상태");
+    eq(e.w.SemisCouncil.repStatus(RP[2]), "reported", "미완료 = 접수 대기");
+    eq(e.w.SemisCouncil.nextDay("2026-05-31"), "2026-06-01", "다음날 계산(월 넘김)");
+  });
+
+  await ta("CN66 오버레이 스택: 피커 → 상세 → 닫기 시 피커 유지", async () => {
+    const e = makeEnv();
+    stubCares(e);
+    const C = e.w.SemisCouncil;
+    C.caresPicker({});
+    await new Promise(r => setTimeout(r, 20));
+    eq(C.subCount(), 1, "피커 1겹");
+    q(e, '.cn-pk-view[data-rid="r2"]').click();
+    eq(C.subCount(), 2, "상세 2겹");
+    ok(/파워서플라이 노후/.test(q(e, ".cn-rd-box").textContent), "선택한 건의 상세");
+    q(e, ".cn-rd-close").click();
+    eq(C.subCount(), 1, "상세만 닫힘");
+    ok(q(e, ".cn-pk-box"), "피커 유지");
+    C.closeAllSub();
+    eq(C.subCount(), 0, "전체 닫힘");
+  });
+
+  await ta("CN67 피커 상세에서 바로 불러오기 (단건)", async () => {
+    const e = makeEnv();
+    stubCares(e);
+    let picked = null;
+    e.w.SemisCouncil.caresPicker({ onPick: (rs) => { picked = rs; } });
+    await new Promise(r => setTimeout(r, 20));
+    q(e, '.cn-pk-view[data-rid="r1"]').click();
+    ok(q(e, ".cn-rd-pick"), "상세에 불러오기 버튼");
+    q(e, ".cn-rd-pick").click();
+    ok(picked && picked.length === 1 && picked[0].id === "r1", "단건 전달");
+    eq(e.w.SemisCouncil.subCount(), 0, "상세·피커 모두 닫힘");
+  });
+
   /* ─ v2.30: 협의회 서명 자가등록 ─ */
   t("CN23 orgToCat: 소속→구분 자동 매핑 (인씨스=유지보수 포함)", () => {
     const C = makeEnv().w.SemisCouncil;

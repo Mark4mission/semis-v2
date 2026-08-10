@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   SeMIS v2 — 보안장비 협의회 회의록 모듈 (v2.24)
+   SeMIS v2 — 보안장비 협의회 회의록 모듈 (v2.25)
    인천화물터미널 B동 보안검색장비(X-ray·ETD 등) 관리 협의회.
    KPI 과제 C6-1「내부 보안 관리 체계 보완」의 '보안장비 협의체 신설'
    활동 기반. 월 1회 정기 개최 — 제조사/유지보수/운영사/본사 참석.
@@ -21,6 +21,11 @@
      nextPlan(차기),
      files:[{url,name,size}](최대 20), by, updated }]
    접근: manager 이상 열람(vis=mgr) / hq 이상 편집(canEdit)
+
+   v2.42 — 회의 중 활용:
+     ① 사례표 채우는 3단계 — 자동(기간 일괄) / 반자동(이력 조회·선택) / 수동(직접 작성)
+     ② 회의록 상세의 CARES 연동 사례(🔗) 행을 누르면 원본 고장이력을 겹쳐 띄운다.
+     모두 본 모달을 파괴하지 않는 보조 오버레이(openSub)로 동작한다.
    ═══════════════════════════════════════════════════════ */
 "use strict";
 
@@ -268,6 +273,365 @@
       return true;
     });
   }
+  const repDate = (r) => msToDate(r && r.reportedAtMs) || ((r && r.reportedAt) ? String(r.reportedAt).slice(0, 10) : "");
+  function nextDay(d) {
+    if (!d) return "";
+    const t = new Date(String(d) + "T00:00:00");
+    if (isNaN(t.getTime())) return d;
+    t.setDate(t.getDate() + 1);
+    return t.getFullYear() + "-" + pad2(t.getMonth() + 1) + "-" + pad2(t.getDate());
+  }
+
+  /* ══════════ 보조 오버레이 (본 모달 위에 겹치는 독립 레이어) ══════════
+     회의 중 활용 목적 — 편집 폼이나 회의록 상세를 그대로 둔 채 CARES 자료를
+     열람·선택한다. 앱 모달(#modal-overlay, z-index 500)은 한 겹만 지원하므로
+     carcap.pickRisk 와 같은 방식(modal-overlay 재사용 + z-index 상향)을 쓰되,
+     피커 → 상세처럼 여러 겹을 쌓을 수 있도록 스택으로 관리한다. */
+  const subStack = [];
+  function subEsc(ev) {
+    if (ev.key !== "Escape" || !subStack.length) return;
+    ev.stopPropagation(); ev.preventDefault(); closeSub();
+  }
+  function openSub(html, opts) {
+    opts = opts || {};
+    const ov = document.createElement("div");
+    ov.className = "modal-overlay cn-sub-ov";
+    ov.style.zIndex = String(600 + subStack.length * 2);
+    ov.innerHTML = `<div class="modal-box wide ${opts.cls || ""}">${html}</div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener("mousedown", (ev2) => { if (ev2.target === ov) closeSub(); });
+    if (!subStack.length && typeof document.addEventListener === "function") document.addEventListener("keydown", subEsc, true);
+    subStack.push(ov);
+    return ov;
+  }
+  function closeSub() {
+    const ov = subStack.pop();
+    if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+    if (!subStack.length) { try { document.removeEventListener("keydown", subEsc, true); } catch (e) {} }
+  }
+  function closeAllSub() { while (subStack.length) closeSub(); }
+  const subAlive = (ov) => !!(ov && document.body && document.body.contains(ov));
+  const subBox = (ov) => ov.querySelector(".modal-box");
+
+  /* ══════════ CARES 고장이력 — 표시 라벨 / 서식 ══════════ */
+  const RS_LABEL = { reported: "접수 대기", accepted: "접수됨", in_repair: "수리중", resolved: "수리 완료" };
+  const RS_CLS = { reported: "badge-red", accepted: "badge-amber", in_repair: "badge-blue", resolved: "badge-green" };
+  const CAUSE_LABEL = { environmental: "환경적 요인", mechanical: "기계적 결함", human: "인적 오류", other: "기타/복합" };
+  const CAUSE_CLS = { environmental: "badge-blue", mechanical: "badge-purple", human: "badge-orange", other: "badge-gray" };
+  const HANDLING_LABEL = { manufacturer: "제작사 수리", internal: "자체 점검" };
+  const CARES_URL = "https://airzeta-security-system.web.app";
+  /* CARES 규약과 동일: 신고 → 접수 → 수리중 → 완료 */
+  const repStatus = (r) => (r && r.resolvedAtMs) ? "resolved"
+    : ((r && r.status && RS_LABEL[r.status] && r.status !== "resolved") ? r.status : "reported");
+  function fmtDT(ms, s) {
+    if (ms) {
+      const d = new Date(Number(ms));
+      if (!isNaN(d.getTime())) return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate())
+        + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+    }
+    return s ? String(s) : "";
+  }
+  function fmtDur(ms) {
+    const n = Number(ms);
+    if (!n || n < 0) return "";
+    const m = Math.floor(n / 60000);
+    if (m < 60) return m + "분";
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + "시간" + (m % 60 ? " " + (m % 60) + "분" : "");
+    return Math.floor(h / 24) + "일" + (h % 24 ? " " + (h % 24) + "시간" : "");
+  }
+
+  /* CARES 이력 로드 (실패 시 사유 문자열 반환) */
+  async function fetchCares(force) {
+    if (!window.SemisEquipment || !SemisEquipment.loadCares) throw new Error("CARES 연동을 사용할 수 없습니다.");
+    const c = await SemisEquipment.loadCares(!!force);
+    if (c && c.err) throw new Error(c.err);
+    return c || { repairs: [] };
+  }
+
+  /* ══════════ 고장이력 상세 (원본 열람 — 회의 중 참고) ══════════ */
+  function repairHTML(r, o) {
+    o = o || {};
+    if (!r) {
+      const c = o.fallbackCase || {};
+      const hasSnap = c.date || c.equip || c.symptom || c.cause || c.action;
+      return `<h3>🔧 고장이력 상세</h3>
+        <div class="cn-rd-warn">${esc(o.err || "CARES 원본을 찾을 수 없습니다.")}</div>
+        ${hasSnap ? `<div class="form-hint" style="margin-bottom:6px">회의록에 저장된 사례 내용입니다.</div>
+        <table class="tbl cn-rd-tbl">
+          <tr><td class="cn-rd-k">발생일</td><td>${esc(c.date || "-")}</td></tr>
+          <tr><td class="cn-rd-k">장비</td><td>${esc(c.equip || "-")}</td></tr>
+          <tr><td class="cn-rd-k">증상</td><td>${nl2br(c.symptom)}</td></tr>
+          <tr><td class="cn-rd-k">근본원인</td><td>${nl2br(c.cause)}</td></tr>
+          <tr><td class="cn-rd-k">조치</td><td>${nl2br(c.action)}</td></tr>
+        </table>` : ""}
+        <div class="modal-actions">
+          <a class="btn btn-ghost" href="${CARES_URL}" target="_blank" rel="noopener">CARES 열기 ↗</a>
+          <button type="button" class="btn btn-primary cn-rd-close">닫기</button></div>`;
+    }
+    const st = repStatus(r);
+    const parts = Array.isArray(r.parts) ? r.parts : [];
+    const dur = r.resolvedAtMs && r.reportedAtMs ? fmtDur(r.resolvedAtMs - r.reportedAtMs) : "";
+    const row = (k, v, sub) => v ? `<tr><td class="cn-rd-k">${k}</td><td>${v}${sub ? `<span class="cn-rd-sub">${sub}</span>` : ""}</td></tr>` : "";
+    const cc = r.causeCategory || "";
+    const nPhoto = (Number(r.reportPhotoCount) || (r.reportPhotos || []).length) + (Number(r.repairPhotoCount) || (r.repairPhotos || []).length);
+    return `<h3>🔧 ${esc(r.equipmentName || "장비 미상")} <span class="badge ${RS_CLS[st]}">${RS_LABEL[st]}</span></h3>
+      <div class="cn-rd-meta">
+        ${r.equipmentSerial ? `<span>S/N ${esc(r.equipmentSerial)}</span>` : ""}
+        <span>${esc(HANDLING_LABEL[r.handlingType === "internal" ? "internal" : "manufacturer"])}</span>
+        ${r.reporter ? `<span>신고 ${esc(r.reporter)}</span>` : ""}
+        <span class="cn-rd-src">CARES 원본</span>
+      </div>
+      <table class="tbl cn-rd-tbl">
+        ${row("고장 발생", esc(fmtDT(r.occurredAtMs, r.occurredAt)))}
+        ${row("신고 접수", esc(fmtDT(r.reportedAtMs, r.reportedAt)), r.reportDelayMs ? "발생 후 " + fmtDur(r.reportDelayMs) : "")}
+        ${row("접수 처리", esc(fmtDT(r.acceptedAtMs, r.acceptedAt)), r.acceptedBy ? esc(r.acceptedBy) : "")}
+        ${row("수리 시작", esc(fmtDT(r.repairStartedAtMs, r.repairStartedAt)), r.repairStartedBy ? esc(r.repairStartedBy) : "")}
+        ${row("수리 완료", esc(fmtDT(r.resolvedAtMs, r.resolvedAt)), [r.resolvedBy ? esc(r.resolvedBy) : "", dur ? "소요 " + dur : ""].filter(Boolean).join(" · "))}
+      </table>
+      <div class="cn-rd-sec"><b>증상</b><div class="cn-text">${nl2br(r.symptom) || '<span style="color:var(--text-3)">-</span>'}</div></div>
+      <div class="cn-rd-sec"><b>원인 분석</b>
+        <div>${cc && CAUSE_LABEL[cc] ? `<span class="badge ${CAUSE_CLS[cc] || "badge-gray"}">${CAUSE_LABEL[cc]}</span> ` : '<span class="badge badge-gray">미분류</span> '}</div>
+        <div class="cn-text">${nl2br(r.rootCause) || '<span style="color:var(--text-3)">근본원인 미기재</span>'}</div>
+        ${r.cause && r.cause !== r.rootCause ? `<div class="cn-text" style="color:var(--text-2)">${nl2br(r.cause)}</div>` : ""}</div>
+      <div class="cn-rd-sec"><b>교체·사용 부품</b>
+        ${parts.length ? `<table class="tbl cn-rd-parts"><thead><tr><th>부품</th><th style="width:70px">수량</th><th style="width:80px">비용</th></tr></thead><tbody>
+          ${parts.map(p => `<tr><td>${esc((p && p.part) || "-")}</td><td>${esc(String((p && p.qty) || 1))}</td>
+            <td>${p && p.isPaid ? '<span class="badge badge-amber">유상</span>' : '<span class="badge badge-green">무상</span>'}</td></tr>`).join("")}
+        </tbody></table>` : '<div class="form-hint">기록된 부품이 없습니다.</div>'}</div>
+      ${nPhoto ? `<div class="form-hint" style="margin-top:8px">📷 사진 ${nPhoto}장 — CARES에서 확인</div>` : ""}
+      ${r.editedBy ? `<div class="form-hint" style="margin-top:8px">최근 수정 ${esc(String(r.editedAt || "").slice(0, 16))} · ${esc(r.editedBy)}${r.editCount ? " (누적 " + esc(String(r.editCount)) + "회)" : ""}</div>` : ""}
+      <div class="modal-actions">
+        <a class="btn btn-ghost" href="${CARES_URL}" target="_blank" rel="noopener" style="margin-right:auto">CARES 열기 ↗</a>
+        ${o.onPick ? '<button type="button" class="btn btn-primary cn-rd-pick">이 사례 불러오기</button>' : ""}
+        <button type="button" class="btn ${o.onPick ? "btn-ghost" : "btn-primary"} cn-rd-close">닫기</button>
+      </div>`;
+  }
+  function paintRepair(ov, r, o) {
+    if (!subAlive(ov)) return;
+    o = o || {};
+    subBox(ov).innerHTML = repairHTML(r, o);
+    const cl = ov.querySelector(".cn-rd-close");
+    if (cl) cl.onclick = closeSub;
+    const pk = ov.querySelector(".cn-rd-pick");
+    if (pk) pk.onclick = () => { closeSub(); o.onPick(r); };
+  }
+  /* 이미 로드된 이력 객체로 즉시 열기 */
+  function openRepair(r, o) {
+    const ov = openSub("", { cls: "cn-rd-box" });
+    paintRepair(ov, r, o);
+    return ov;
+  }
+  /* caresId 로 CARES에서 원본을 찾아 열기 (실패 시 회의록 저장분 표시) */
+  function openRepairById(id, fallbackCase) {
+    const ov = openSub(`<h3>🔧 고장이력 상세</h3>
+      <div class="form-hint cn-rd-loading">CARES에서 원본 이력을 불러오는 중…</div>
+      <div class="modal-actions"><button type="button" class="btn btn-primary cn-rd-close">닫기</button></div>`, { cls: "cn-rd-box" });
+    ov.querySelector(".cn-rd-close").onclick = closeSub;
+    (async () => {
+      let r = null, err = null;
+      try {
+        const c = await fetchCares(false);
+        r = ((c && c.repairs) || []).find(x => x && x.id === id) || null;
+        if (!r) err = "CARES 최근 고장이력에서 해당 건을 찾지 못했습니다.";
+      } catch (e) { err = "CARES 조회 실패: " + ((e && e.message) || "네트워크 확인"); }
+      paintRepair(ov, r, { err, fallbackCase });
+    })();
+    return ov;
+  }
+
+  /* ══════════ CARES 고장이력 조회·선택 (반자동 불러오기) ══════════
+     기간 일괄 불러오기(자동)와 사례 직접 작성(수동) 사이의 중간 단계.
+     전체 이력을 필터로 좁혀 눈으로 확인하고 필요한 건만 골라 담는다.
+     onPick 없이 열면 읽기 전용 — 회의 진행 중 원본 자료 열람 용도. */
+  function caresPicker(opts) {
+    opts = opts || {};
+    const pick = typeof opts.onPick === "function";
+    const existing = new Set((opts.existing || []).filter(Boolean));
+    const def = { from: opts.from || "", to: opts.to || "" };
+    const f = { from: def.from, to: def.to, equip: "", st: "", cause: "", q: "" };
+    const sel = new Set();
+    let repairs = [];
+
+    const ov = openSub(`<h3>🔍 CARES 고장이력 ${pick ? "조회·선택" : "조회"}</h3>
+      <div class="form-hint cn-pk-loading">CARES 고장이력을 불러오는 중…</div>
+      <div class="modal-actions"><button type="button" class="btn btn-primary cn-pk-close">닫기</button></div>`,
+      { cls: "cn-pk-box" });
+    ov.querySelector(".cn-pk-close").onclick = closeSub;
+
+    (async () => {
+      let err = null;
+      try { repairs = (await fetchCares(false)).repairs || []; }
+      catch (e) { err = "CARES 조회 실패: " + ((e && e.message) || "네트워크 확인"); }
+      if (!subAlive(ov)) return;
+      if (err) {
+        subBox(ov).innerHTML = `<h3>🔍 CARES 고장이력</h3><div class="cn-rd-warn">${esc(err)}</div>
+          <div class="modal-actions"><button type="button" class="btn btn-primary cn-pk-close">닫기</button></div>`;
+        ov.querySelector(".cn-pk-close").onclick = closeSub;
+        return;
+      }
+      paintShell();
+    })();
+
+    function equipNames() {
+      return Array.from(new Set(repairs.map(r => String((r && r.equipmentName) || "").trim()).filter(Boolean))).sort();
+    }
+    function match(r) {
+      const d = repDate(r);
+      if (f.from && (!d || d < f.from)) return false;
+      if (f.to && (!d || d > f.to)) return false;
+      if (f.equip && String(r.equipmentName || "").trim() !== f.equip) return false;
+      if (f.st && repStatus(r) !== f.st) return false;
+      if (f.cause) {
+        const cc = String(r.causeCategory || "");
+        if (f.cause === "__none" ? !!cc : cc !== f.cause) return false;
+      }
+      if (f.q) {
+        const hay = [r.equipmentName, r.equipmentSerial, r.symptom, r.rootCause, r.cause, r.reporter, r.resolvedBy]
+          .map(v => String(v || "")).join(" ").toLowerCase();
+        if (hay.indexOf(f.q.toLowerCase()) < 0) return false;
+      }
+      return true;
+    }
+    const visible = () => repairs.filter(match)
+      .sort((a, b) => (Number(b.reportedAtMs) || 0) - (Number(a.reportedAtMs) || 0));
+
+    function paintShell() {
+      subBox(ov).innerHTML = `<h3>🔍 CARES 고장이력 ${pick ? "조회·선택" : "조회"}</h3>
+        <div class="form-hint" style="margin-bottom:8px">${pick
+          ? "필요한 사례만 골라 회의록 ① 사례표로 가져옵니다. 행을 누르면 원본 상세를 볼 수 있습니다."
+          : "회의 진행 중 참고용입니다. 행을 누르면 원본 상세를 볼 수 있습니다."}</div>
+        <div class="cn-pk-filter">
+          <input type="date" class="cn-pk-from" value="${esc(f.from)}" title="시작일">
+          <span class="cn-pk-sep">~</span>
+          <input type="date" class="cn-pk-to" value="${esc(f.to)}" title="종료일">
+          ${(def.from || def.to) ? '<button type="button" class="btn btn-ghost btn-sm cn-pk-period">이번 회의 기간</button>' : ""}
+          <button type="button" class="btn btn-ghost btn-sm cn-pk-allp">전체 기간</button>
+          <select class="cn-pk-equip"><option value="">장비 전체</option>
+            ${equipNames().map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
+          <select class="cn-pk-st"><option value="">상태 전체</option>
+            ${Object.keys(RS_LABEL).map(k => `<option value="${k}">${RS_LABEL[k]}</option>`).join("")}</select>
+          <select class="cn-pk-cause"><option value="">원인 전체</option>
+            ${Object.keys(CAUSE_LABEL).map(k => `<option value="${k}">${CAUSE_LABEL[k]}</option>`).join("")}
+            <option value="__none">미분류</option></select>
+          <input class="cn-pk-q" placeholder="증상·원인·담당자 검색" maxlength="40">
+          <button type="button" class="btn btn-ghost btn-sm cn-pk-reset">초기화</button>
+        </div>
+        <div class="cn-pk-scroll"><div class="cn-pk-body"></div></div>
+        <div class="modal-actions">
+          <span class="cn-pk-count" style="margin-right:auto"></span>
+          <button type="button" class="btn ${pick ? "btn-ghost" : "btn-primary"} cn-pk-close">닫기</button>
+          ${pick ? '<button type="button" class="btn btn-primary cn-pk-ok">선택 항목 불러오기</button>' : ""}
+        </div>`;
+      const on = (s, ev, fn) => { const el = ov.querySelector(s); if (el) el.addEventListener(ev, fn); };
+      on(".cn-pk-from", "change", (e) => { f.from = e.target.value; paintRows(); });
+      on(".cn-pk-to", "change", (e) => { f.to = e.target.value; paintRows(); });
+      on(".cn-pk-equip", "change", (e) => { f.equip = e.target.value; paintRows(); });
+      on(".cn-pk-st", "change", (e) => { f.st = e.target.value; paintRows(); });
+      on(".cn-pk-cause", "change", (e) => { f.cause = e.target.value; paintRows(); });
+      on(".cn-pk-q", "input", (e) => { f.q = e.target.value; paintRows(); });
+      on(".cn-pk-period", "click", () => { f.from = def.from; f.to = def.to; syncFilterUI(); paintRows(); });
+      on(".cn-pk-allp", "click", () => { f.from = ""; f.to = ""; syncFilterUI(); paintRows(); });
+      on(".cn-pk-reset", "click", () => {
+        f.from = def.from; f.to = def.to; f.equip = ""; f.st = ""; f.cause = ""; f.q = "";
+        syncFilterUI(); paintRows();
+      });
+      ov.querySelector(".cn-pk-close").onclick = closeSub;
+      const okBtn = ov.querySelector(".cn-pk-ok");
+      if (okBtn) okBtn.onclick = () => {
+        const chosen = repairs.filter(r => r && sel.has(r.id));
+        if (!chosen.length) { toast("불러올 사례를 선택하세요.", true); return; }
+        closeSub();
+        opts.onPick(chosen);
+      };
+      paintRows();
+    }
+    function syncFilterUI() {
+      const set = (s, v) => { const el = ov.querySelector(s); if (el) el.value = v; };
+      set(".cn-pk-from", f.from); set(".cn-pk-to", f.to); set(".cn-pk-equip", f.equip);
+      set(".cn-pk-st", f.st); set(".cn-pk-cause", f.cause); set(".cn-pk-q", f.q);
+    }
+    function paintRows() {
+      const rows = visible();
+      const body = ov.querySelector(".cn-pk-body");
+      if (!body) return;
+      if (!rows.length) {
+        body.innerHTML = '<div class="empty" style="padding:24px">조건에 맞는 고장이력이 없습니다.</div>';
+      } else {
+        body.innerHTML = `<table class="tbl cn-pk-tbl"><thead><tr>
+            ${pick ? '<th style="width:38px"><input type="checkbox" class="cn-pk-all" title="표시된 항목 전체 선택"></th>' : ""}
+            <th style="width:104px">발생일</th><th style="width:150px">장비</th>
+            <th>증상 / 근본원인</th><th style="width:88px">원인</th><th style="width:88px">상태</th>
+            <th style="width:64px"></th></tr></thead><tbody>
+          ${rows.map(r => {
+            const st = repStatus(r);
+            const cc = String(r.causeCategory || "");
+            const dup = existing.has(r.id);
+            return `<tr class="cn-pk-row${sel.has(r.id) ? " on" : ""}" data-rid="${esc(r.id)}">
+              ${pick ? `<td>${dup
+                ? '<span class="cn-pk-dup" title="이미 회의록에 있는 사례">✓</span>'
+                : `<input type="checkbox" class="cn-pk-ck" data-rid="${esc(r.id)}"${sel.has(r.id) ? " checked" : ""}>`}</td>` : ""}
+              <td class="cn-nowrap">${esc(repDate(r) || "-")}</td>
+              <td><b>${esc(r.equipmentName || "-")}</b>${dup ? '<div class="cn-pk-duptx">회의록에 추가됨</div>' : ""}</td>
+              <td><div class="cn-pk-sym">${esc(r.symptom || "-")}</div>
+                ${r.rootCause ? `<div class="cn-pk-rc">${esc(r.rootCause)}</div>` : ""}</td>
+              <td>${cc && CAUSE_LABEL[cc] ? `<span class="badge ${CAUSE_CLS[cc] || "badge-gray"}">${CAUSE_SHORT[cc] || CAUSE_LABEL[cc]}</span>` : '<span style="color:var(--text-3)">-</span>'}</td>
+              <td><span class="badge ${RS_CLS[st]}">${RS_LABEL[st]}</span></td>
+              <td><button type="button" class="btn btn-ghost btn-sm cn-pk-view" data-rid="${esc(r.id)}" title="원본 상세 보기">상세</button></td>
+            </tr>`;
+          }).join("")}
+        </tbody></table>`;
+      }
+      /* 체크박스 = 선택 / 그 외 클릭 = 상세 열람 */
+      Array.prototype.forEach.call(ov.querySelectorAll(".cn-pk-ck"), (cb) => {
+        cb.onclick = (ev) => { ev.stopPropagation(); };
+        cb.onchange = () => {
+          if (cb.checked) sel.add(cb.dataset.rid); else sel.delete(cb.dataset.rid);
+          const tr = cb.closest ? cb.closest("tr") : null;
+          if (tr) tr.classList.toggle("on", cb.checked);
+          paintCount();
+        };
+      });
+      const allCk = ov.querySelector(".cn-pk-all");
+      if (allCk) {
+        /* 다시 그려도 헤더 체크 상태 유지 — 표시분(중복 제외)이 모두 선택됐는지로 판정 */
+        const selectable = rows.filter(r => !existing.has(r.id));
+        allCk.checked = selectable.length > 0 && selectable.every(r => sel.has(r.id));
+      }
+      if (allCk) allCk.onchange = () => {
+        rows.forEach(r => {
+          if (existing.has(r.id)) return;
+          if (allCk.checked) sel.add(r.id); else sel.delete(r.id);
+        });
+        paintRows();
+      };
+      Array.prototype.forEach.call(ov.querySelectorAll(".cn-pk-view"), (b) => {
+        b.onclick = (ev) => { ev.stopPropagation(); openOne(b.dataset.rid); };
+      });
+      Array.prototype.forEach.call(ov.querySelectorAll(".cn-pk-row"), (tr) => {
+        tr.addEventListener("click", (ev) => {
+          const t = ev.target;
+          if (t && t.classList && (t.classList.contains("cn-pk-ck") || t.classList.contains("cn-pk-view"))) return;
+          openOne(tr.dataset.rid);
+        });
+      });
+      paintCount();
+    }
+    function openOne(id) {
+      const r = repairs.find(x => x && x.id === id);
+      if (!r) return;
+      openRepair(r, (pick && !existing.has(id)) ? { onPick: (one) => { closeSub(); opts.onPick([one]); } } : {});
+    }
+    function paintCount() {
+      const el = ov.querySelector(".cn-pk-count");
+      if (!el) return;
+      const n = visible().length;
+      el.textContent = "전체 " + repairs.length + "건 · 표시 " + n + "건" + (pick ? " · 선택 " + sel.size + "건" : "");
+      const ok = ov.querySelector(".cn-pk-ok");
+      if (ok) ok.textContent = sel.size ? "선택 " + sel.size + "건 불러오기" : "선택 항목 불러오기";
+    }
+    return ov;
+  }
 
   function stats() {
     const items = all();
@@ -336,14 +700,19 @@
         <td>${a.note ? esc(a.note) : "-"}</td></tr>`).join("")}
       </tbody></table>` : "";
 
-    const caseHTML = cases.length ? `<table class="tbl cn-case-tbl"><thead><tr>
+    /* CARES 연동 사례는 행 클릭으로 원본 상세를 겹쳐 띄운다 (회의 중 즉시 참고) */
+    const caseTbl = cases.length ? `<table class="tbl cn-case-tbl"><thead><tr>
         <th style="width:12%">발생일</th><th style="width:15%">장비</th><th style="width:16%">증상</th>
         <th style="width:29%">근본원인</th><th style="width:28%">조치</th></tr></thead><tbody>
-      ${cases.map(c => `<tr>
+      ${cases.map((c, i) => `<tr${c.caresId ? ` class="cn-case-clk" data-cn-case="${i}" title="CARES 원본 고장이력 보기"` : ""}>
         <td>${c.date ? esc(c.date) : '<span style="color:var(--text-3)">-</span>'}</td>
-        <td><b>${esc(c.equip || "-")}</b>${c.caresId ? ' <span class="cn-cares-tag" title="CARES 고장이력 연동">🔗</span>' : ""}</td><td>${nl2br(c.symptom)}</td>
+        <td><b>${esc(c.equip || "-")}</b>${c.caresId ? ' <span class="cn-cares-tag" title="CARES 고장이력 연동 — 클릭하면 원본을 봅니다">🔗</span>' : ""}</td><td>${nl2br(c.symptom)}</td>
         <td>${nl2br(c.cause)}</td><td>${nl2br(c.action)}</td></tr>`).join("")}
-      </tbody></table>` : "";
+      </tbody></table>` : '<div class="form-hint">등록된 사례가 없습니다.</div>';
+    const caseHTML = `<div class="cn-cares-bar" style="margin-bottom:8px">
+        <button type="button" class="btn btn-ghost btn-sm" id="cn-view-cares">🔍 CARES 고장이력 조회</button>
+        <span class="form-hint">회의 중 원본 이력을 열어 확인할 수 있습니다.</span>
+      </div>${caseTbl}`;
 
     const actHTML = acts.length ? `<table class="tbl cn-act-tbl"><thead><tr>
         <th style="width:40px"></th><th>결정 / 조치 사항</th><th style="width:92px">담당</th><th style="width:116px">기한</th></tr></thead><tbody>
@@ -382,9 +751,18 @@
       </div>
      </div>`, { wide: true });
 
-    $("#cn-close").onclick = closeModal;
+    $("#cn-close").onclick = () => { closeAllSub(); closeModal(); };
     $("#cn-print").onclick = () => printMinutes(x.id);
     if ($("#cn-qr-print")) $("#cn-qr-print").onclick = () => printQrSheet(x);
+    /* 회의 중 참고 — 사례 행 클릭 = CARES 원본 / 버튼 = 전체 이력 조회 */
+    $$("#modal-box [data-cn-case]").forEach(el => el.onclick = () => {
+      const c = cases[Number(el.dataset.cnCase)];
+      if (c && c.caresId) openRepairById(c.caresId, c);
+    });
+    if ($("#cn-view-cares")) $("#cn-view-cares").onclick = () => caresPicker({
+      from: prevMeetingDate(x.date || "9999-12-31", x.id) ? nextDay(prevMeetingDate(x.date || "9999-12-31", x.id)) : "",
+      to: x.date || ""
+    });
     decorateLinks("#modal-box");  // 본문 링크 뒤 📋 복사 버튼 삽입
     wireCopies("#modal-box");     // 서명 코드 복사 + 본문 링크 복사 버튼 배선
     if (canWrite()) {
@@ -441,6 +819,7 @@
         <div class="form-row"><label class="cn-flabel">① 고장·수리·유지보수 사례 근본원인</label>
           <div class="cn-cares-bar">
             <button type="button" class="btn btn-ghost btn-sm" id="cn-cares-sync">🔄 CARES 고장이력 불러오기</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="cn-cares-pick">🔍 이력에서 골라 담기</button>
             <span class="form-hint" id="cn-cares-hint" style="display:inline"></span>
           </div>
           <div id="cn-cases"></div>
@@ -572,6 +951,28 @@
       }
     };
 
+    /* 반자동 — 전체 이력을 필터로 훑어보고 필요한 건만 골라 담기 (회의 중 활용) */
+    $("#cn-cares-pick").onclick = () => {
+      const thisDate = $("#cn-date").value;
+      const prev = thisDate ? prevMeetingDate(thisDate, x ? x.id : null) : null;
+      caseCollect();
+      caresPicker({
+        from: prev ? nextDay(prev) : "",
+        to: thisDate || "",
+        existing: cases.map(c => c && c.caresId).filter(Boolean),
+        onPick: (reps) => {
+          caseCollect();
+          const res = mergeCaresIntoCases(cases, reps);
+          casePaint();
+          const p = [];
+          if (res.added) p.push(res.added + "건 추가");
+          if (res.updated) p.push(res.updated + "건 갱신");
+          if (res.kept) p.push(res.kept + "건 수정 보존");
+          toast("선택한 고장이력: " + (p.join(" · ") || "변경 없음"));
+        }
+      });
+    };
+
     /* ─ 결정/액션 동적행 ─ */
     function actCollect() {
       $$("#cn-acts .cn-act-row").forEach((row, i) => {
@@ -637,12 +1038,13 @@
     };
 
     /* ─ 저장/취소/삭제 ─ */
-    $("#cn-cancel").onclick = () => (x ? detail(x.id) : (closeModal(), SeMIS.renderView()));
+    $("#cn-cancel").onclick = () => { closeAllSub(); return x ? detail(x.id) : (closeModal(), SeMIS.renderView()); };
     if (x && $("#cn-fdel")) $("#cn-fdel").onclick = () => confirmModal(`"${meetTitle(x)}" 회의록을 삭제하시겠습니까?`, () => {
       D().council = all().filter(c => c.id !== x.id);
       SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
     });
     $("#cn-save").onclick = () => {
+      closeAllSub();
       attCollect(); caseCollect(); actCollect();
       const round = Number($("#cn-round").value) || 0;
       const date = $("#cn-date").value;
@@ -1103,5 +1505,7 @@
   window.SemisCouncil = { CATS, stats, all, sorted, nextRound, printMinutes, setSign, renderSigning,
     signBoxHTML, printQrSheet, qrSvg,
     repairToCase, mergeCaresIntoCases, repairsInPeriod, prevMeetingDate, catNorm,
-    ORG_PRESETS, orgToCat, knownPeople, saveSignEntry, propagatePersonInfo };
+    ORG_PRESETS, orgToCat, knownPeople, saveSignEntry, propagatePersonInfo,
+    caresPicker, openRepair, openRepairById, repairHTML, repStatus, nextDay, repDate,
+    closeSub, closeAllSub, subCount: () => subStack.length };
 })();
