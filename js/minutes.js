@@ -761,12 +761,13 @@
     const sec = (title, body) => body ? `<div class="cn-sec"><div class="cn-sec-h">${title}</div>${body}</div>` : "";
     const t = todayStr();
 
+    /* 직책 폭은 협의회 표와 동일 기준(5~7자 한 줄) — 셀 패딩 24px 감안 118px */
     const attHTML = att.length ? `<table class="tbl cn-att-tbl"><thead><tr>
-        <th style="width:34px">No</th><th style="width:96px">성명</th><th>소속</th>
-        <th style="width:96px">직책</th><th style="width:104px">서명</th><th style="width:130px">비고</th></tr></thead><tbody>
+        <th style="width:34px">No</th><th style="width:90px">성명</th><th>소속</th>
+        <th style="width:118px">직책</th><th style="width:104px">서명</th><th style="width:110px">비고</th></tr></thead><tbody>
       ${att.map((a, i) => `<tr>
         <td style="text-align:center;color:var(--text-3)">${i + 1}</td>
-        <td><b>${esc(a.name || "-")}</b></td><td>${esc(a.org || "-")}</td><td>${esc(a.role || "-")}</td>
+        <td><b>${esc(a.name || "-")}</b></td><td>${esc(a.org || "-")}</td><td class="cn-a-role">${esc(a.role || "-")}</td>
         <td style="text-align:center">${a.sign ? `<img class="cn-sign-img" src="${esc(a.sign)}" alt="서명">` : '<span style="color:var(--text-3)">-</span>'}</td>
         <td>${a.note ? esc(a.note) : "-"}</td></tr>`).join("")}
       </tbody></table>
@@ -1185,6 +1186,7 @@
   th { background: #eff6ff; color: #1e3a8a; font-weight: 700; border-bottom: 1.5px solid #64748b; text-align: center; }
   table.att, table.dec { table-layout: fixed; }
   table.att td, table.dec td { word-break: break-word; }
+  table.att td.role { word-break: keep-all; overflow-wrap: break-word; }
   table.att td img { display: block; margin: 0 auto; max-height: 34px; }
   .ptext { border: 1px solid #94a3b8; border-left: 3px solid #1d4ed8; border-radius: 6px; padding: 8px 10px; background: #fff; }
   .ptext img { max-width: 100%; height: auto; border-radius: 4px; margin: 4px 0; }
@@ -1208,7 +1210,7 @@
     };
     const attRows = att.length ? att.map((a, i) => `<tr>
         <td style="text-align:center">${i + 1}</td><td>${esc(a.name || "")}</td>
-        <td>${esc(a.org || "")}</td><td>${esc(a.role || "")}</td>
+        <td>${esc(a.org || "")}</td><td class="role">${esc(a.role || "")}</td>
         <td>${a.sign ? `<img src="${esc(a.sign)}" style="max-width:70px;max-height:32px">` : ""}</td>
         <td>${esc(a.note || "")}</td></tr>`).join("")
       : '<tr><td colspan="6" class="pc-empty">참석자 기록 없음</td></tr>';
@@ -1235,7 +1237,7 @@
   </div>
   <div class="sec"><div class="sec-h">참석자</div>
     <table class="att"><thead><tr><th style="width:26px">No</th><th style="width:70px">성명</th>
-      <th style="width:24%">소속</th><th style="width:64px">직책</th>
+      <th style="width:24%">소속</th><th style="width:84px">직책</th>
       <th style="width:80px">서명</th><th>비고</th></tr></thead><tbody>${attRows}</tbody></table>
     ${x.absent ? `<div class="tagline">불참: ${esc(x.absent)}</div>` : ""}</div>
   ${textSec("안건", x.agendaHtml, x.agenda)}

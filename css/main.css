@@ -1287,6 +1287,9 @@ a.ct-tel:hover { color: var(--primary); }
 .cn-att-tbl, .cn-case-tbl { table-layout: fixed; }
 .cn-att-tbl td { word-break: break-word; }
 .cn-att-tbl td:nth-child(2) { white-space: nowrap; }  /* 구분 badge 줄바꿈 방지 */
+/* 직책은 한글 단어 중간에서 끊지 않음 — "책임연구원"이 "책임연구/원"으로 잘리던 문제.
+   폭을 넘기는 예외적으로 긴 값만 마지막 수단으로 줄바꿈(overflow-wrap). */
+.cn-att-tbl td.cn-a-role { word-break: keep-all; overflow-wrap: break-word; }
 .cn-att-tbl th, .cn-case-tbl th, .cn-act-tbl th { background: var(--surface-2); border-bottom: 2px solid var(--border-strong); }
 .cn-att-tbl th, .cn-att-tbl td,
 .cn-case-tbl th, .cn-case-tbl td,

@@ -313,13 +313,15 @@
     const acts = (x.actions || []);
     const sec = (title, body) => body ? `<div class="cn-sec"><div class="cn-sec-h">${title}</div>${body}</div>` : "";
 
+    /* 열 폭: 직책은 "책임연구원"·"보안검색감독자" 같은 5~7자를 한 줄에 담아야 하므로
+       셀 좌우 패딩(24px)을 감안해 118px. 대신 비고를 고정 폭으로 줄여 총 폭은 그대로 둔다. */
     const attHTML = att.length ? `<table class="tbl cn-att-tbl"><thead><tr>
-        <th style="width:34px">No</th><th style="width:92px">구분</th><th style="width:82px">성명</th>
-        <th style="width:82px">직책</th><th>소속</th><th style="width:104px">서명</th><th>비고</th></tr></thead><tbody>
+        <th style="width:34px">No</th><th style="width:88px">구분</th><th style="width:78px">성명</th>
+        <th style="width:118px">직책</th><th>소속</th><th style="width:104px">서명</th><th style="width:110px">비고</th></tr></thead><tbody>
       ${att.map((a, i) => `<tr>
         <td style="text-align:center;color:var(--text-3)">${i + 1}</td>
         <td>${a.cat ? `<span class="badge ${CAT_BADGE[a.cat] || "badge-gray"}">${esc(a.cat)}</span>` : "-"}</td>
-        <td>${esc(a.name || "-")}</td><td>${esc(a.role || "-")}</td>
+        <td>${esc(a.name || "-")}</td><td class="cn-a-role">${esc(a.role || "-")}</td>
         <td>${esc(a.org || "-")}</td>
         <td style="text-align:center">${a.sign ? `<img class="cn-sign-img" src="${esc(a.sign)}" alt="서명">` : '<span style="color:var(--text-3)">-</span>'}</td>
         <td>${a.note ? esc(a.note) : "-"}</td></tr>`).join("")}
@@ -680,7 +682,7 @@
 
     const attRows = att.length ? att.map((a, i) => `<tr>
         <td style="text-align:center">${i + 1}</td><td>${esc(a.cat || "-")}</td>
-        <td>${esc(a.name || "-")}</td><td>${esc(a.role || "-")}</td>
+        <td>${esc(a.name || "-")}</td><td class="role">${esc(a.role || "-")}</td>
         <td>${esc(a.org || "-")}</td>
         <td style="text-align:center">${a.sign ? `<img src="${esc(a.sign)}" style="height:26px;max-width:100%">` : ""}</td>
         <td>${esc(a.note || "")}</td></tr>`).join("")
@@ -717,6 +719,7 @@
   th { background: #eff6ff; color: #1e3a8a; font-weight: 700; border-bottom: 1.5px solid #64748b; text-align: center; }
   table.att, table.cases { table-layout: fixed; }
   table.att td, table.cases td { word-break: break-word; }
+  table.att td.role { word-break: keep-all; overflow-wrap: break-word; }  /* 직책 단어 중간 끊김 방지 */
   table.att td img { display: block; margin: 0 auto; }
   .ptext { border: 1px solid #94a3b8; border-left: 3px solid #1d4ed8; border-radius: 6px; padding: 8px 10px; background: #fff; white-space: normal; }
   .ptext img { max-width: 100%; height: auto; border-radius: 4px; margin: 4px 0; }
@@ -740,7 +743,7 @@
   </div>
   <div class="sec"><div class="sec-h">참석자</div>
     <table class="att"><thead><tr><th style="width:24px">No</th><th style="width:52px">구분</th>
-      <th style="width:60px">성명</th><th style="width:62px">직책</th><th style="width:26%">소속</th>
+      <th style="width:60px">성명</th><th style="width:84px">직책</th><th style="width:26%">소속</th>
       <th style="width:74px">서명</th><th>비고</th></tr></thead>
       <tbody>${attRows}</tbody></table></div>
   ${textSec("안건", x.agendaHtml, x.agenda)}

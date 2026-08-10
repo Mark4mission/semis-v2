@@ -6935,10 +6935,13 @@ function makeFetchStub(server) {
       const e = makeEnv();
       loginAs(e, "hq");
       clearInspEvents(e);
-      e.S.data.schedules.push(mk("pv_i", { title: "표식PV", start: "2026-07-15", end: "2026-07-15",
+      /* 날짜를 과거로 고정하면 autoDefer가 일정을 오늘로 밀어내 렌더 위치가 달라진다.
+         (2026-07-15 고정판은 시간이 지나면서 깨졌음) 표식 확인이 목적이므로 오늘 기준으로 둔다. */
+      const day = localToday();
+      e.S.data.schedules.push(mk("pv_i", { title: "표식PV", start: day, end: day,
         priv: true, owner: "thq", autoDefer: true }));
       e.S.saveSilent();
-      e.Cal.setAnchor("2026-07-15"); e.Cal.setView("month");
+      e.Cal.setAnchor(day); e.Cal.setView("month");
       go(e, "schedule");
       const html = (q(e, "#cal-body") || { innerHTML: "" }).innerHTML;
       ok(html.indexOf("표식PV") >= 0, "일정 렌더");
@@ -8062,6 +8065,77 @@ function makeFetchStub(server) {
     ok(q(e, "#view").textContent.indexOf("회의록 게시판") >= 0, "라우트 진입 성공(대시보드 우회 아님)");
     ok(q(e, ".page-desc").textContent.indexOf("본인이 참석한 회의") >= 0, "열람 범위 안내 문구");
     eq(qa(e, "#mn-body [data-mn-row]").length, 2, "본인 참석 회의체 2건");
+  });
+
+  /* ── [W] 참석자 표 직책 열 폭 (v2.40.3) ── */
+
+  t("W01 협의회 상세 — 직책 열 폭 확대 + 단어 중간 끊김 방지 클래스", () => {
+    const e = mnEnv("hq");
+    e.S.data.council = [{ id: "wc1", round: 5, date: "2026-08-13", place: "인천화물터미널 B동",
+      attendees: [{ cat: "기타", org: "항공안전기술원", name: "김요석", role: "책임연구원" },
+                  { cat: "본사", org: "항공보안파트", name: "박철성", role: "파트장" }],
+      cases: [], actions: [], files: [] }];
+    go(e, "council");
+    q(e, "[data-cn-row]").click();
+    const tbl = q(e, "#modal-box .cn-att-tbl");
+    ok(tbl, "참석자 표 렌더");
+    const ths = Array.from(tbl.querySelectorAll("thead th")).map(t2 => t2.style.width);
+    eq(ths[3], "118px", "직책 열 118px (5~7자 한 줄)");
+    eq(ths[6], "110px", "비고는 고정 폭으로 축소");
+    const roleCell = tbl.querySelector("tbody tr td.cn-a-role");
+    ok(roleCell, "직책 셀에 cn-a-role 클래스");
+    eq(roleCell.textContent.trim(), "책임연구원", "직책 값 유지");
+    // 열 개수·순서는 그대로여야 한다(다른 열이 밀리지 않도록)
+    eq(tbl.querySelectorAll("thead th").length, 7, "협의회 표 7열 유지");
+    const row = tbl.querySelector("tbody tr");
+    eq(row.children[2].textContent.trim(), "김요석", "성명 열 위치 유지");
+    eq(row.children[4].textContent.trim(), "항공안전기술원", "소속 열 위치 유지");
+    e.S.closeModal();
+  });
+
+  t("W02 회의록 게시판 상세도 동일 기준 적용", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "wm1", folder: MF, no: 1, date: "2026-08-13", title: "정례회의",
+      attendees: [{ name: "김요석", org: "항공안전기술원", role: "책임연구원" }], decisions: [] }];
+    go(e, "minutes");
+    q(e, "#mn-body [data-mn-row]").click();
+    const tbl = q(e, "#modal-box .cn-att-tbl");
+    const ths = Array.from(tbl.querySelectorAll("thead th")).map(t2 => t2.style.width);
+    eq(ths[3], "118px", "직책 118px");
+    ok(tbl.querySelector("td.cn-a-role"), "직책 셀 클래스");
+    eq(tbl.querySelectorAll("thead th").length, 6, "회의록 표 6열 유지");
+    e.S.closeModal();
+  });
+
+  t("W03 CSS — cn-a-role 은 keep-all, 기본 셀은 break-word 유지", () => {
+    const e = makeEnv();
+    const css = require("fs").readFileSync(require("path").join(ROOT, "css/main.css"), "utf8");
+    ok(/\.cn-att-tbl td\.cn-a-role\s*{[^}]*word-break:\s*keep-all/.test(css), "직책 keep-all 규칙");
+    ok(/\.cn-att-tbl td\.cn-a-role\s*{[^}]*overflow-wrap:\s*break-word/.test(css), "초과 시 폴백 줄바꿈");
+    ok(/\.cn-att-tbl td\s*{\s*word-break:\s*break-word/.test(css), "나머지 셀은 기존 동작 유지");
+  });
+
+  t("W04 인쇄 회의록 — 직책 폭 확대 + keep-all (협의회·회의록 모두)", () => {
+    const e = mnEnv("hq");
+    e.S.data.council = [{ id: "wp1", round: 5, date: "2026-08-13", place: "B동",
+      attendees: [{ cat: "기타", org: "항공안전기술원", name: "김요석", role: "책임연구원" }],
+      cases: [], actions: [], files: [] }];
+    e.S.data.minutes = [{ id: "wp2", folder: MF, no: 1, date: "2026-08-13", title: "정례",
+      attendees: [{ name: "김요석", org: "항공안전기술원", role: "책임연구원" }], decisions: [] }];
+    const n0 = e.w.document.querySelectorAll("iframe").length;
+    e.w.SemisCouncil.printMinutes("wp1");
+    e.w.SemisMinutes.printMinute("wp2");
+    const frames = e.w.document.querySelectorAll("iframe");
+    eq(frames.length, n0 + 2, "인쇄 문서 2건");
+    [frames[frames.length - 2], frames[frames.length - 1]].forEach((fr, i) => {
+      const doc = fr.contentWindow.document;
+      const html = doc.documentElement.innerHTML;
+      ok(/table\.att td\.role\s*{[^}]*keep-all/.test(html), "인쇄 CSS keep-all #" + i);
+      ok(doc.querySelector("table.att td.role"), "직책 셀 클래스 #" + i);
+      eq(doc.querySelector("table.att td.role").textContent.trim(), "책임연구원", "직책 값 #" + i);
+      const w = Array.from(doc.querySelectorAll("table.att thead th")).map(t2 => t2.style.width);
+      ok(w.indexOf("84px") >= 0, "직책 84px #" + i);
+    });
   });
 
   /* ══════════ 결과 ══════════ */
