@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   SeMIS v2 — 보안장비 협의회 회의록 모듈 (v2.25)
+   SeMIS v2 — 보안장비 협의회 회의록 모듈 (v2.26)
    인천화물터미널 B동 보안검색장비(X-ray·ETD 등) 관리 협의회.
    KPI 과제 C6-1「내부 보안 관리 체계 보완」의 '보안장비 협의체 신설'
    활동 기반. 월 1회 정기 개최 — 제조사/유지보수/운영사/본사 참석.
@@ -24,8 +24,11 @@
 
    v2.42 — 회의 중 활용:
      ① 사례표 채우는 3단계 — 자동(기간 일괄) / 반자동(이력 조회·선택) / 수동(직접 작성)
-     ② 회의록 상세의 CARES 연동 사례(🔗) 행을 누르면 원본 고장이력을 겹쳐 띄운다.
-     모두 본 모달을 파괴하지 않는 보조 오버레이(openSub)로 동작한다.
+     ② 회의록 상세·편집폼의 CARES 연동 사례(🔗)를 누르면 원본 고장이력을 겹쳐 띄운다.
+       모두 본 모달을 파괴하지 않는 보조 오버레이(openSub)로 동작한다.
+     ③ 불러온 사례는 '요약'으로 들어간다(briefText) — 표가 산만해지지 않게. 전문은 🔗.
+     ④ ⛶ 넓게 보기(prefFull) — 상세·수정 화면을 min(1500px,96vw)로 넓히고
+       사례 행을 표처럼 한 줄로 펼친다. 기기별로 기억한다.
    ═══════════════════════════════════════════════════════ */
 "use strict";
 
@@ -73,6 +76,27 @@
 
   const nl2br = (s) => esc(String(s || "")).replace(/\n/g, "<br>");
   const meetTitle = (x) => (x.round ? "제" + x.round + "차 " : "") + "보안장비 협의회";
+
+  /* ─── ⛶ 넓게 보기 (기기별 기억) — 회의록 상세·수정 화면 공용 ───
+     기본 모달 폭(780px)은 사례표·참석자표를 담기에 좁다. 켜면 .modal-box.full
+     (min(1500px, 96vw))로 넓어지고 사례 행이 표처럼 한 줄로 펼쳐진다. */
+  const LS_FULL = "semis2:cnFull";
+  const prefFull = () => { try { return localStorage.getItem(LS_FULL) === "1"; } catch (e) { return false; } };
+  const setPrefFull = (v) => { try { localStorage.setItem(LS_FULL, v ? "1" : "0"); } catch (e) {} };
+  const fullBtnHTML = '<span class="mn-formbar"><button type="button" class="btn btn-ghost btn-sm" id="cn-fullsw"></button></span>';
+  function wireFull() {
+    const box = document.getElementById("modal-box");
+    const b = document.getElementById("cn-fullsw");
+    const apply = (on) => {
+      if (box) box.classList.toggle("full", !!on);
+      if (b) {
+        b.textContent = on ? "⤡ 기본 폭" : "⛶ 넓게 보기";
+        b.title = on ? "기본 폭으로 되돌립니다." : "화면을 넓게 써서 보고 편집합니다. (이 기기에 기억됩니다)";
+      }
+    };
+    apply(prefFull());
+    if (b) b.onclick = () => { const on = !(box && box.classList.contains("full")); setPrefFull(on); apply(on); };
+  }
 
   /* ─── 리치 텍스트(링크·이미지 붙여넣기) 공용 — 공지 에디터 인프라 재사용 ─── */
   const sanitize = (h) => (window.SemisNotice ? window.SemisNotice.sanitizeHtml(h) : esc(h));
@@ -220,21 +244,43 @@
     const d = new Date(Number(ms));
     return isNaN(d.getTime()) ? "" : d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
   }
+  /* ── 사례표는 '요약'으로 채운다 ──
+     회의록 사례표는 회의 중 한눈에 훑는 표이므로 CARES 원문을 그대로 옮기면 금방 산만해진다.
+     한 줄로 펴고 문장 경계에서 잘라 넣되, 전문은 🔗(원본 상세)에서 언제든 볼 수 있다.
+     사용자가 직접 고친 내용은 여기서 다루지 않는다(길이 제한 없음). */
+  const CASE_LIMIT = { symptom: 42, cause: 54, action: 52 };
+  const oneLine = (s) => String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+  function briefText(s, max) {
+    const t = oneLine(s);
+    if (!t || t.length <= max) return t;
+    const head = t.slice(0, max + 1);
+    /* ① 제한 안에 들어오는 마지막 문장 종결 지점에서 끊는다 (너무 짧으면 무시) */
+    let end = -1;
+    for (let i = 0; i < head.length; i++) if (/[.!?。]/.test(head.charAt(i))) end = i;
+    if (end >= Math.floor(max * 0.3)) return head.slice(0, end + 1).trim();
+    /* ② 문장부호가 없으면 단어 경계에서 끊고 말줄임 */
+    const sp = head.lastIndexOf(" ");
+    const cut = (sp >= Math.floor(max * 0.6)) ? head.slice(0, sp) : t.slice(0, max);
+    return cut.replace(/[\s,·、(\[]+$/, "") + "…";
+  }
   /* CARES repairLog → 사례 필드(발생일·장비·증상·근본원인·조치) */
   function repairToCase(r) {
     const date = msToDate(r.reportedAtMs) || (r.reportedAt ? String(r.reportedAt).slice(0, 10) : "");
-    const equip = String(r.equipmentName || r.equipmentSerial || "").trim();
-    const symptom = String(r.symptom || "").trim();
+    const equip = oneLine(r.equipmentName || r.equipmentSerial);
+    const symptom = briefText(r.symptom, CASE_LIMIT.symptom);
     const cat = CAUSE_SHORT[r.causeCategory] || "";
-    const base = String(r.rootCause || r.cause || "").trim();
+    /* 원인 분류 표식은 잘리면 안 되므로 본문만 줄이고 뒤에 붙인다 */
+    const base = briefText(r.rootCause || r.cause, CASE_LIMIT.cause - (cat ? 5 : 0));
     const cause = base + (cat ? (base ? " " : "") + "[" + cat + "]" : "");
-    const parts = (Array.isArray(r.parts) ? r.parts : []).map(p => {
-      const nm = String((p && p.part) || "").trim(); const q = (p && Number(p.qty)) || 0;
+    const pl = (Array.isArray(r.parts) ? r.parts : []).map(p => {
+      const nm = oneLine(p && p.part); const q = (p && Number(p.qty)) || 0;
       return nm ? nm + (q > 1 ? "×" + q : "") : "";
-    }).filter(Boolean).join(", ");
+    }).filter(Boolean);
+    const parts = pl.slice(0, 2).join(", ") + (pl.length > 2 ? " 외 " + (pl.length - 2) : "");
     const stLabel = r.resolvedAtMs ? "수리완료"
       : (r.status === "in_repair" ? "수리중" : (r.status === "accepted" ? "접수됨" : "접수대기"));
-    const action = [r.resolvedBy ? "처리: " + r.resolvedBy : "", stLabel, parts ? "부품: " + parts : ""].filter(Boolean).join(" · ");
+    const action = briefText([r.resolvedBy ? "처리: " + oneLine(r.resolvedBy) : "", stLabel,
+      parts ? "부품: " + parts : ""].filter(Boolean).join(" · "), CASE_LIMIT.action);
     return { date, equip, symptom, cause, action };
   }
   const caseUnedited = (c) => {
@@ -723,7 +769,7 @@
 
     openModal(`
      <div class="cn-view">
-      <h3>🤝 ${esc(meetTitle(x))}</h3>
+      <h3>🤝 ${esc(meetTitle(x))}${fullBtnHTML}</h3>
       <div class="cn-meta">
         <span>📅 <b>${esc(x.date || "미정")}</b>${x.time ? " " + esc(x.time) : ""}</span>
         <span>📍 ${esc(x.place || "-")}</span>
@@ -751,6 +797,7 @@
       </div>
      </div>`, { wide: true });
 
+    wireFull();
     $("#cn-close").onclick = () => { closeAllSub(); closeModal(); };
     $("#cn-print").onclick = () => printMinutes(x.id);
     if ($("#cn-qr-print")) $("#cn-qr-print").onclick = () => printQrSheet(x);
@@ -784,7 +831,7 @@
 
     openModal(`
      <div class="cn-form">
-      <h3>${x ? "회의록 수정" : "회의록 작성"} <span class="badge badge-gray">보안장비 협의회</span></h3>
+      <h3>${x ? "회의록 수정" : "회의록 작성"} <span class="badge badge-gray">보안장비 협의회</span>${fullBtnHTML}</h3>
 
       <fieldset class="cn-fs"><legend>📋 회의 정보</legend>
         <div class="form-grid">
@@ -850,6 +897,7 @@
       </div>
      </div>`, { wide: true });
 
+    wireFull();
     /* ─ 본문 리치 에디터(안건·②·③) 초기값 주입 + 배선 ─ */
     wireRich("agenda", x ? x.agendaHtml : "", x ? x.agenda : "");
     wireRich("env", x ? x.envHtml : "", x ? x.env : "");
@@ -893,20 +941,29 @@
         cases[i].action = row.querySelector(".cn-c-action").value;
       });
     }
+    /* 사례 행 — 기본은 3줄 카드(발생일·장비 / 증상·근본원인 / 조치),
+       ⛶ 넓게 보기에서는 표처럼 한 줄로 펼쳐진다(.modal-box.full CSS). */
     function casePaint() {
-      $("#cn-cases").innerHTML = cases.map((c, i) => `
-        <div class="cn-case-row">
-          <div class="cn-case-top">
-            <input class="cn-c-date" value="${esc(c.date || "")}" maxlength="20" placeholder="발생일 (예: 5/14)">
-            <input class="cn-c-equip" value="${esc(c.equip || "")}" maxlength="40" placeholder="장비 (예: ETD 3호기)">
-            <button type="button" class="mt-btn danger" data-case-del="${i}" title="사례 삭제">✕</button>
-          </div>
+      $("#cn-cases").innerHTML = cases.length ? `
+        <div class="cn-case-head"><span>발생일</span><span>장비</span><span>증상</span>
+          <span>근본원인</span><span>조치 / 대책</span><span></span></div>
+        ${cases.map((c, i) => `
+        <div class="cn-case-row${c.caresId ? " cn-case-linked" : ""}">
+          <input class="cn-c-date" value="${esc(c.date || "")}" maxlength="20" placeholder="발생일">
+          <input class="cn-c-equip" value="${esc(c.equip || "")}" maxlength="40" placeholder="장비 (예: ETD 3호기)">
           <input class="cn-c-symptom" value="${esc(c.symptom || "")}" maxlength="120" placeholder="증상 (예: 잦은 알람 오류)">
           <input class="cn-c-cause" value="${esc(c.cause || "")}" maxlength="200" placeholder="근본원인 (예: 멤브레인 노즐 오염)">
           <input class="cn-c-action" value="${esc(c.action || "")}" maxlength="200" placeholder="조치 / 대책">
-        </div>`).join("") || '<span class="form-hint">고장·수리 사례를 추가하세요.</span>';
+          <span class="cn-case-btns">
+            ${c.caresId ? `<button type="button" class="mt-btn" data-case-cares="${i}" title="CARES 원본 고장이력 보기">🔗</button>` : ""}
+            <button type="button" class="mt-btn danger" data-case-del="${i}" title="사례 삭제">✕</button></span>
+        </div>`).join("")}` : '<span class="form-hint">고장·수리 사례를 추가하세요.</span>';
       $$("#cn-cases [data-case-del]").forEach(btn => btn.onclick = () => {
         caseCollect(); cases.splice(Number(btn.dataset.caseDel), 1); casePaint();
+      });
+      $$("#cn-cases [data-case-cares]").forEach(btn => btn.onclick = () => {
+        const c = cases[Number(btn.dataset.caseCares)];
+        if (c && c.caresId) openRepairById(c.caresId, c);
       });
     }
     casePaint();
@@ -1507,5 +1564,6 @@
     repairToCase, mergeCaresIntoCases, repairsInPeriod, prevMeetingDate, catNorm,
     ORG_PRESETS, orgToCat, knownPeople, saveSignEntry, propagatePersonInfo,
     caresPicker, openRepair, openRepairById, repairHTML, repStatus, nextDay, repDate,
+    briefText, CASE_LIMIT, prefFull, setPrefFull,
     closeSub, closeAllSub, subCount: () => subStack.length };
 })();

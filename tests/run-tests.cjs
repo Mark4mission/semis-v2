@@ -5315,6 +5315,87 @@ function makeFetchStub(server) {
     eq(e.w.SemisCouncil.subCount(), 0, "상세·피커 모두 닫힘");
   });
 
+  /* ─ v2.42.1: 사례 요약 입력 + 넓게 보기 ─ */
+  t("CN68 briefText: 한 줄 정리 + 문장/단어 경계 요약", () => {
+    const C = makeEnv().w.SemisCouncil;
+    eq(C.briefText("  줄바꿈\n과   공백  정리 ", 60), "줄바꿈 과 공백 정리", "한 줄로 펴기");
+    eq(C.briefText("짧은 문장", 40), "짧은 문장", "제한 이하는 그대로");
+    const long = "검색 중 알람이 반복 발생함. 재부팅해도 동일 증상이 계속되어 운영에 지장이 있음";
+    const b = C.briefText(long, 42);
+    ok(b.length <= 43, "길이 제한 준수: " + b.length);
+    eq(b, "검색 중 알람이 반복 발생함.", "문장 경계에서 자름");
+    const noSent = "가나다라마바사아자차카타파하 가나다라마바사아자차카타파하 가나다라마바사아자차카타파하";
+    const b2 = C.briefText(noSent, 30);
+    ok(b2.slice(-1) === "…", "말줄임 표시");
+    ok(b2.length <= 31, "단어 경계 요약 길이");
+    eq(C.briefText("", 20), "", "빈 값");
+  });
+
+  t("CN69 repairToCase 요약: 증상 축약 · 원인분류 표식 보존 · 부품 2개+외n", () => {
+    const C = makeEnv().w.SemisCouncil;
+    const cs = C.repairToCase({
+      id: "x1", equipmentName: " ETD 1호기 ",
+      symptom: "검색 중 알람이 반복 발생함. 재부팅해도 동일 증상이 계속되어 운영에 큰 지장이 있음",
+      reportedAtMs: Date.UTC(2026, 4, 10, 12),
+      rootCause: "화물터미널 분진이 지속 유입되어 멤브레인 노즐이 오염되고 감도가 저하된 것으로 확인됨",
+      causeCategory: "environmental", resolvedAtMs: Date.UTC(2026, 4, 11, 12), resolvedBy: "홍진의",
+      parts: [{ part: "멤브레인", qty: 2 }, { part: "노즐 캡", qty: 1 }, { part: "필터", qty: 1 }, { part: "패킹", qty: 1 }]
+    });
+    eq(cs.equip, "ETD 1호기", "장비명 공백 정리");
+    ok(cs.symptom.length <= C.CASE_LIMIT.symptom + 1, "증상 요약: " + cs.symptom);
+    ok(cs.symptom.indexOf("알람이 반복 발생") >= 0, "핵심 유지");
+    ok(/\[환경\]$/.test(cs.cause), "원인 분류 표식은 끝에 보존: " + cs.cause);
+    ok(cs.cause.length <= C.CASE_LIMIT.cause + 2, "근본원인 요약 길이");
+    ok(cs.action.indexOf("외 2") >= 0 || cs.action.indexOf("…") >= 0, "부품 다건 축약: " + cs.action);
+    ok(cs.action.indexOf("멤브레인×2") >= 0, "첫 부품·수량 표기");
+  });
+
+  await ta("CN70 넓게 보기 토글: 상세·수정 화면 공통 + 기기별 기억", async () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "m1", round: 4, date: "2026-05-25", place: "B동", attendees: [],
+      cases: [{ date: "2026-05-10", equip: "ETD 1호기", symptom: "알람", cause: "오염", action: "청소", caresId: "r1" }],
+      actions: [], files: [] }];
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, '[data-cn-row="m1"]').click();
+    const box = q(e, "#modal-box");
+    ok(q(e, "#cn-fullsw"), "상세에 넓게 보기 버튼");
+    ok(!box.classList.contains("full"), "기본은 기본 폭");
+    eq(q(e, "#cn-fullsw").textContent, "⛶ 넓게 보기", "기본 라벨");
+    q(e, "#cn-fullsw").click();
+    ok(box.classList.contains("full"), "넓게 보기 적용");
+    eq(q(e, "#cn-fullsw").textContent, "⤡ 기본 폭", "토글 라벨");
+    ok(e.w.SemisCouncil.prefFull(), "설정 저장");
+    q(e, "#cn-edit").click();   // 수정 화면으로 이동해도 유지
+    ok(q(e, "#cn-fullsw"), "수정 화면에도 버튼");
+    ok(q(e, "#modal-box").classList.contains("full"), "설정이 이어짐");
+    ok(q(e, ".cn-case-head"), "사례 열 제목 행 (넓게 보기에서 표 형태)");
+    q(e, "#cn-fullsw").click();
+    ok(!q(e, "#modal-box").classList.contains("full"), "되돌리기");
+    ok(!e.w.SemisCouncil.prefFull(), "설정 해제 저장");
+  });
+
+  await ta("CN71 편집폼 사례 행: CARES 연동분만 🔗 원본 보기", async () => {
+    const e = makeEnv();
+    e.S.data.council = [{ id: "m1", round: 4, date: "2026-05-25", place: "B동", attendees: [],
+      cases: [{ date: "2026-05-10", equip: "ETD 1호기", symptom: "알람", cause: "오염", action: "청소", caresId: "r1" },
+              { date: "2026-05-12", equip: "수기", symptom: "직접 작성", cause: "", action: "" }],
+      actions: [], files: [] }];
+    stubCares(e);
+    loginAs(e, "hq");
+    go(e, "council");
+    q(e, '[data-cn-row="m1"]').click();
+    q(e, "#cn-edit").click();
+    eq(qa(e, "#cn-cases .cn-case-row").length, 2, "사례 2행");
+    eq(qa(e, "#cn-cases [data-case-cares]").length, 1, "연동분만 🔗");
+    eq(qa(e, "#cn-cases .cn-case-linked").length, 1, "연동 행 강조 클래스");
+    q(e, '#cn-cases [data-case-cares="0"]').click();
+    await new Promise(r => setTimeout(r, 20));
+    ok(/멤브레인 노즐 오염/.test(q(e, ".cn-rd-box").textContent), "원본 상세 열림");
+    ok(q(e, "#cn-cases"), "편집 폼 유지");
+    e.w.SemisCouncil.closeAllSub();
+  });
+
   /* ─ v2.30: 협의회 서명 자가등록 ─ */
   t("CN23 orgToCat: 소속→구분 자동 매핑 (인씨스=유지보수 포함)", () => {
     const C = makeEnv().w.SemisCouncil;

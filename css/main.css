@@ -344,6 +344,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .modal-box.full { max-width: min(1500px, 96vw); max-height: 94vh; }
 .modal-box.full .nb-rich { max-height: none; }
 .modal-box.full .cn-form .nb-rich { min-height: 240px; }
+/* 넓게 보기 — 협의회 사례 행을 표처럼 한 줄로 (열 제목은 위에 한 번만) */
+.modal-box.full .cn-case-head { display: grid; padding: 2px 13px 5px 16px;
+  font-size: .73rem; font-weight: 700; color: var(--text-3); }
+.modal-box.full .cn-case-head, .modal-box.full .cn-case-row {
+  grid-template-columns: 122px 1.1fr 1.5fr 1.75fr 1.75fr 54px; gap: 6px 7px; }
+.modal-box.full .cn-case-row { grid-template-areas: "date equip sym cause act btns";
+  align-items: center; padding: 8px 11px; margin-bottom: 6px; }
 /* 전체화면일 때 회의 정보·차기 회의 입력을 3열로 펼쳐 세로 스크롤을 줄인다 */
 @media (min-width: 1100px) {
   .modal-box.full .mn-form .form-grid { grid-template-columns: 1fr 1fr 1fr; }
@@ -1341,13 +1348,27 @@ a.ct-tel:hover { color: var(--primary); }
 .cn-att-row { display: grid; grid-template-columns: 22px 88px 1.3fr 1fr 1fr 1.1fr 30px; gap: 6px; margin-bottom: 7px; align-items: center; }
 .cn-att-row select, .cn-att-row input { min-width: 0; }
 .cn-a-no { font-size: .8rem; color: var(--text-3); text-align: center; font-variant-numeric: tabular-nums; }
-/* 사례 동적행 — 흰 바탕 + 파란 좌측 강조선 */
+/* 사례 동적행 — 흰 바탕 + 파란 좌측 강조선
+   기본(모달 780px): 3줄 카드  [발생일|장비] / [증상|근본원인] / [조치]
+   ⛶ 넓게 보기(.modal-box.full): 표처럼 한 줄 (아래 .modal-box.full 규칙) */
+.cn-case-head { display: none; }
 .cn-case-row { border: 1.5px solid var(--border-strong); border-left: 3px solid var(--primary);
   border-radius: 8px; padding: 10px 11px; margin-bottom: 9px; background: var(--surface);
-  display: flex; flex-direction: column; gap: 7px; }
-.cn-case-top { display: flex; gap: 6px; align-items: center; }
-.cn-case-top .cn-c-date { flex: 0 0 130px; min-width: 0; }
-.cn-case-top .cn-c-equip { flex: 1; min-width: 0; font-weight: 600; }
+  display: grid; gap: 6px 7px;
+  grid-template-columns: 132px 1fr 1fr 30px;
+  grid-template-areas: "date equip equip btns" "sym sym cause cause" "act act act act"; }
+.cn-case-row > input { min-width: 0; }
+.cn-case-row .cn-c-date { grid-area: date; }
+.cn-case-row .cn-c-equip { grid-area: equip; font-weight: 600; }
+.cn-case-row .cn-c-symptom { grid-area: sym; }
+.cn-case-row .cn-c-cause { grid-area: cause; }
+.cn-case-row .cn-c-action { grid-area: act; }
+.cn-case-row .cn-case-btns { grid-area: btns; display: flex; gap: 3px; justify-content: flex-end; align-items: center; }
+.cn-case-linked { border-left-color: var(--accent); }
+@media (max-width: 700px) {
+  .cn-case-row { grid-template-columns: 1fr 30px;
+    grid-template-areas: "date btns" "equip equip" "sym sym" "cause cause" "act act"; }
+}
 /* CARES 동기화 바 + 연동 표시 */
 .cn-cares-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .cn-cares-bar .btn { border-color: var(--accent); color: var(--accent); }
