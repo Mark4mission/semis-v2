@@ -379,12 +379,12 @@
         <td style="text-align:center">${r.d.done ? "✅" : (late ? "⚠️" : "⬜")}</td>
         <td>${nl2br(r.d.task)}</td>
         <td style="font-size:.82rem">${esc(r.d.owner || "-")}</td>
-        <td style="font-size:.82rem;white-space:nowrap;${late ? "color:var(--danger);font-weight:700" : ""}">${esc(r.d.due || "-")}</td>
+        <td class="cn-nowrap" style="font-size:.82rem;${late ? "color:var(--danger);font-weight:700" : ""}">${esc(r.d.due || "-")}</td>
         <td style="font-size:.8rem;color:var(--text-3)">${esc(folderIcon(r.x.folder))} ${esc(r.x.title || "")}<div>${esc(r.x.date || "")}</div></td></tr>`;
     };
     return `<div class="table-wrap"><table class="tbl cn-act-tbl"><thead><tr>
         <th style="width:44px"></th><th>결정 / 조치 사항</th>
-        <th style="width:96px">담당</th><th style="width:104px">기한</th>
+        <th style="width:96px">담당</th><th style="width:116px">기한</th>
         <th style="width:230px">회의</th></tr></thead><tbody>
       ${open.map(rowHTML).join("")}${done.map(rowHTML).join("")}
       </tbody></table></div>
@@ -419,8 +419,6 @@
         ${o.noBtn ? "" : `<div class="mn-signbox-act">
           <button class="btn btn-primary btn-sm" id="mn-signbig">🔍 QR 크게 띄우기</button>
           <span class="cn-signcode-copy" data-copy="${esc(code)}" title="코드 복사">📋 코드 복사</span>
-          <span class="cn-signcode-copy" data-copy="${esc(url)}" data-copy-label="접속 주소" title="주소 복사">🔗 주소 복사</span>
-          <button class="btn btn-ghost btn-sm" id="mn-qr-print">🖨 안내문 인쇄</button>
         </div>`}
       </div></div>`;
   }
@@ -741,28 +739,93 @@
 
   /* ══════════ 차기 회의 → 일정관리 연동 ══════════ */
   const SID = (id) => "mn_" + id;                   // 연동 일정 id (원본은 회의록)
+  const DID = (decId) => "mnd_" + decId;             // 결정사항 기한 일정 id
+  /* 캘린더 color 는 색상 id 문자열("sky" 등)이다. hex 를 넣으면 ev-#0ea5e9 라는
+     잘못된 클래스가 되어 색이 적용되지 않는다. (v2.41.1에서 바로잡음) */
+  const CAL_MEETING = "sky";     // 차기 회의
+  const CAL_ACTION = "amber";    // 결정·조치사항 기한
+
+  function upsertSchedule(rec) {
+    if (!Array.isArray(D().schedules)) D().schedules = [];
+    const i = D().schedules.findIndex(s => s && s.id === rec.id);
+    if (i >= 0) Object.assign(D().schedules[i], rec);
+    else D().schedules.push(rec);
+  }
+  const dropSchedule = (id) => {
+    if (!Array.isArray(D().schedules)) return;
+    D().schedules = D().schedules.filter(s => !s || s.id !== id);
+  };
+
   function syncCalendar(x) {
     if (!Array.isArray(D().schedules)) D().schedules = [];
     const sid = SID(x.id);
-    const idx = D().schedules.findIndex(s => s && s.id === sid);
-    if (!x.linkCal || !x.nextDate) { if (idx >= 0) D().schedules.splice(idx, 1); return; }
-    const rec = {
+    if (!x.linkCal || !x.nextDate) dropSchedule(sid);
+    else upsertSchedule({
       id: sid,
       title: "[회의] " + (folderName(x.folder) || "회의") + " 제" + ((Number(x.no) || 0) + 1) + "차",
       memo: [x.nextPlan, x.nextPlace ? "장소: " + x.nextPlace : ""].filter(Boolean).join("\n"),
       start: x.nextDate, end: x.nextDate,
       allDay: !x.nextTime, time: x.nextTime || "", timeEnd: "",
-      color: "#0ea5e9", done: false,
+      color: CAL_MEETING, done: false,
       assignee: x.chair || "", vehicle: false, room: true,
       reminders: ["1d"], repeat: { freq: "none", until: "" },
       doneFrom: "", doneDates: [], undoneDates: []
-    };
-    if (idx >= 0) Object.assign(D().schedules[idx], rec);
-    else D().schedules.push(rec);
+    });
+    syncDecisions(x);
   }
+
+  /* 결정·조치사항 기한 → 일정관리 (v2.41.1)
+     기한이 있는 항목만 등록하고, 완료하면 일정도 완료로 표시한다.
+     항목이 지워지거나 기한이 비면 해당 일정도 함께 정리된다. */
+  function syncDecisions(x) {
+    if (!Array.isArray(D().schedules)) D().schedules = [];
+    const src = "mn:" + x.id;          // 이 회의록이 만든 일정임을 표시(고아 일정 정리 기준)
+    const keep = {};
+    if (x.linkDec !== false) {
+      (x.decisions || []).forEach(d => {
+        if (!d || !d.id || !d.due || !String(d.task || "").trim()) return;
+        keep[DID(d.id)] = true;
+        upsertSchedule({
+          id: DID(d.id), src,
+          title: "[조치] " + String(d.task).trim().slice(0, 60),
+          memo: "회의록에서 관리되는 일정입니다 — " + (x.title || "")
+            + (x.date ? " (" + x.date + ")" : "") + (d.owner ? " · 담당 " + d.owner : ""),
+          start: d.due, end: d.due,
+          allDay: true, time: "", timeEnd: "",
+          color: CAL_ACTION, done: !!d.done,
+          assignee: d.owner || "", vehicle: false, room: false,
+          reminders: ["1d"], repeat: { freq: "none", until: "" },
+          doneFrom: "", doneDates: [], undoneDates: []
+        });
+      });
+    }
+    /* 이 회의록이 만든 조치 일정 중 더 이상 유효하지 않은 것 정리.
+       (결정사항을 지우면 id 자체가 사라지므로 src 표식으로 찾아야 고아가 남지 않는다) */
+    D().schedules = D().schedules.filter(s =>
+      !s || s.src !== src || String(s.id).indexOf("mnd_") !== 0 || !!keep[s.id]);
+  }
+
   function removeCalendar(id) {
     if (!Array.isArray(D().schedules)) return;
-    D().schedules = D().schedules.filter(s => !s || s.id !== SID(id));
+    const src = "mn:" + id;
+    D().schedules = D().schedules.filter(s => !s || (s.id !== SID(id) && s.src !== src));
+  }
+
+  /* 기존 회의록 보정 — normalizeData 에서 호출 (idempotent)
+     v2.41.1 이전에 만든 결정사항에는 연동 키(id)가 없어 일정이 만들어지지 않는다.
+     폼을 다시 열지 않아도 반영되도록 여기서 id를 채우고 일정을 맞춘다. */
+  function normalizeDecisions() {
+    let changed = false;
+    all().forEach(x => {
+      if (!x || !Array.isArray(x.decisions)) return;
+      x.decisions.forEach(d => {
+        if (d && String(d.task || "").trim() && !d.id) { d.id = uid("dc"); changed = true; }
+      });
+      const before = JSON.stringify(D().schedules || []);
+      syncDecisions(x);
+      if (JSON.stringify(D().schedules || []) !== before) changed = true;
+    });
+    return changed;
   }
 
   /* ══════════ 상세 (읽기) ══════════ */
@@ -778,10 +841,10 @@
 
     /* 직책 폭은 협의회 표와 동일 기준(5~7자 한 줄) — 셀 패딩 24px 감안 118px */
     const attHTML = att.length ? `<table class="tbl cn-att-tbl"><thead><tr>
-        <th style="width:34px">No</th><th style="width:90px">성명</th><th>소속</th>
+        <th style="width:46px">No</th><th style="width:90px">성명</th><th>소속</th>
         <th style="width:118px">직책</th><th style="width:104px">서명</th><th style="width:110px">비고</th></tr></thead><tbody>
       ${att.map((a, i) => `<tr>
-        <td style="text-align:center;color:var(--text-3)">${i + 1}</td>
+        <td class="cn-nowrap" style="text-align:center;color:var(--text-3)">${i + 1}</td>
         <td><b>${esc(a.name || "-")}</b></td><td>${esc(a.org || "-")}</td><td class="cn-a-role">${esc(a.role || "-")}</td>
         <td style="text-align:center">${a.sign ? `<img class="cn-sign-img" src="${esc(a.sign)}" alt="서명">` : '<span style="color:var(--text-3)">-</span>'}</td>
         <td>${a.note ? esc(a.note) : "-"}</td></tr>`).join("")}
@@ -789,14 +852,14 @@
       <div class="form-hint" style="margin-top:6px">참석 ${att.length}명 · 서명 완료 ${signed}명${x.absent ? " · 불참: " + esc(x.absent) : ""}</div>` : "";
 
     const decHTML = dec.length ? `<table class="tbl cn-act-tbl"><thead><tr>
-        <th style="width:40px"></th><th>결정 / 조치 사항</th><th style="width:92px">담당</th><th style="width:100px">기한</th></tr></thead><tbody>
+        <th style="width:40px"></th><th>결정 / 조치 사항</th><th style="width:92px">담당</th><th style="width:116px">기한</th></tr></thead><tbody>
       ${dec.map(a => {
         const late = !a.done && a.due && a.due < t;
         return `<tr class="${a.done ? "cn-act-done" : ""}">
           <td style="text-align:center">${a.done ? "✅" : (late ? "⚠️" : "⬜")}</td>
           <td>${nl2br(a.task)}${a.from ? `<div class="mn-carry-from">↩ 이월: ${esc(a.from)}</div>` : ""}</td>
           <td>${esc(a.owner || "-")}</td>
-          <td style="${late ? "color:var(--danger);font-weight:700" : ""}">${esc(a.due || "-")}</td></tr>`;
+          <td class="cn-nowrap" style="${late ? "color:var(--danger);font-weight:700" : ""}">${esc(a.due || "-")}</td></tr>`;
       }).join("")}</tbody></table>` : "";
 
     const nextHTML = (x.nextDate || x.nextPlan) ? `<div class="mn-next">
@@ -832,7 +895,6 @@
       ${x.updated ? `<div class="form-hint" style="margin-top:10px">최종 수정 ${esc(String(x.updated).slice(0, 10))}${x.by ? " · " + esc(x.by) : ""}</div>` : ""}
       <div class="modal-actions">
         ${canDelRec(x) ? '<button class="btn btn-danger" id="mn-del" style="margin-right:auto">삭제</button>' : ""}
-        ${canWrite() ? '<button class="btn btn-accent" id="mn-signbig2">✍️ 서명 받기</button>' : ""}
         <button class="btn btn-ghost" id="mn-print">🖨 회의록 인쇄</button>
         ${canEditRec(x) ? '<button class="btn btn-ghost" id="mn-edit">✎ 수정</button>' : ""}
         <button class="btn btn-primary" id="mn-close">닫기</button>
@@ -843,7 +905,6 @@
     $("#mn-print").onclick = () => printMinute(x.id);
     if ($("#mn-qr-print")) $("#mn-qr-print").onclick = () => printQrSheet(x.id);
     if ($("#mn-signbig")) $("#mn-signbig").onclick = () => signModal(x.id);
-    if ($("#mn-signbig2")) $("#mn-signbig2").onclick = () => signModal(x.id);
     wireCopies("#modal-box");
     $$("#modal-box .cn-rich a[href]").forEach(a => { a.target = "_blank"; a.rel = "noopener"; });
     if (canEditRec(x)) $("#mn-edit").onclick = () => form(x.id);
@@ -953,6 +1014,7 @@
         <div class="form-row"><label>차기 회의 안건 / 메모</label>
           <input id="mn-next" value="${esc(base.nextPlan || "")}" maxlength="200"></div>
         <label class="mn-chk"><input type="checkbox" id="mn-linkcal"${base.linkCal ? " checked" : ""}> 차기 회의를 <b>일정관리에 자동 등록</b> (1일 전 알림)</label>
+        <label class="mn-chk"><input type="checkbox" id="mn-linkdec"${base.linkDec === false ? "" : " checked"}> <b>기한이 있는 결정사항</b>을 일정관리에 등록 (담당자·완료 상태 연동)</label>
       </fieldset>
 
       <fieldset class="cn-fs"><legend>📎 첨부파일</legend>
@@ -1068,7 +1130,7 @@
           <label class="cn-t-donebox" title="완료"><input type="checkbox" class="mn-d-done" ${a.done ? "checked" : ""}></label>
           <input class="mn-d-task" value="${esc(a.task || "")}" maxlength="200" placeholder="결정·조치 사항">
           <input class="mn-d-owner" value="${esc(a.owner || "")}" maxlength="24" placeholder="담당">
-          <input class="mn-d-due" type="date" value="${esc(a.due || "")}">
+          <input class="mn-d-due" type="date" value="${esc(a.due || "")}" title="기한을 넣으면 일정관리에 등록됩니다">
           <button type="button" class="mt-btn danger" data-dec-del="${i}" title="삭제">✕</button>
           ${a.from ? `<div class="mn-carry-from">↩ 이월: ${esc(a.from)}</div>` : ""}
         </div>`).join("") || '<span class="form-hint">결정사항·조치사항을 추가하세요.</span>';
@@ -1134,7 +1196,11 @@
     /* ─ 저장 / 취소 / 삭제 ─ */
     $("#mn-cancel").onclick = () => {
       stopAutoSave();
-      if (cur) { const wasNew = !x; detail(cur.id); if (wasNew) toast("자동 저장된 초안으로 보관되었습니다."); }
+      if (cur) {
+        const wasNew = !x;
+        detail(cur.id);
+        if (wasNew) toast("자동 저장된 초안으로 보관했습니다. 필요 없으면 [삭제]를 누르세요.");
+      }
       else { closeModal(); SeMIS.renderView(); }
     };
     if (x && $("#mn-fdel")) $("#mn-fdel").onclick = () => confirmModal(`"${x.title || "회의록"}"을(를) 삭제하시겠습니까?`, () => {
@@ -1169,7 +1235,9 @@
         agenda: ag.text, agendaHtml: ag.html,
         body: bd.text, bodyHtml: bd.html,
         decisions: decisions.filter(a => String(a.task || "").trim()).map(a => {
-          const o = { task: String(a.task || "").trim(), owner: String(a.owner || "").trim(), due: a.due || "", done: !!a.done };
+          // id 는 일정관리 연동 키 — 순서가 바뀌어도 유지되도록 항목마다 고정
+          const o = { id: a.id || uid("dc"), task: String(a.task || "").trim(),
+            owner: String(a.owner || "").trim(), due: a.due || "", done: !!a.done };
           if (a.from) o.from = a.from;
           return o;
         }),
@@ -1178,6 +1246,7 @@
         nextPlace: $("#mn-nextp").value.trim(),
         nextPlan: $("#mn-next").value.trim(),
         linkCal: !!$("#mn-linkcal").checked,
+        linkDec: !!$("#mn-linkdec").checked,
         files: files.slice(0, MAX_FILES),
         status: (stEl && stEl.value) === "final" ? "final" : "draft",
         by: (SeMIS.user && SeMIS.user.name) || "",
@@ -1592,7 +1661,7 @@
 
   window.SemisMinutes = { seedFolders, all, sorted, folders, folderOf, folderName, stats,
     nextNo, prevMeeting, draftFrom, matches, knownPeople, signCode, signUrl, view, filtered,
-    syncCalendar, removeCalendar, SID, detail, form, newMinute, folderModal,
+    syncCalendar, syncDecisions, normalizeDecisions, removeCalendar, SID, DID, detail, form, newMinute, folderModal,
     printMinute, printQrSheet, renderSigning, saveSignEntry, orgPresets, qrSvg, signBoxHTML,
     signModal, canWrite, listHTML, visibleAll, canSeeRec, myNames, signedNames, rememberSigner,
     runAutoSaveNow, stopAutoSave, _autoTickForTest: runAutoSaveNow };

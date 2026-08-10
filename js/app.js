@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.41.0";
+  const VERSION = "2.41.1";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -575,6 +575,10 @@ const SeMIS = (() => {
     /* v2.41: HTML 소스를 일반 텍스트로 붙여넣어 "<b>…</b>" 가 글자 그대로 굳어버린 본문 복구.
        요소 노드가 이미 있으면 건너뛰므로 멱등하며, 보정이 생기면 normalize 반환값을 통해
        공용 DB로도 자동 반영된다. (회의록 게시판 · 보안장비 협의회 · 공지사항) */
+    // v2.41.1: 결정사항 연동 키 보정 + 기한 일정 반영 (기존 회의록도 폼을 안 열고 반영되도록)
+    if (typeof window !== "undefined" && window.SemisMinutes && window.SemisMinutes.normalizeDecisions) {
+      try { window.SemisMinutes.normalizeDecisions(); } catch (e) { /* 보정 실패가 로딩을 막지 않도록 */ }
+    }
     if (typeof document !== "undefined" && window.SemisNotice && window.SemisNotice.repairEscapedRich) {
       const fix = window.SemisNotice.repairEscapedRich;
       (Array.isArray(DATA.minutes) ? DATA.minutes : []).forEach(x => {

@@ -325,10 +325,10 @@
     /* 열 폭: 직책은 "책임연구원"·"보안검색감독자" 같은 5~7자를 한 줄에 담아야 하므로
        셀 좌우 패딩(24px)을 감안해 118px. 대신 비고를 고정 폭으로 줄여 총 폭은 그대로 둔다. */
     const attHTML = att.length ? `<table class="tbl cn-att-tbl"><thead><tr>
-        <th style="width:34px">No</th><th style="width:88px">구분</th><th style="width:78px">성명</th>
+        <th style="width:46px">No</th><th style="width:88px">구분</th><th style="width:78px">성명</th>
         <th style="width:118px">직책</th><th>소속</th><th style="width:104px">서명</th><th style="width:110px">비고</th></tr></thead><tbody>
       ${att.map((a, i) => `<tr>
-        <td style="text-align:center;color:var(--text-3)">${i + 1}</td>
+        <td class="cn-nowrap" style="text-align:center;color:var(--text-3)">${i + 1}</td>
         <td>${a.cat ? `<span class="badge ${CAT_BADGE[a.cat] || "badge-gray"}">${esc(a.cat)}</span>` : "-"}</td>
         <td>${esc(a.name || "-")}</td><td class="cn-a-role">${esc(a.role || "-")}</td>
         <td>${esc(a.org || "-")}</td>
@@ -346,10 +346,10 @@
       </tbody></table>` : "";
 
     const actHTML = acts.length ? `<table class="tbl cn-act-tbl"><thead><tr>
-        <th style="width:40px"></th><th>결정 / 조치 사항</th><th style="width:92px">담당</th><th style="width:96px">기한</th></tr></thead><tbody>
+        <th style="width:40px"></th><th>결정 / 조치 사항</th><th style="width:92px">담당</th><th style="width:116px">기한</th></tr></thead><tbody>
       ${acts.map(a => `<tr class="${a.done ? "cn-act-done" : ""}">
         <td style="text-align:center">${a.done ? "✅" : "⬜"}</td>
-        <td>${nl2br(a.task)}</td><td>${esc(a.owner || "-")}</td><td>${esc(a.due || "-")}</td></tr>`).join("")}
+        <td>${nl2br(a.task)}</td><td>${esc(a.owner || "-")}</td><td class="cn-nowrap">${esc(a.due || "-")}</td></tr>`).join("")}
       </tbody></table>` : "";
 
     openModal(`

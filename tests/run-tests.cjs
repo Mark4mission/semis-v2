@@ -7821,7 +7821,7 @@ function makeFetchStub(server) {
     ok(q(e, "#modal-box .mn-att-none"), "참석자 안내 문구");
     ok(q(e, "#modal-box .mn-att-none").textContent.indexOf("자동으로 등록") >= 0, "자동 등록 안내");
     ok(q(e, "#modal-box #mn-signbig"), "QR 크게 띄우기 버튼");
-    ok(q(e, "#modal-box #mn-signbig2"), "하단 서명 받기 버튼");
+    // v2.41.1: 하단 중복 버튼은 제거하고 QR 박스의 기본 버튼으로 일원화
     q(e, "#mn-signbig").click();
     ok(q(e, "#modal-box .mn-sv-empty"), "명단 없음 안내");
     e.S.closeModal();
@@ -8395,6 +8395,225 @@ function makeFetchStub(server) {
     q(e, "#mn-cancel").click();
     eq(e.S.data.minutes.length, 1, "취소해도 초안 보관(작성분 유실 방지)");
     eq(e.S.data.minutes[0].status, "draft", "초안 상태");
+  });
+
+  /* ══════════ [F] 결정사항 기한 → 일정관리 · 열 폭 (v2.41.1) ══════════ */
+
+  function decEnv() {
+    const e = mnEnv("hq");
+    e.S.data.schedules = [];
+    e.S.data.minutes = [{ id: "fd1", folder: MF, no: 3, date: "2026-08-10", title: "정례회의",
+      chair: "박철성", attendees: [], linkDec: true,
+      decisions: [
+        { id: "d1", task: "체크리스트 배포", owner: "홍길동", due: "2026-08-20", done: false },
+        { id: "d2", task: "국토부 의견 제시", owner: "박철성", due: "2026-08-21", done: false },
+        { id: "d3", task: "기한 없는 항목", owner: "김철수", due: "", done: false }
+      ] }];
+    return e;
+  }
+  const schedOf = (e, id) => (e.S.data.schedules || []).find(s => s.id === id);
+
+  t("F01 기한이 있는 결정사항만 일정으로 등록된다", () => {
+    const e = decEnv();
+    e.w.SemisMinutes.syncDecisions(e.S.data.minutes[0]);
+    const s1 = schedOf(e, "mnd_d1");
+    ok(s1, "d1 일정 생성");
+    eq(s1.start, "2026-08-20", "기한 = 일정일");
+    eq(s1.title, "[조치] 체크리스트 배포", "제목");
+    eq(s1.assignee, "홍길동", "담당자 연동");
+    eq(s1.done, false, "미완료");
+    eq(s1.allDay, true, "종일 일정");
+    ok(s1.memo.indexOf("정례회의") >= 0, "출처 회의 표시");
+    ok(schedOf(e, "mnd_d2"), "d2 일정 생성");
+    ok(!schedOf(e, "mnd_d3"), "기한 없는 항목은 등록 안 함");
+  });
+
+  t("F02 완료 처리하면 일정도 완료로 표시된다", () => {
+    const e = decEnv();
+    e.w.SemisMinutes.syncDecisions(e.S.data.minutes[0]);
+    eq(schedOf(e, "mnd_d1").done, false, "처음엔 미완료");
+    e.S.data.minutes[0].decisions[0].done = true;
+    e.w.SemisMinutes.syncDecisions(e.S.data.minutes[0]);
+    eq(schedOf(e, "mnd_d1").done, true, "완료 반영");
+  });
+
+  t("F03 기한 변경·삭제가 일정에 반영된다", () => {
+    const e = decEnv();
+    const x = e.S.data.minutes[0];
+    e.w.SemisMinutes.syncDecisions(x);
+    x.decisions[0].due = "2026-09-01";
+    e.w.SemisMinutes.syncDecisions(x);
+    eq(schedOf(e, "mnd_d1").start, "2026-09-01", "기한 변경 반영");
+    x.decisions[0].due = "";
+    e.w.SemisMinutes.syncDecisions(x);
+    ok(!schedOf(e, "mnd_d1"), "기한을 비우면 일정 삭제");
+  });
+
+  t("F04 결정사항을 지우면 남은 일정도 정리된다 (고아 방지)", () => {
+    const e = decEnv();
+    const x = e.S.data.minutes[0];
+    e.w.SemisMinutes.syncDecisions(x);
+    eq((e.S.data.schedules || []).filter(s => String(s.id).indexOf("mnd_") === 0).length, 2, "일정 2건");
+    x.decisions = x.decisions.filter(d => d.id !== "d1");   // 항목 자체를 삭제
+    e.w.SemisMinutes.syncDecisions(x);
+    ok(!schedOf(e, "mnd_d1"), "삭제된 결정의 일정 제거");
+    ok(schedOf(e, "mnd_d2"), "남은 결정은 유지");
+    x.decisions = [];
+    e.w.SemisMinutes.syncDecisions(x);
+    eq((e.S.data.schedules || []).filter(s => String(s.id).indexOf("mnd_") === 0).length, 0, "전부 정리");
+  });
+
+  t("F05 연동을 끄면 등록되지 않고, 다른 회의록 일정은 건드리지 않는다", () => {
+    const e = decEnv();
+    const x = e.S.data.minutes[0];
+    // 다른 회의록이 만든 조치 일정
+    e.S.data.minutes.push({ id: "fd2", folder: MF, no: 4, date: "2026-08-11", title: "다른 회의",
+      attendees: [], linkDec: true,
+      decisions: [{ id: "z9", task: "타 회의 조치", owner: "", due: "2026-08-25", done: false }] });
+    e.w.SemisMinutes.syncDecisions(e.S.data.minutes[1]);
+    e.w.SemisMinutes.syncDecisions(x);
+    ok(schedOf(e, "mnd_z9"), "다른 회의록 일정 존재");
+    x.linkDec = false;
+    e.w.SemisMinutes.syncDecisions(x);
+    ok(!schedOf(e, "mnd_d1") && !schedOf(e, "mnd_d2"), "연동 끄면 본인 일정 제거");
+    ok(schedOf(e, "mnd_z9"), "다른 회의록 일정은 그대로");
+  });
+
+  t("F06 회의록을 삭제하면 회의·조치 일정이 모두 정리된다", () => {
+    const e = decEnv();
+    const x = e.S.data.minutes[0];
+    x.linkCal = true; x.nextDate = "2026-09-04";
+    e.w.SemisMinutes.syncCalendar(x);
+    ok(schedOf(e, "mn_fd1"), "차기 회의 일정");
+    ok(schedOf(e, "mnd_d1"), "조치 일정");
+    e.w.SemisMinutes.removeCalendar("fd1");
+    ok(!schedOf(e, "mn_fd1") && !schedOf(e, "mnd_d1") && !schedOf(e, "mnd_d2"), "모두 정리");
+  });
+
+  t("F07 폼에서 기한을 넣고 저장하면 일정관리에 뜬다 (연동 기본 On)", () => {
+    const e = mnEnv("hq");
+    e.S.data.schedules = []; e.S.data.minutes = [];
+    go(e, "minutes");
+    q(e, "#mn-add").click(); q(e, "#mn-ngo").click();
+    ok(q(e, "#mn-linkdec"), "연동 체크박스 존재");
+    eq(q(e, "#mn-linkdec").checked, true, "기본 On");
+    q(e, "#mn-title").value = "기한 연동 회의";
+    q(e, "#mn-date").value = "2026-08-10";
+    q(e, "#mn-dec-add").click();
+    const row = q(e, "#mn-dec .mn-dec-row");
+    row.querySelector(".mn-d-task").value = "규정 개정안 검토";
+    row.querySelector(".mn-d-owner").value = "이은우";
+    row.querySelector(".mn-d-due").value = "2026-08-28";
+    q(e, "#mn-save").click();
+    const dec = e.S.data.minutes[0].decisions[0];
+    ok(dec.id, "결정사항에 고정 id 부여");
+    const sc = schedOf(e, "mnd_" + dec.id);
+    ok(sc, "일정 생성");
+    eq(sc.start, "2026-08-28", "기한");
+    eq(sc.assignee, "이은우", "담당");
+    ok(sc.title.indexOf("규정 개정안 검토") >= 0, "제목");
+  });
+
+  t("F08 캘린더 색상은 색 id 여야 한다 (hex 사용 시 색이 안 먹음)", () => {
+    const e = decEnv();
+    const x = e.S.data.minutes[0];
+    x.linkCal = true; x.nextDate = "2026-09-04";
+    e.w.SemisMinutes.syncCalendar(x);
+    const ids = e.w.SemisCalendar.COLORS ? e.w.SemisCalendar.COLORS.map(c => c.id) : null;
+    const meet = schedOf(e, "mn_fd1"), act = schedOf(e, "mnd_d1");
+    ok(meet.color.indexOf("#") < 0, "회의 일정 색이 hex 가 아님: " + meet.color);
+    ok(act.color.indexOf("#") < 0, "조치 일정 색이 hex 가 아님: " + act.color);
+    if (ids) {
+      ok(ids.indexOf(meet.color) >= 0, "회의 색이 목록에 있음");
+      ok(ids.indexOf(act.color) >= 0, "조치 색이 목록에 있음");
+      ok(meet.color !== act.color, "회의와 조치를 색으로 구분");
+    }
+  });
+
+  t("F09 참석자 No·기한 열이 줄바꿈되지 않는다", () => {
+    const e = mnEnv("hq");
+    const att = [];
+    for (let i = 1; i <= 12; i++) att.push({ name: "참석" + i, org: "부서", role: "프로" });
+    e.S.data.minutes = [{ id: "fw1", folder: MF, no: 1, date: "2026-08-10", title: "폭 확인",
+      attendees: att, byId: "thq",
+      decisions: [{ id: "w1", task: "조치", owner: "홍", due: "2026-08-14", done: false }] }];
+    go(e, "minutes");
+    q(e, "#mn-body [data-mn-row]").click();
+    const tbls = qa(e, "#modal-box table");
+    const attT = tbls[0], decT = tbls[1];
+    eq(attT.querySelectorAll("thead th")[0].style.width, "46px", "No 열 확대");
+    ok(attT.querySelector("tbody tr td.cn-nowrap"), "No 셀 줄바꿈 금지 클래스");
+    eq(attT.querySelectorAll("tbody tr")[11].children[0].textContent.trim(), "12", "두 자리 연번 표시");
+    eq(decT.querySelectorAll("thead th")[3].style.width, "116px", "기한 열 확대");
+    ok(decT.querySelector("tbody tr td.cn-nowrap"), "기한 셀 줄바꿈 금지 클래스");
+    e.S.closeModal();
+  });
+
+  t("F10 협의회 표도 동일 기준 적용", () => {
+    const e = mnEnv("hq");
+    const att = [];
+    for (let i = 1; i <= 11; i++) att.push({ cat: "본사", org: "부서", name: "인원" + i, role: "프로" });
+    e.S.data.council = [{ id: "fc1", round: 6, date: "2026-08-10", place: "B동", attendees: att,
+      cases: [], files: [], actions: [{ task: "조치", owner: "홍", due: "2026-08-14", done: false }] }];
+    go(e, "council");
+    q(e, "[data-cn-row]").click();
+    const tbls = qa(e, "#modal-box table");
+    eq(tbls[0].querySelectorAll("thead th")[0].style.width, "46px", "협의회 No 열");
+    ok(tbls[0].querySelector("tbody tr td.cn-nowrap"), "No 줄바꿈 금지");
+    const act = tbls[tbls.length - 1];
+    ok(act.querySelector("tbody tr td.cn-nowrap"), "기한 줄바꿈 금지");
+    e.S.closeModal();
+  });
+
+  t("F11 상세 화면 동작 버튼이 중복 없이 정리되어 있다", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "fu1", folder: MF, no: 1, date: "2026-08-10", title: "T",
+      attendees: [], decisions: [], byId: "thq" }];
+    go(e, "minutes");
+    q(e, "#mn-body [data-mn-row]").click();
+    const acts = qa(e, "#modal-box .modal-actions button").map(b => b.textContent.trim());
+    eq(acts.length, 4, "하단 버튼 4개: " + acts.join(" / "));
+    ok(!acts.some(t2 => t2.indexOf("서명 받기") >= 0), "QR 박스와 중복되는 서명 버튼 없음");
+    const boxActs = qa(e, "#modal-box .mn-signbox-act button").length
+      + qa(e, "#modal-box .mn-signbox-act .cn-signcode-copy").length;
+    eq(boxActs, 2, "QR 박스 동작은 2개(크게 띄우기·코드 복사)");
+    e.S.closeModal();
+  });
+
+  t("F12 기존 회의록(연동 키 없음)도 자동 보정되어 일정에 반영된다", () => {
+    const e = mnEnv("hq");
+    e.S.data.schedules = [];
+    // v2.41.1 이전 형식 — decisions 에 id 가 없다
+    e.S.data.minutes = [{ id: "fo1", folder: MF, no: 1, date: "2026-08-10", title: "구형 회의록",
+      attendees: [],
+      decisions: [{ task: "지난 조치", owner: "홍길동", due: "2026-08-18", done: false },
+                  { task: "기한 없음", owner: "", due: "", done: false }] }];
+    ok(e.S.normalizeData(), "보정 발생");
+    const d0 = e.S.data.minutes[0].decisions[0];
+    ok(d0.id, "연번 없는 결정사항에 id 부여");
+    const sc = (e.S.data.schedules || []).find(s => s.id === "mnd_" + d0.id);
+    ok(sc, "폼을 열지 않아도 일정 생성");
+    eq(sc.start, "2026-08-18", "기한 반영");
+    eq(sc.assignee, "홍길동", "담당 반영");
+    eq((e.S.data.schedules || []).filter(s => String(s.id).indexOf("mnd_") === 0).length, 1, "기한 없는 항목 제외");
+    // 다시 돌려도 변화 없음
+    const snap = JSON.stringify(e.S.data.schedules) + JSON.stringify(e.S.data.minutes);
+    e.S.normalizeData();
+    eq(JSON.stringify(e.S.data.schedules) + JSON.stringify(e.S.data.minutes), snap, "멱등");
+  });
+
+  t("F13 연동 일정은 회의록이 원본 — 제목·담당이 항상 회의록 값으로 복원", () => {
+    const e = decEnv();
+    const x = e.S.data.minutes[0];
+    e.w.SemisMinutes.syncDecisions(x);
+    const sid = "mnd_d1";
+    // 일정관리에서 임의로 바꿔 놓아도
+    const sc = (e.S.data.schedules || []).find(s => s.id === sid);
+    sc.title = "손으로 바꾼 제목"; sc.assignee = "다른사람";
+    e.w.SemisMinutes.syncDecisions(x);
+    const after = (e.S.data.schedules || []).find(s => s.id === sid);
+    eq(after.title, "[조치] 체크리스트 배포", "제목 복원");
+    eq(after.assignee, "홍길동", "담당 복원");
   });
 
   /* ══════════ 결과 ══════════ */
