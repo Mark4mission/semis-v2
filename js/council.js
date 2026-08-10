@@ -90,10 +90,19 @@
           <input type="file" id="cn-${key}-img" accept="image/*" style="display:none">
           <input type="file" id="cn-${key}-file" style="display:none" multiple></div>`;
   /* 에디터에 초기값 주입 + 툴바/붙여넣기 배선 */
+  /* 저장된 값 → 에디터. html 이 비었는데 평문에 마크업이 있으면 서식으로 해석
+     (세미 AI의 agenda_append 등은 text 만 채우므로 그대로 esc 하면 태그가 글자로 굳는다) */
+  const looksHtml = (s) => !!(window.SemisNotice && window.SemisNotice.looksLikeHtml
+    ? window.SemisNotice.looksLikeHtml(s) : false);
+  function initialRich(html, text) {
+    if (html) return html;
+    if (!text) return "";
+    return looksHtml(text) ? sanitize(text) : esc(text).replace(/\n/g, "<br>");
+  }
   function wireRich(key, html, text) {
     const ed = $("#cn-" + key);
     if (!ed) return;
-    ed.innerHTML = html || (text ? esc(text).replace(/\n/g, "<br>") : "");
+    ed.innerHTML = initialRich(html, text);
     const rich = window.SemisNotice ? window.SemisNotice.wireRichMedia(ed, "council") : null;
     $$(`[data-rich-tb="${key}"] [data-cmd]`).forEach(b => {
       b.onmousedown = (ev) => ev.preventDefault();
@@ -124,7 +133,7 @@
     if (!ed) return { html: "", text: "" };
     const html = sanitize(ed.innerHTML);
     const tmp = document.createElement("div"); tmp.innerHTML = html;
-    const text = (tmp.textContent || "").trim();
+    const text = (tmp.textContent || "").replace(/\u00A0/g, " ").trim();
     return { html: hasRich(html, text) ? html : "", text };
   }
 

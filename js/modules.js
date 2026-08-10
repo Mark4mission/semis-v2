@@ -400,6 +400,35 @@
     return box.innerHTML;
   }
   /* ───── 리치 에디터 공용: 붙여넣기/드래그앤드롭 파일·이미지 삽입 ───── */
+  /* 문자열이 HTML 마크업을 담고 있는지 — 실제 태그가 하나라도 있어야 참.
+     "부등호 < 사용" 같은 평문이 오탐되지 않도록 태그명을 화이트리스트로 제한한다. */
+  const HTML_TAG_RE = /<\/?(?:b|i|u|s|strong|em|br|p|div|span|ul|ol|li|table|thead|tbody|tr|td|th|a|img|h[1-6]|blockquote|pre|code|hr|font)\b[^>]*>/i;
+  function looksLikeHtml(s) { return HTML_TAG_RE.test(String(s || "")); }
+
+  /* 이스케이프된 채 굳어버린 본문 복구 (v2.41)
+     증상: html 필드에 "&lt;b&gt;…" 가 들어 있고 실제 요소 노드는 하나도 없음
+           (= HTML 소스를 일반 텍스트로 붙여넣은 뒤 저장된 상태)
+     처리: 텍스트를 HTML 로 재해석. 이미 정상(요소 노드 존재)이면 손대지 않아 멱등하다.
+     rec[base]=평문, rec[base+"Html"]=서식 규약을 따르는 모든 모듈에 공용. */
+  function repairEscapedRich(rec, base) {
+    if (!rec) return false;
+    const hk = base + "Html";
+    const html = String(rec[hk] || "");
+    if (!html || html.indexOf("&lt;") < 0) return false;
+    const probe = document.createElement("div");
+    probe.innerHTML = html;
+    if (probe.querySelector("*")) return false;        // 진짜 서식이 이미 있으면 대상 아님
+    const src = probe.textContent || "";
+    if (!looksLikeHtml(src)) return false;
+    const fixed = sanitizeHtml(src);
+    const t = document.createElement("div");
+    t.innerHTML = fixed;
+    rec[hk] = fixed;
+    // 평문은 검색어 매칭에 쓰이므로 NBSP 를 일반 공백으로 정규화
+    rec[base] = (t.textContent || "").replace(/\u00A0/g, " ").trim();
+    return true;
+  }
+
   function wireRichMedia(ed, prefix) {
     const insert = (html) => {
       ed.focus();
@@ -433,8 +462,23 @@
       }
     }
     ed.addEventListener("paste", (ev) => {
-      const files = ev.clipboardData && ev.clipboardData.files;
-      if (files && files.length) { ev.preventDefault(); addFiles(files); }
+      const cd = ev.clipboardData;
+      const files = cd && cd.files;
+      if (files && files.length) { ev.preventDefault(); addFiles(files); return; }
+      /* v2.41: HTML 소스가 '일반 텍스트'로 붙여넣기 되면 브라우저는 태그를 글자 그대로 넣는다.
+         (그러면 화면에 <b>…</b> 가 그대로 보이고, 저장·재열기 때마다 그 상태가 굳는다)
+         서식(text/html)이 함께 온 경우는 브라우저 기본 동작이 옳으므로 건드리지 않고,
+         마크업이 들어간 순수 텍스트일 때만 서식으로 해석해 넣는다. */
+      if (!cd || !cd.getData) return;
+      let htmlFlavor = "";
+      try { htmlFlavor = cd.getData("text/html") || ""; } catch (e) { /* 일부 브라우저 미지원 */ }
+      if (htmlFlavor) return;
+      let plain = "";
+      try { plain = cd.getData("text/plain") || ""; } catch (e) { return; }
+      if (!plain || !looksLikeHtml(plain)) return;
+      ev.preventDefault();
+      insert(sanitizeHtml(plain));
+      toast("붙여넣은 HTML 서식을 적용했습니다. (되돌리기: Ctrl+Z)");
     });
     ed.addEventListener("dragover", (ev) => ev.preventDefault());
     ed.addEventListener("drop", (ev) => {
@@ -444,7 +488,7 @@
     return { insert, addFiles };
   }
 
-  window.SemisNotice = { sanitizeHtml, shrinkImage, wireRichMedia };
+  window.SemisNotice = { sanitizeHtml, shrinkImage, wireRichMedia, looksLikeHtml, repairEscapedRich };
 
   /* ───── 이미지 축소(1400px, JPEG) — 실패 시 원본 유지 ───── */
   function shrinkImage(file, maxW) {

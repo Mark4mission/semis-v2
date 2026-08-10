@@ -158,10 +158,19 @@
           </div>
           <div id="mn-rich-${key}" data-rich-key="${key}" class="nb-editor nb-rich" contenteditable="true" data-ph="${esc(ph || "")}"></div>
           <input type="file" id="mn-rich-${key}-img" accept="image/*" style="display:none"></div>`;
+  /* 저장된 값 → 에디터. html 이 비었는데 평문에 마크업이 들어 있으면(예: 외부 도구가
+     text 만 채운 경우) 그대로 esc 하면 태그가 글자로 굳으므로 서식으로 해석한다. */
+  const looksHtml = (s) => !!(window.SemisNotice && window.SemisNotice.looksLikeHtml
+    ? window.SemisNotice.looksLikeHtml(s) : false);
+  function initialRich(html, text) {
+    if (html) return html;
+    if (!text) return "";
+    return looksHtml(text) ? sanitize(text) : esc(text).replace(/\n/g, "<br>");
+  }
   function wireRich(key, html, text) {
     const ed = $(richSel(key));
     if (!ed) return;
-    ed.innerHTML = html || (text ? esc(text).replace(/\n/g, "<br>") : "");
+    ed.innerHTML = initialRich(html, text);
     const rich = window.SemisNotice ? window.SemisNotice.wireRichMedia(ed, "minutes") : null;
     $$(`[data-rich-tb="${key}"] [data-cmd]`).forEach(b => {
       b.onmousedown = (ev) => ev.preventDefault();
@@ -187,7 +196,7 @@
     if (!ed) return { html: "", text: "" };
     const html = sanitize(ed.innerHTML);
     const tmp = document.createElement("div"); tmp.innerHTML = html;
-    const text = (tmp.textContent || "").trim();
+    const text = (tmp.textContent || "").replace(/\u00A0/g, " ").trim();
     return { html: hasRich(html, text) ? html : "", text };
   }
 
@@ -846,8 +855,26 @@
   }
 
   /* ══════════ 등록 / 수정 폼 ══════════ */
+  /* ── 작성 화면 개인 설정 (계정·기기별, localStorage) ── */
+  const LS_FULL = "semis2:mnFormFull";      // 전체화면 편집
+  const LS_AUTO = "semis2:mnAutoSave";      // 자동 저장 (기본 On)
+  const prefFull = () => { try { return localStorage.getItem(LS_FULL) === "1"; } catch (e) { return false; } };
+  const setPrefFull = (v) => { try { localStorage.setItem(LS_FULL, v ? "1" : "0"); } catch (e) {} };
+  const prefAuto = () => { try { return localStorage.getItem(LS_AUTO) !== "0"; } catch (e) { return true; } };
+  const setPrefAuto = (v) => { try { localStorage.setItem(LS_AUTO, v ? "1" : "0"); } catch (e) {} };
+  const AUTOSAVE_MS = 20000;
+  let autoTimer = null, autoHide = null, autoTickFn = null;
+  function stopAutoSave() {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    if (autoHide) { try { window.removeEventListener("pagehide", autoHide); } catch (e) {} autoHide = null; }
+    autoTickFn = null;
+  }
+  /* 열려 있는 작성 폼을 지금 즉시 자동 저장 (주기를 기다리지 않고 강제 실행) */
+  function runAutoSaveNow() { return autoTickFn ? autoTickFn() : false; }
+
   function form(id, init) {
-    const x = id ? all().find(c => c.id === id) : null;
+    let cur = id ? all().find(c => c.id === id) : null;   // 자동 저장으로 신규 생성되면 여기에 채워진다
+    const x = cur;
     const base = x || draftFrom(init || { folder: (folders()[0] || {}).id, date: todayStr(), inherit: true, carry: true });
     let attendees = (base.attendees || []).map(a => Object.assign({}, a));
     let decisions = (base.decisions || []).map(a => Object.assign({}, a));
@@ -858,7 +885,13 @@
 
     openModal(`
      <div class="cn-form mn-form">
-      <h3>${x ? "회의록 수정" : "회의록 작성"} <span class="badge badge-gray">${esc(folderName(base.folder))}</span></h3>
+      <h3>${x ? "회의록 수정" : "회의록 작성"} <span class="badge badge-gray">${esc(folderName(base.folder))}</span>
+        <span class="mn-formbar">
+          <label class="mn-autosw" title="20초마다 자동으로 저장합니다">
+            <input type="checkbox" id="mn-autosave"${prefAuto() ? " checked" : ""}> 자동 저장</label>
+          <span class="mn-autostat" id="mn-autostat"></span>
+          <button type="button" class="btn btn-ghost btn-sm" id="mn-fullsw"></button>
+        </span></h3>
 
       <fieldset class="cn-fs"><legend>📋 회의 정보</legend>
         <div class="form-grid">
@@ -891,8 +924,7 @@
         <div class="mn-att-bar">
           <button type="button" class="btn btn-ghost btn-sm" id="mn-att-add">+ 참석자 추가</button>
           <button type="button" class="btn btn-ghost btn-sm" id="mn-att-prev">↩ 직전 회의 명단 불러오기</button>
-          ${x ? '<button type="button" class="btn btn-accent btn-sm" id="mn-att-qr">✍️ QR로 서명 받기</button>'
-              : '<span class="form-hint">저장하면 <b>QR 서명</b> 화면이 바로 열립니다.</span>'}
+          <button type="button" class="btn btn-accent btn-sm" id="mn-att-qr">✍️ QR로 서명 받기</button>
           <span class="form-hint" id="mn-att-n"></span>
         </div>
         <div class="form-row" style="margin-top:10px"><label>불참자 (선택)</label>
@@ -944,6 +976,16 @@
       </div>
      </div>`, { wide: true });
 
+    /* ── 전체화면 편집 토글 ── */
+    const box = document.getElementById("modal-box");
+    function applyFull(on) {
+      if (box) box.classList.toggle("full", !!on);
+      const b = $("#mn-fullsw");
+      if (b) { b.textContent = on ? "⤡ 기본 크기" : "⛶ 전체화면"; b.title = on ? "기본 크기로" : "넓게 편집하기"; }
+    }
+    applyFull(prefFull());
+    $("#mn-fullsw").onclick = () => { const on = !box.classList.contains("full"); setPrefFull(on); applyFull(on); };
+
     wireRich("agenda", base.agendaHtml, base.agenda);
     wireRich("body", base.bodyHtml, base.body);
 
@@ -992,8 +1034,8 @@
     };
     /* 회의 중 작성하다가 바로 QR을 띄우는 경로 — 입력분을 먼저 저장해 명단이 어긋나지 않게 한다 */
     if ($("#mn-att-qr")) $("#mn-att-qr").onclick = () => {
-      if (!save({ silent: true })) return;
-      signModal(x.id);
+      if (!save({ silent: true })) return;   // 입력분을 먼저 저장해 명단이 어긋나지 않게
+      if (cur) signModal(cur.id);
     };
     $("#mn-att-prev").onclick = () => {
       attCollect();
@@ -1090,8 +1132,13 @@
     };
 
     /* ─ 저장 / 취소 / 삭제 ─ */
-    $("#mn-cancel").onclick = () => (x ? detail(x.id) : (closeModal(), SeMIS.renderView()));
+    $("#mn-cancel").onclick = () => {
+      stopAutoSave();
+      if (cur) { const wasNew = !x; detail(cur.id); if (wasNew) toast("자동 저장된 초안으로 보관되었습니다."); }
+      else { closeModal(); SeMIS.renderView(); }
+    };
     if (x && $("#mn-fdel")) $("#mn-fdel").onclick = () => confirmModal(`"${x.title || "회의록"}"을(를) 삭제하시겠습니까?`, () => {
+      stopAutoSave();
       removeCalendar(x.id);
       D().minutes = all().filter(c => c.id !== x.id);
       SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
@@ -1134,16 +1181,22 @@
         files: files.slice(0, MAX_FILES),
         status: (stEl && stEl.value) === "final" ? "final" : "draft",
         by: (SeMIS.user && SeMIS.user.name) || "",
-        byId: (x && x.byId) || me(),
+        byId: (cur && cur.byId) || me(),
         updated: new Date().toISOString()
       };
       let saved;
-      const isNew = !x;
-      if (x) { Object.assign(x, rec); saved = x; }
-      else { saved = Object.assign({ id: uid("mn"), created: new Date().toISOString() }, rec); D().minutes.push(saved); }
+      const isNew = !cur;
+      if (cur) { Object.assign(cur, rec); saved = cur; }
+      else {
+        saved = Object.assign({ id: uid("mn"), created: new Date().toISOString() }, rec);
+        D().minutes.push(saved);
+        cur = saved;               // 이후 저장은 같은 레코드를 갱신
+      }
       syncCalendar(saved);
       SeMIS.save();
+      if (o.auto) { markAutoSaved(); return true; }
       if (o.silent) { toast("저장되었습니다."); return true; }
+      stopAutoSave();
       closeModal();
       if (isNew) {
         // 새 회의록은 상세를 바로 열어 QR 서명 안내가 곧장 눈에 들어오게 한다
@@ -1157,6 +1210,47 @@
       return true;
     }
     $("#mn-save").onclick = () => save();
+
+    /* ══════ 자동 저장 (기본 On) ══════
+       회의 중 길게 작성하다 창이 닫혀도 내용이 남도록 20초마다 저장한다.
+       신규 작성은 실제로 입력한 내용이 생긴 뒤에만 만들어 빈 회의록이 쌓이지 않게 한다. */
+    function markAutoSaved() {
+      const el = $("#mn-autostat");
+      if (!el) return;
+      const d = new Date();
+      const p2 = (n) => String(n).padStart(2, "0");
+      el.textContent = "✓ " + p2(d.getHours()) + ":" + p2(d.getMinutes()) + " 자동 저장됨";
+    }
+    function hasContent() {
+      const rich = (k) => { const ed = $(richSel(k)); return !!(ed && (ed.textContent || "").trim()); };
+      if (rich("agenda") || rich("body")) return true;
+      if ($$("#mn-att .mn-att-row").some(r => (r.querySelector(".mn-a-name").value || "").trim())) return true;
+      if ($$("#mn-dec .mn-dec-row").some(r => (r.querySelector(".mn-d-task").value || "").trim())) return true;
+      return false;
+    }
+    function autoTick() {
+      if (!$("#mn-title")) { stopAutoSave(); return; }        // 폼이 닫힘
+      if (!$("#mn-autosave") || !$("#mn-autosave").checked) return;
+      if (!cur && !hasContent()) return;                       // 신규는 내용이 생긴 뒤부터
+      if (!String($("#mn-title").value || "").trim() || !$("#mn-date").value) return;
+      save({ auto: true });
+    }
+    function startAutoSave() {
+      stopAutoSave();
+      autoTickFn = autoTick;
+      autoTimer = setInterval(autoTick, AUTOSAVE_MS);
+      // 탭을 닫거나 새로고침할 때도 마지막 입력분을 놓치지 않도록 (저장은 동기 처리)
+      autoHide = () => { try { autoTick(); } catch (e) {} };
+      window.addEventListener("pagehide", autoHide);
+    }
+
+    $("#mn-autosave").onchange = (ev) => {
+      setPrefAuto(ev.target.checked);
+      const el = $("#mn-autostat");
+      if (ev.target.checked) { startAutoSave(); if (el) el.textContent = "자동 저장 켜짐"; }
+      else { stopAutoSave(); if (el) el.textContent = "자동 저장 꺼짐"; }
+    };
+    startAutoSave();
   }
 
   /* ══════════ 인쇄 공통 — 숨김 iframe 으로 인쇄 대화상자 ══════════ */
@@ -1500,5 +1594,6 @@
     nextNo, prevMeeting, draftFrom, matches, knownPeople, signCode, signUrl, view, filtered,
     syncCalendar, removeCalendar, SID, detail, form, newMinute, folderModal,
     printMinute, printQrSheet, renderSigning, saveSignEntry, orgPresets, qrSvg, signBoxHTML,
-    signModal, canWrite, listHTML, visibleAll, canSeeRec, myNames, signedNames, rememberSigner };
+    signModal, canWrite, listHTML, visibleAll, canSeeRec, myNames, signedNames, rememberSigner,
+    runAutoSaveNow, stopAutoSave, _autoTickForTest: runAutoSaveNow };
 })();

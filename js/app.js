@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.40.4";
+  const VERSION = "2.41.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -572,6 +572,21 @@ const SeMIS = (() => {
       const mn = DATA.menus.find(m => m && m.type === "module" && m.module === "minutes");
       if (mn && (mn.vis === "mgr" || !mn.vis)) mn.vis = "all";
     }
+    /* v2.41: HTML 소스를 일반 텍스트로 붙여넣어 "<b>…</b>" 가 글자 그대로 굳어버린 본문 복구.
+       요소 노드가 이미 있으면 건너뛰므로 멱등하며, 보정이 생기면 normalize 반환값을 통해
+       공용 DB로도 자동 반영된다. (회의록 게시판 · 보안장비 협의회 · 공지사항) */
+    if (typeof document !== "undefined" && window.SemisNotice && window.SemisNotice.repairEscapedRich) {
+      const fix = window.SemisNotice.repairEscapedRich;
+      (Array.isArray(DATA.minutes) ? DATA.minutes : []).forEach(x => {
+        if (!x) return; fix(x, "agenda"); fix(x, "body");
+      });
+      (Array.isArray(DATA.council) ? DATA.council : []).forEach(x => {
+        if (!x) return; fix(x, "agenda"); fix(x, "env"); fix(x, "proposals");
+      });
+      (Array.isArray(DATA.notices) ? DATA.notices : []).forEach(x => {
+        if (!x) return; fix(x, "body");
+      });
+    }
     /* v2.34: 보안감독자 현황 / 지점 보안담당자 — 구글시트 링크 → 내부 모듈 이관.
        최초 사용 시 시트 내용 시드 + 메뉴 교체(기존 링크 메뉴 제거, idempotent). */
     if (!Array.isArray(DATA.supervisors)) DATA.supervisors = seedSupervisors();
@@ -855,6 +870,7 @@ const SeMIS = (() => {
     $("#modal-overlay").classList.add("hidden");
     const box = $("#modal-box");
     box.classList.remove("wide");
+    box.classList.remove("full");   // v2.41: 전체화면 편집 모드 해제
     box.innerHTML = "";
   }
   function confirmModal(msg, onOk) {

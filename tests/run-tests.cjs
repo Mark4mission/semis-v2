@@ -7834,7 +7834,7 @@ function makeFetchStub(server) {
     q(e, "#mn-add").click();
     q(e, "#mn-ngo").click();
     ok(q(e, "#mn-title").value, "제목 자동 입력");
-    ok(q(e, ".mn-att-bar").textContent.indexOf("저장하면") >= 0, "신규엔 저장 안내 문구");
+    ok(q(e, "#mn-att-qr"), "신규 작성 중에도 QR 버튼 노출 (누르면 먼저 저장됨)");
     q(e, "#mn-save").click();
     eq(e.S.data.minutes.length, 1, "저장됨");
     const box = q(e, "#modal-box");
@@ -8220,6 +8220,181 @@ function makeFetchStub(server) {
     eq(x.agenda, "안건A", "안건");
     eq(x.env, "환경B", "② 사용환경");
     eq(x.proposals, "제안C", "③ 제안·토의");
+  });
+
+  /* ══════════ [E] HTML 소스 붙여넣기 · 전체화면 · 자동 저장 (v2.41) ══════════ */
+
+  t("E01 looksLikeHtml — 실제 태그만 참, 평문 부등호는 거짓", () => {
+    const e = makeEnv();
+    const L = e.w.SemisNotice.looksLikeHtml;
+    ok(L("<b>굵게</b>"), "b 태그");
+    ok(L("줄바꿈<br>다음"), "br 태그");
+    ok(L('<div class="x">내용</div>'), "속성 있는 div");
+    ok(!L("가격이 100 < 200 인 경우"), "부등호 평문");
+    ok(!L("5<10 그리고 a>b"), "비교 연산 평문");
+    ok(!L("정상 회의록 본문입니다"), "일반 문장");
+    ok(!L(""), "빈 문자열");
+  });
+
+  t("E02 이스케이프되어 굳은 본문을 서식으로 복구 (멱등)", () => {
+    const e = makeEnv();
+    const R = e.w.SemisNotice.repairEscapedRich;
+    const rec = {
+      agenda: "<b>1. 개정시행</b><br>&nbsp;- 형사처벌",
+      agendaHtml: "&lt;b&gt;1. 개정시행&lt;/b&gt;&lt;br&gt;&amp;nbsp;- 형사처벌"
+    };
+    eq(R(rec, "agenda"), true, "복구 수행");
+    ok(rec.agendaHtml.indexOf("<b>") >= 0, "실제 태그로 복원");
+    ok(rec.agendaHtml.indexOf("&lt;") < 0, "이스케이프 제거");
+    eq(rec.agenda, "1. 개정시행 - 형사처벌", "평문은 태그 제거된 텍스트");
+    // 두 번째 호출은 아무것도 하지 않아야 한다
+    const snap = JSON.stringify(rec);
+    eq(R(rec, "agenda"), false, "재실행 시 대상 아님");
+    eq(JSON.stringify(rec), snap, "값 불변(멱등)");
+  });
+
+  t("E03 정상 본문·평문은 복구 대상이 아니다", () => {
+    const e = makeEnv();
+    const R = e.w.SemisNotice.repairEscapedRich;
+    const ok1 = { body: "정상", bodyHtml: "<b>정상</b> 서식" };
+    eq(R(ok1, "body"), false, "이미 정상 서식");
+    eq(ok1.bodyHtml, "<b>정상</b> 서식", "불변");
+    const ok2 = { body: "부등호 5 &lt; 10 설명", bodyHtml: "부등호 5 &lt; 10 설명" };
+    eq(R(ok2, "body"), false, "태그가 아닌 이스케이프는 유지");
+    eq(ok2.bodyHtml, "부등호 5 &lt; 10 설명", "불변");
+    eq(R({}, "body"), false, "빈 레코드");
+  });
+
+  t("E04 normalizeData 가 회의록·협의회·공지의 굳은 본문을 자동 복구", () => {
+    const e = makeEnv();
+    e.S.data.minutes = [{ id: "es1", folder: MF, no: 1, date: "2026-08-10", title: "T",
+      attendees: [], decisions: [],
+      agenda: "<b>안건</b>", agendaHtml: "&lt;b&gt;안건&lt;/b&gt;",
+      body: "<i>논의</i>", bodyHtml: "&lt;i&gt;논의&lt;/i&gt;" }];
+    e.S.data.council = [{ id: "ec1", round: 1, date: "2026-08-10", attendees: [], cases: [], actions: [], files: [],
+      env: "<b>환경</b>", envHtml: "&lt;b&gt;환경&lt;/b&gt;" }];
+    ok(e.S.normalizeData(), "보정 발생 → 공용 DB 반영 대상");
+    ok(e.S.data.minutes[0].agendaHtml.indexOf("<b>") >= 0, "회의록 안건 복구");
+    ok(e.S.data.minutes[0].bodyHtml.indexOf("<i>") >= 0, "회의록 논의 복구");
+    ok(e.S.data.council[0].envHtml.indexOf("<b>") >= 0, "협의회 본문 복구");
+    // 다시 돌려도 추가 변경이 없어야 한다
+    const snap = JSON.stringify(e.S.data.minutes) + JSON.stringify(e.S.data.council);
+    e.S.normalizeData();
+    eq(JSON.stringify(e.S.data.minutes) + JSON.stringify(e.S.data.council), snap, "멱등");
+  });
+
+  t("E05 복구된 회의록은 화면·에디터에 서식으로 보인다", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "es2", folder: MF, no: 1, date: "2026-08-10", title: "복구 확인",
+      attendees: [], decisions: [], byId: "thq",
+      agenda: "<b>안건 제목</b><br>세부", agendaHtml: "&lt;b&gt;안건 제목&lt;/b&gt;&lt;br&gt;세부" }];
+    e.S.normalizeData();
+    go(e, "minutes");
+    q(e, "#mn-body [data-mn-row]").click();
+    const box = q(e, "#modal-box");
+    ok(box.querySelector(".cn-rich b"), "상세에 굵게 서식으로 렌더");
+    ok(box.textContent.indexOf("<b>") < 0, "태그가 글자로 보이지 않음");
+    q(e, "#mn-edit").click();
+    const ed = q(e, '#modal-box [data-rich-key="agenda"]');
+    ok(ed.querySelector("b"), "에디터에도 서식으로 복원");
+    ok((ed.textContent || "").indexOf("<b>") < 0, "에디터에 태그 글자 없음");
+    e.S.closeModal();
+  });
+
+  t("E06 html 이 비어도 평문에 마크업이 있으면 서식으로 해석 (재이스케이프 방지)", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "es3", folder: MF, no: 1, date: "2026-08-10", title: "T",
+      attendees: [], decisions: [], byId: "thq",
+      agenda: "<b>세미가 넣은 안건</b>", agendaHtml: "" }];
+    go(e, "minutes");
+    q(e, "#mn-body [data-mn-row]").click();
+    q(e, "#mn-edit").click();
+    const ed = q(e, '#modal-box [data-rich-key="agenda"]');
+    ok(ed.querySelector("b"), "서식으로 해석");
+    q(e, "#mn-save").click();
+    const rec = e.S.data.minutes[0];
+    ok(rec.agendaHtml.indexOf("<b>") >= 0, "저장 시 실제 태그로");
+    ok(rec.agendaHtml.indexOf("&lt;") < 0, "이스케이프되지 않음");
+    eq(rec.agenda, "세미가 넣은 안건", "평문은 태그 제거");
+  });
+
+  t("E07 전체화면 편집 토글 — 상태 기억 + 닫으면 해제", () => {
+    const e = mnEnv("hq");
+    e.w.localStorage.removeItem("semis2:mnFormFull");
+    e.S.data.minutes = [];
+    go(e, "minutes");
+    q(e, "#mn-add").click(); q(e, "#mn-ngo").click();
+    const box = q(e, "#modal-box");
+    ok(!box.classList.contains("full"), "기본은 기본 크기");
+    ok(q(e, "#mn-fullsw"), "토글 버튼");
+    eq(q(e, "#mn-fullsw").textContent.trim(), "⛶ 전체화면", "버튼 문구");
+    q(e, "#mn-fullsw").click();
+    ok(box.classList.contains("full"), "전체화면 적용");
+    eq(q(e, "#mn-fullsw").textContent.trim(), "⤡ 기본 크기", "문구 전환");
+    eq(e.w.localStorage.getItem("semis2:mnFormFull"), "1", "설정 저장");
+    e.S.closeModal();
+    ok(!q(e, "#modal-box").classList.contains("full"), "닫으면 클래스 해제(다른 모달 영향 없음)");
+    // 다시 열면 기억된 상태로
+    go(e, "minutes"); q(e, "#mn-add").click(); q(e, "#mn-ngo").click();
+    ok(q(e, "#modal-box").classList.contains("full"), "설정 기억");
+    e.S.closeModal();
+  });
+
+  await ta("E08 자동 저장 — 기본 On, 내용이 생기면 신규도 저장된다", async () => {
+    const e = mnEnv("hq");
+    e.w.localStorage.removeItem("semis2:mnAutoSave");
+    e.S.data.minutes = [];
+    go(e, "minutes");
+    q(e, "#mn-add").click(); q(e, "#mn-ngo").click();
+    eq(q(e, "#mn-autosave").checked, true, "기본값 On");
+    // 내용이 없으면 빈 회의록을 만들지 않는다
+    e.w.SemisMinutes._autoTickForTest();
+    eq(e.S.data.minutes.length, 0, "빈 상태에서는 생성 안 함");
+    // 논의 내용을 적으면 저장된다
+    q(e, '#modal-box [data-rich-key="body"]').innerHTML = "자동 저장될 논의 내용";
+    e.w.SemisMinutes._autoTickForTest();
+    eq(e.S.data.minutes.length, 1, "내용이 생기면 저장");
+    eq(e.S.data.minutes[0].body, "자동 저장될 논의 내용", "본문 저장");
+    ok(q(e, "#mn-autostat").textContent.indexOf("자동 저장됨") >= 0, "저장 시각 표시");
+    ok(q(e, "#mn-title"), "폼은 계속 열려 있음");
+    // 이어서 더 쓰면 같은 레코드를 갱신 (중복 생성 금지)
+    q(e, '#modal-box [data-rich-key="body"]').innerHTML = "내용을 더 추가함";
+    e.w.SemisMinutes._autoTickForTest();
+    eq(e.S.data.minutes.length, 1, "중복 생성 없음");
+    eq(e.S.data.minutes[0].body, "내용을 더 추가함", "갱신됨");
+  });
+
+  t("E09 자동 저장 끄면 저장되지 않고 설정이 유지된다", () => {
+    const e = mnEnv("hq");
+    e.w.localStorage.removeItem("semis2:mnAutoSave");
+    e.S.data.minutes = [];
+    go(e, "minutes");
+    q(e, "#mn-add").click(); q(e, "#mn-ngo").click();
+    const sw = q(e, "#mn-autosave");
+    sw.checked = false;
+    sw.dispatchEvent(new e.w.Event("change", { bubbles: true }));
+    eq(e.w.localStorage.getItem("semis2:mnAutoSave"), "0", "설정 저장");
+    q(e, '#modal-box [data-rich-key="body"]').innerHTML = "저장되면 안 되는 내용";
+    e.w.SemisMinutes._autoTickForTest();
+    eq(e.S.data.minutes.length, 0, "자동 저장 안 됨");
+    e.S.closeModal();
+    // 재진입 시 꺼진 상태 유지
+    go(e, "minutes"); q(e, "#mn-add").click(); q(e, "#mn-ngo").click();
+    eq(q(e, "#mn-autosave").checked, false, "설정 기억");
+  });
+
+  t("E10 자동 저장된 신규 초안은 취소해도 보관된다", () => {
+    const e = mnEnv("hq");
+    e.w.localStorage.removeItem("semis2:mnAutoSave");
+    e.S.data.minutes = [];
+    go(e, "minutes");
+    q(e, "#mn-add").click(); q(e, "#mn-ngo").click();
+    q(e, '#modal-box [data-rich-key="body"]').innerHTML = "회의 중 작성분";
+    e.w.SemisMinutes._autoTickForTest();
+    eq(e.S.data.minutes.length, 1, "자동 저장됨");
+    q(e, "#mn-cancel").click();
+    eq(e.S.data.minutes.length, 1, "취소해도 초안 보관(작성분 유실 방지)");
+    eq(e.S.data.minutes[0].status, "draft", "초안 상태");
   });
 
   /* ══════════ 결과 ══════════ */
