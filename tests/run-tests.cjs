@@ -8138,6 +8138,90 @@ function makeFetchStub(server) {
     });
   });
 
+  /* ══════════ [B] 논의 내용 저장 회귀 (v2.40.4) ══════════
+     폼 에디터 id(mn-body)가 목록 컨테이너 id 와 충돌해 논의 내용이 저장·복원되지 않던 버그 */
+
+  t("B01 안건·논의 내용이 모두 저장되고 재수정 시 되살아난다", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [];
+    go(e, "minutes");
+    q(e, "#mn-add").click();
+    q(e, "#mn-ngo").click();
+    const agendaEd = q(e, '#modal-box [data-rich-key="agenda"]');
+    const bodyEd = q(e, '#modal-box [data-rich-key="body"]');
+    ok(agendaEd, "안건 에디터 존재");
+    ok(bodyEd, "논의 내용 에디터 존재");
+    ok(agendaEd !== bodyEd, "두 에디터가 서로 다른 요소");
+    agendaEd.innerHTML = "1. 출입증 절차 개선";
+    bodyEd.innerHTML = "발급 소요일이 평균 9일로 증가하여 체크리스트 도입을 논의함";
+    q(e, "#mn-title").value = "제1차 정례회의";
+    q(e, "#mn-date").value = "2026-08-10";
+    q(e, "#mn-save").click();
+
+    const rec = e.S.data.minutes[0];
+    eq(rec.agenda, "1. 출입증 절차 개선", "안건 저장");
+    eq(rec.body, "발급 소요일이 평균 9일로 증가하여 체크리스트 도입을 논의함", "논의 내용 저장");
+
+    e.S.closeModal(); go(e, "minutes");
+    q(e, "#mn-body [data-mn-row]").click();
+    ok(q(e, "#modal-box").textContent.indexOf("체크리스트 도입을 논의함") >= 0, "상세에 논의 내용 표시");
+
+    // 사용자 신고 지점 — 다시 [수정] 눌렀을 때 값이 남아 있는가
+    q(e, "#mn-edit").click();
+    ok(q(e, '#modal-box [data-rich-key="agenda"]').textContent.indexOf("출입증 절차 개선") >= 0, "재수정 시 안건 복원");
+    ok(q(e, '#modal-box [data-rich-key="body"]').textContent.indexOf("체크리스트 도입을 논의함") >= 0, "재수정 시 논의 내용 복원");
+
+    q(e, "#mn-save").click();
+    eq(e.S.data.minutes[0].body, "발급 소요일이 평균 9일로 증가하여 체크리스트 도입을 논의함", "재저장 후에도 유지");
+  });
+
+  t("B02 폼이 열린 상태에서 중복 id 가 없다 (충돌 재발 방지)", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [{ id: "bb1", folder: MF, no: 1, date: "2026-08-10", title: "T",
+      attendees: [], decisions: [] }];
+    go(e, "minutes");
+    q(e, "#mn-body [data-mn-row]").click();
+    q(e, "#mn-edit").click();
+    const ids = {};
+    Array.from(e.w.document.querySelectorAll("[id]")).forEach(el => { ids[el.id] = (ids[el.id] || 0) + 1; });
+    eq(Object.keys(ids).filter(k => ids[k] > 1).join(","), "", "중복 id 없음");
+    // 목록 컨테이너가 에디터 주입으로 덮어써지지 않았는지
+    const listBox = q(e, "#view #mn-body");
+    ok(listBox && listBox.querySelector("[data-mn-row]"), "목록 컨테이너 보존");
+  });
+
+  t("B03 논의 내용의 서식·목록이 보존된다", () => {
+    const e = mnEnv("hq");
+    e.S.data.minutes = [];
+    go(e, "minutes");
+    q(e, "#mn-add").click(); q(e, "#mn-ngo").click();
+    q(e, '#modal-box [data-rich-key="body"]').innerHTML = "<ul><li>첫째 <b>중요</b></li><li>둘째</li></ul>";
+    q(e, "#mn-title").value = "서식 회의";
+    q(e, "#mn-date").value = "2026-08-10";
+    q(e, "#mn-save").click();
+    const rec = e.S.data.minutes[0];
+    ok(rec.bodyHtml.indexOf("<li>") >= 0, "목록 서식 보존");
+    ok(/<(b|strong)>/.test(rec.bodyHtml), "굵게 보존");
+    ok(rec.body.indexOf("첫째") >= 0, "텍스트 추출");
+  });
+
+  t("B04 협의회 3개 본문(안건·②·③)도 각각 독립 저장", () => {
+    const e = mnEnv("hq");
+    e.S.data.council = [];
+    go(e, "council");
+    q(e, "#cn-add").click();
+    q(e, "#cn-round").value = "9";
+    q(e, "#cn-date").value = "2026-08-10";
+    q(e, "#cn-agenda").innerHTML = "안건A";
+    q(e, "#cn-env").innerHTML = "환경B";
+    q(e, "#cn-proposals").innerHTML = "제안C";
+    q(e, "#cn-save").click();
+    const x = e.S.data.council[0];
+    eq(x.agenda, "안건A", "안건");
+    eq(x.env, "환경B", "② 사용환경");
+    eq(x.proposals, "제안C", "③ 제안·토의");
+  });
+
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
   console.log(`  SeMIS v2.9 테스트: ${passed + failed}건 실행`);

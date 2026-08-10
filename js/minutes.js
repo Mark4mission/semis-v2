@@ -142,6 +142,12 @@
   const richView = (html, text) => html
     ? `<div class="cn-text cn-rich notice-html">${sanitize(html)}</div>`
     : (text ? `<div class="cn-text">${nl2br(text)}</div>` : "");
+  /* 리치 에디터 id 접두사.
+     ⚠️ v2.40.3까지 `mn-<key>` 를 썼는데, 논의 내용(key="body")의 id `mn-body` 가
+        목록 컨테이너 `<div id="mn-body">` 와 충돌했다. $()는 문서에서 먼저 나오는
+        목록 쪽을 잡으므로 논의 내용이 저장·복원되지 않았다.
+        → 에디터 전용 접두사 `mn-rich-` 로 분리하고, 조회는 data-rich-key 로 한다. */
+  const richSel = (key) => `[data-rich-key="${key}"]`;
   const richFieldHTML = (key, labelHTML, ph) => `
         <div class="form-row"><label>${labelHTML}</label>
           <div class="nb-toolbar nb-mini" data-rich-tb="${key}">
@@ -150,10 +156,10 @@
             <button type="button" data-rich-link="${key}" title="링크">🔗 링크</button>
             <button type="button" data-rich-img="${key}" title="이미지">🖼 이미지</button>
           </div>
-          <div id="mn-${key}" class="nb-editor nb-rich" contenteditable="true" data-ph="${esc(ph || "")}"></div>
-          <input type="file" id="mn-${key}-img" accept="image/*" style="display:none"></div>`;
+          <div id="mn-rich-${key}" data-rich-key="${key}" class="nb-editor nb-rich" contenteditable="true" data-ph="${esc(ph || "")}"></div>
+          <input type="file" id="mn-rich-${key}-img" accept="image/*" style="display:none"></div>`;
   function wireRich(key, html, text) {
-    const ed = $("#mn-" + key);
+    const ed = $(richSel(key));
     if (!ed) return;
     ed.innerHTML = html || (text ? esc(text).replace(/\n/g, "<br>") : "");
     const rich = window.SemisNotice ? window.SemisNotice.wireRichMedia(ed, "minutes") : null;
@@ -172,12 +178,12 @@
       if (rich) rich.insert(a);
       else { try { document.execCommand("insertHTML", false, a); } catch (e) { ed.innerHTML += a; } }
     };
-    const imgBtn = $(`[data-rich-img="${key}"]`), imgFile = $("#mn-" + key + "-img");
+    const imgBtn = $(`[data-rich-img="${key}"]`), imgFile = $("#mn-rich-" + key + "-img");
     if (imgBtn) imgBtn.onclick = () => imgFile.click();
     if (imgFile) imgFile.onchange = (ev) => { if (rich) rich.addFiles(ev.target.files); ev.target.value = ""; };
   }
   function richOut(key) {
-    const ed = $("#mn-" + key);
+    const ed = $(richSel(key));
     if (!ed) return { html: "", text: "" };
     const html = sanitize(ed.innerHTML);
     const tmp = document.createElement("div"); tmp.innerHTML = html;
