@@ -371,10 +371,11 @@
     const items = recsOf(vendor, month).filter(r => r.category === cat);
     const sum = items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     return `
-      <div class="card">
-        <div class="card-title"><span class="badge ${CAT_BADGE[cat] || "badge-gray"}">${esc(cat)}</span>
-          <span style="font-size:.76rem;font-weight:500;color:var(--text-3)">${esc(VENDORS[vendor].hint[cat] || "")}</span>
+      <div class="ds-panel">
+        <div class="ds-hd"><span class="ds-pill ds-pill-line">${esc(cat)}</span>
+          <span class="ds-head-meta">${esc(VENDORS[vendor].hint[cat] || "")}</span>
           <span class="spacer"></span>
+          <span class="bl-cat-sum">${items.length}건 · <b>${fmtWon(sum)}원</b></span>
           ${canWrite ? `<button class="btn btn-primary btn-sm" data-bl-add="${esc(cat)}">+ 항목 추가</button>` : ""}
         </div>
         ${items.length ? items.map(r => { const fl = filesOf(r);
@@ -386,35 +387,47 @@
             ${fl.map((f, i) => `<a class="nb-file" href="${esc(f.url)}" target="_blank" rel="noopener" title="${esc(f.name)}" onclick="event.stopPropagation()">📎${fl.length > 1 ? i + 1 : ""}</a>`).join("")}
             <b class="bl-item-amt">${fmtWon(r.amount)}원</b>
           </div>`; }).join("") + `
-          <div class="bl-subtotal">소계 <b>${fmtWon(sum)}원</b></div>`
-        : '<div class="form-hint" style="padding:6px 0">등록된 항목이 없습니다.</div>'}
+`
+        : '<div class="ds-empty">등록된 항목이 없습니다.</div>'}
       </div>`;
   }
 
-  function summaryCard(vendor, month) {
+  /* v2.44: 요약을 화면 맨 위로 올리고 Section Kit(ds-*) 으로 구성.
+     한 화면에서 "이번 달 얼마인가"가 먼저 보이고, 세부 항목이 그 아래에 오도록. */
+  function summaryCard(vendor, month, canWrite) {
     const s = settle(vendor, month);
     const cfg = VENDORS[vendor];
-    if (vendor === "프로에스콤") {
-      return `
-      <div class="card bl-summary">
-        <div class="card-title">📋 ${esc(month)} 정산 요약 — ${esc(vendor)}</div>
-        <table class="tbl bl-sum-tbl">
-          <tr><td>① ETD 유지보수 청구</td><td class="r">${fmtWon(s.byCat["ETD 유지보수"])}원</td></tr>
-          <tr><td>② 보안검색&경비 (도급비) 청구</td><td class="r">${fmtWon(s.byCat["보안검색&경비"])}원</td></tr>
-          <tr class="bl-deduct"><td>③ 기타 수익 차감 (에어제타 몫 50% 기계산 입력분)</td><td class="r">− ${fmtWon(s.deduct)}원</td></tr>
-          <tr class="bl-net"><td><b>당월 실청구액 (① + ② − ③)</b></td><td class="r"><b>${fmtWon(s.net)}원</b></td></tr>
-        </table>
-        <div class="form-hint" style="margin-top:8px">계약 조건: 인천화물터미널 B동 보안검색 수익(터키항공 등)은 에어제타 몫 50%로
-          <b>이미 계산된 금액을 그대로 입력</b>하며, 별도 지급 없이 <b>당월 도급비 청구액에서 전액 차감</b>하여 청구합니다.</div>
-      </div>`;
-    }
+    const pro = vendor === "프로에스콤";
+    const n = recsOf(vendor, month).length;
+    const tile = (label, val, tone, minus) =>
+      `<div class="ds-stat ${tone || "tone-blue"}"><b>${minus ? "− " : ""}${fmtWon(val)}<em>원</em></b><span>${esc(label)}</span></div>`;
+    const payCats = cfg.cats.filter(c => c !== cfg.revenueCat);
     return `
-      <div class="card bl-summary">
-        <div class="card-title">📋 ${esc(month)} 청구 요약 — ${esc(vendor)}</div>
-        <table class="tbl bl-sum-tbl">
-          ${cfg.cats.map(c => `<tr><td>${esc(c)} 청구</td><td class="r">${fmtWon(s.byCat[c])}원</td></tr>`).join("")}
-          <tr class="bl-net"><td><b>당월 청구 합계</b></td><td class="r"><b>${fmtWon(s.net)}원</b></td></tr>
-        </table>
+      <div class="ds-panel ds-panel-tint bl-summary">
+        <div class="ds-hd">
+          <span class="ds-pill"><i class="em">📋</i>${esc(month)} ${pro ? "정산" : "청구"} 요약</span>
+          <span class="ds-head-meta">${esc(cfg.icon)} ${esc(vendor)}</span>
+          <span class="spacer"></span>
+          <span class="badge badge-gray">항목 ${n}건</span>
+          <div class="ds-yearnav">
+            <button class="btn btn-ghost btn-sm" id="bl-prev" title="이전 달">◀</button>
+            <input type="month" id="bl-cur-month" value="${esc(month)}" style="max-width:158px">
+            <button class="btn btn-ghost btn-sm" id="bl-next" title="다음 달">▶</button>
+          </div>
+        </div>
+        <div class="ds-flexrow">
+          <div class="ds-big">
+            <span>당월 ${pro ? "실청구액" : "청구 합계"}</span>
+            <b>${fmtWon(s.net)}<em>원</em></b>
+            ${pro ? "<small>① + ② − ③ (기타 수익 전액 차감)</small>" : ""}
+          </div>
+          <div class="ds-stats ds-flex-12">
+            ${payCats.map((c, i) => tile((pro ? "①②③".charAt(i) + " " : "") + c + " 청구", s.byCat[c], "tone-blue")).join("")}
+            ${cfg.revenueCat ? tile("③ " + cfg.revenueCat + " 차감 (에어제타 몫 50%)", s.deduct, "tone-red", true) : ""}
+          </div>
+        </div>
+        ${pro ? `<div class="ds-lead" style="margin-top:14px">계약 조건: 인천화물터미널 B동 보안검색 수익(터키항공 등)은 에어제타 몫 <b>50%</b>로
+          <b>이미 계산된 금액을 그대로 입력</b>하며, 별도 지급 없이 <b>당월 도급비 청구액에서 전액 차감</b>하여 청구합니다.</div>` : ""}
       </div>`;
   }
 
@@ -452,15 +465,17 @@
         ${multi ? cell(t.grand, "bl-yr-grand") : ""}</tr>`;
     const ys = yearsOf(vendor);
     return `
-      <div class="card">
-        <div class="card-title">📊 유지보수비 연간 비교 현황 — ${esc(t.category)}
-          <span class="badge badge-gray">${t.year}년</span>
+      <div class="ds-panel">
+        <div class="ds-hd"><span class="ds-pill"><i class="em">📊</i>유지보수비 연간 비교 현황</span>
+          <span class="ds-head-meta">${esc(t.category)}</span>
           <span class="spacer"></span>
-          <button class="btn btn-ghost btn-sm" id="bl-yprev">◀</button>
-          <b style="font-size:.88rem">${t.year}년</b>
-          <button class="btn btn-ghost btn-sm" id="bl-ynext">▶</button>
+          <div class="ds-yearnav">
+            <button class="btn btn-ghost btn-sm" id="bl-yprev" title="이전 해">◀</button>
+            <b>${t.year}년</b>
+            <button class="btn btn-ghost btn-sm" id="bl-ynext" title="다음 해">▶</button>
+          </div>
         </div>
-        <div class="table-wrap"><table class="tbl bl-yr-tbl">${head}<tbody>${body}${foot}</tbody></table></div>
+        <div class="table-wrap"><table class="tbl ds-tbl bl-yr-tbl">${head}<tbody>${body}${foot}</tbody></table></div>
         <div class="form-hint" style="margin-top:8px">
           ① 장비 잔존가+수선유지비 · ② 실비 청구건(부품교체 및 수리비 + 소모품비) — 유지보수비 대장과 동일 구조입니다.
           비용 구분·장비군은 항목의 지정값을 따르며, 미지정 시 제목·메모 또는 해당 월 운용 장비군으로 자동 판별합니다.
@@ -493,14 +508,13 @@
       const yearMode = curView === "year" && hasMaint;
 
       root.innerHTML = `
-        <div class="page-head">
-          <div class="page-title">🧾 대금 청구 ${vendorMode ? "입력" : "관리"} — ${cfg.icon} ${esc(vendor)}</div>
+        <div class="ds-head">
+          <div class="ds-head-t"><i class="em">🧾</i>대금 청구 ${vendorMode ? "입력" : "관리"}
+            <span class="ds-head-tag">${cfg.icon} ${esc(vendor)}</span>
+            <small>${vendorMode
+              ? "귀사(" + esc(vendor) + ")의 청구 내역만 표시됩니다. 매월 청구 항목을 입력해 주세요."
+              : "협력업체별 월 청구 내역 확인 · 정산 (HQ 이상)"}</small></div>
           <span class="spacer"></span>
-          <div class="page-desc">${vendorMode
-            ? "귀사(" + esc(vendor) + ")의 청구 내역만 표시됩니다. 매월 청구 항목을 입력해 주세요."
-            : "협력업체별 월 청구 내역 확인 · 정산 (HQ 이상)"}</div>
-        </div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
           ${vendorMode ? "" : `<div class="cal-views" style="display:inline-flex">
             ${Object.keys(VENDORS).map(v =>
               `<button class="cal-viewbtn${vendor === v ? " active" : ""}" data-bl-vendor="${esc(v)}">${esc(VENDORS[v].icon)} ${esc(v)}</button>`).join("")}
@@ -511,17 +525,8 @@
           </div>` : ""}
         </div>
         ${yearMode ? yearTableHTML(vendor, curYear) : `
-        <div class="card" style="padding:10px 16px">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" id="bl-prev">◀</button>
-            <input type="month" id="bl-cur-month" value="${esc(month)}" style="max-width:170px">
-            <button class="btn btn-ghost btn-sm" id="bl-next">▶</button>
-            <span class="spacer"></span>
-            <span style="font-size:.8rem;color:var(--text-3)">항목 ${recsOf(vendor, month).length}건</span>
-          </div>
-        </div>
-        ${cfg.cats.map(c => catCard(vendor, month, c, canWrite)).join("")}
-        ${summaryCard(vendor, month)}`}`;
+        ${summaryCard(vendor, month, canWrite)}
+        ${cfg.cats.map(c => catCard(vendor, month, c, canWrite)).join("")}`}`;
 
       // 업체 전환 (hq) · 뷰 전환
       $$("[data-bl-vendor]").forEach(b => b.onclick = () => { curVendor = b.dataset.blVendor; SeMIS.renderView(); });

@@ -628,17 +628,18 @@ body.cal-dragging .cal-cell { cursor: grabbing !important; }
 /* ═══════ 보안점검 (연간 매트릭스) ═══════ */
 .insp-matrix { width: 100%; border-collapse: collapse; font-size: .78rem; table-layout: fixed; }
 .insp-matrix th {
-  background: var(--surface-2); color: var(--text-2); font-size: 0.75rem; font-weight: 700;
-  border: 1px solid var(--border); padding: 6px 2px; text-align: center;
+  background: var(--ds-navy-900); color: #fff; font-size: 0.75rem; font-weight: 700;
+  border: 1px solid var(--ds-navy-700); padding: 7px 2px; text-align: center;
 }
 .insp-matrix th.insp-cat-h { width: 84px; }
 .insp-matrix th.insp-sum-h { width: 56px; }
 .insp-matrix td { border: 1px solid var(--border); vertical-align: top; }
-.insp-cat { padding: 8px 6px; font-weight: 700; font-size: .8rem; white-space: nowrap; background: var(--surface-2); }
+.insp-cat { padding: 8px 6px; font-weight: 800; font-size: .8rem; white-space: nowrap;
+  background: linear-gradient(90deg, var(--ds-blue-100), #f4f9ff); color: var(--ds-navy-900); }
 .insp-cell { padding: 3px; min-height: 54px; height: auto; cursor: pointer; }
 .insp-cell:hover { background: var(--primary-soft); }
 .insp-cell.now { background: #fefce8; }
-.insp-sum { text-align: center; font-weight: 800; font-size: .8rem; background: var(--surface-2); padding: 8px 2px; }
+.insp-sum { text-align: center; font-weight: 800; font-size: .8rem; background: var(--ds-blue-50); color: var(--ds-navy-800); padding: 8px 2px; }
 .insp-chip {
   display: block;
   font-size: 0.75rem; font-weight: 600; padding: 3px 6px; border-radius: 4px;
@@ -2311,10 +2312,44 @@ a.ct-tel:hover { color: var(--primary); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ds-empty { padding: 16px 4px; text-align: center; font-size: .82rem; color: var(--text-3); }
 
+/* ── 9b. 가로 배치 (게이지 + 타일 + 바) ── */
+.ds-flexrow { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+.ds-flex-1  { flex: 1.05; min-width: 250px; }
+.ds-flex-12 { flex: 1.15; min-width: 265px; }
+.ds-stats.ds-flex-1 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.ds-yearnav { display: flex; align-items: center; gap: 2px; }
+.ds-yearnav b { min-width: 66px; text-align: center; font-size: .95rem; font-weight: 800; color: var(--ds-navy-900); }
+
+/* ── 9b-2. 큰 금액/수치 강조 (네이비 박스) ── */
+.ds-big {
+  flex: none; min-width: 232px; padding: 15px 20px; border-radius: var(--ds-r-md);
+  background: linear-gradient(135deg, var(--ds-navy-900), var(--ds-navy-700)); color: #fff;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+}
+.ds-big > span { font-size: .76rem; font-weight: 700; opacity: .82; }
+.ds-big > b { font-size: 1.72rem; font-weight: 800; letter-spacing: -1px; line-height: 1.25; }
+.ds-big > b em { font-style: normal; font-size: .82rem; font-weight: 700; opacity: .8; margin-left: 3px; }
+.ds-big > small { font-size: .72rem; opacity: .72; margin-top: 2px; }
+.ds-stat b em { font-style: normal; font-size: .72rem; font-weight: 700; opacity: .65; margin-left: 2px; }
+
+/* ── 9c. 표 (Section Kit 톤) ── */
+.ds-tbl thead th {
+  background: var(--ds-navy-900); color: #fff; font-weight: 700; font-size: .76rem;
+  border-color: var(--ds-navy-700); white-space: nowrap;
+}
+.ds-tbl tbody tr:hover td { background: var(--ds-blue-50); }
+.ds-tbl .ds-grp td {
+  background: linear-gradient(90deg, var(--ds-blue-100), #f4f9ff 70%);
+  color: var(--ds-navy-900); font-weight: 800;
+  border-top: 1px solid var(--ds-blue-200); border-bottom: 1px solid var(--ds-blue-200);
+}
+
 /* ── 10. 반응형 ── */
 @media (max-width: 980px) {
   .ds-grid2, .ds-grid-side { grid-template-columns: 1fr; }
   .ds-head-t { font-size: 1.14rem; }
+  .ds-flexrow { gap: 16px; justify-content: center; }
+  .ds-flex-1, .ds-flex-12 { min-width: 100%; }
 }
 @media print {
   .ds-panel { box-shadow: none; break-inside: avoid; }
@@ -2350,9 +2385,7 @@ a.ct-tel:hover { color: var(--primary); }
 
 .kpi-hero-title { font-size: .97rem; font-weight: 800; color: var(--ds-navy-900); letter-spacing: -.3px;
   flex: 1; min-width: 200px; line-height: 1.4; word-break: keep-all; }
-.kpi-hero-body { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
-.kpi-hero-stats { flex: 1.05; min-width: 250px; grid-template-columns: repeat(2, minmax(0,1fr)); }
-.kpi-hero-bars { flex: 1.15; min-width: 265px; }
+
 .kpi-chiprow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px;
   padding-top: 12px; border-top: 1px dashed var(--ds-line); }
 .kpi-chip {
@@ -2365,12 +2398,7 @@ a.ct-tel:hover { color: var(--primary); }
 /* Action Plan 표 */
 .kpi-tbl { font-size: .82rem; }
 .kpi-tbl td { vertical-align: top; }
-.kpi-tbl thead th {
-  background: var(--ds-navy-900); color: #fff; font-weight: 700; font-size: .76rem;
-  border-color: var(--ds-navy-700); white-space: nowrap;
-}
 .kpi-row { cursor: pointer; }
-.kpi-row:hover { background: var(--ds-blue-50); }
 .kpi-phase-row td {
   background: linear-gradient(90deg, var(--ds-blue-100), #f4f9ff 70%);
   padding: 8px 12px; font-size: .82rem; color: var(--ds-navy-900);
@@ -2384,6 +2412,21 @@ a.ct-tel:hover { color: var(--primary); }
 
 @media (max-width: 980px) {
   .kpi-pick-btn { max-width: none; }
-  .kpi-hero-body { gap: 16px; justify-content: center; }
-  .kpi-hero-stats, .kpi-hero-bars { min-width: 100%; }
+
 }
+
+/* 대금 청구 — Section Kit 적용 (v2.44) */
+.bl-cat-sum { font-size: .8rem; color: var(--text-3); font-weight: 600; white-space: nowrap; }
+.bl-cat-sum b { font-size: .95rem; font-weight: 800; color: var(--ds-navy-900); }
+.bl-yr-tbl thead th { background: var(--ds-navy-900); color: #fff; border-color: var(--ds-navy-700); }
+.ds-head-tag { font-size: .8rem; font-weight: 800; color: var(--ds-blue-700);
+  background: var(--ds-blue-50); border: 1px solid var(--ds-blue-100);
+  padding: 2px 10px; border-radius: 999px; letter-spacing: 0; }
+
+/* 대시보드 상단 요약 스트립 (v2.44) */
+.ds-stat.tone-amber::before { background: #d97706; }
+.ds-stat.tone-amber b { color: #b45309; }
+.ds-stat-go { cursor: pointer; transition: box-shadow .15s, transform .12s; }
+.ds-stat-go:hover { box-shadow: 0 3px 12px rgba(21,82,184,.16); transform: translateY(-1px); }
+.ds-brief { margin-bottom: 18px; padding: 14px 16px; }
+.ds-brief .ds-stats { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }

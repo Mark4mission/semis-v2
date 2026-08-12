@@ -81,7 +81,7 @@
     // 카테고리 필터 (카드 헤더의 전체/항공/화물/사이버 버튼)
     let cat = "all";
     paintNews(el, items, cat, note);
-    const card = el.closest ? el.closest(".card") : null;
+    const card = el.closest ? el.closest(".ds-panel, .card") : null; // v2.44: 대시보드 카드가 .ds-panel 로 전환
     if (card) $$("[data-news-cat]", card).forEach(b => b.onclick = () => {
       cat = b.dataset.newsCat;
       $$("[data-news-cat]", card).forEach(x => x.classList.toggle("on", x === b));

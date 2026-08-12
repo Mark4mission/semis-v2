@@ -223,22 +223,7 @@
     `<div class="ds-num"><i>${i}</i><div class="ds-num-b">
       <div class="ds-num-t">${esc(t)}</div>
       <div class="ds-num-d">${raw ? body : nl(body)}</div></div></div>`;
-  // 링 게이지 (완료율)
-  function ringGauge(pct, done, total) {
-    const R = 54, C = 2 * Math.PI * R;
-    const p = Math.max(0, Math.min(100, pct || 0));
-    return `<div class="ds-ring">
-      <svg viewBox="0 0 134 134" width="134" height="134" aria-hidden="true">
-        <defs><linearGradient id="dsRingG" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#1552b8"></stop><stop offset="1" stop-color="#4da3f7"></stop>
-        </linearGradient></defs>
-        <circle cx="67" cy="67" r="${R}" fill="none" stroke="#e3ebf6" stroke-width="13"></circle>
-        <circle cx="67" cy="67" r="${R}" fill="none" stroke="url(#dsRingG)" stroke-width="13"
-          stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - p / 100)).toFixed(1)}"></circle>
-      </svg>
-      <div class="ds-ring-c"><span class="ds-ring-p">${p}%</span><span class="ds-ring-s">완료 ${done} / ${total}</span></div>
-    </div>`;
-  }
+
 
   const stackedBar = (kpi, h) => {
     const s = stats(kpi);
@@ -330,15 +315,15 @@
             <span class="badge ${kpi.status === "On-track" ? "badge-green" : "badge-amber"}">${esc(kpi.status)}</span>
             <span class="badge ${dd !== null && dd < 0 ? "badge-red" : "badge-blue"}" title="과제 종료일까지">${dd !== null ? (dd < 0 ? "종료 D+" + (-dd) : "종료 D-" + dd) : ""}</span>
           </div>
-          <div class="kpi-hero-body">
-            ${ringGauge(s.pct, s.done, s.total)}
-            <div class="ds-stats kpi-hero-stats">
+          <div class="ds-flexrow">
+            ${SeMIS.dsRing(s.pct, `완료 ${s.done} / ${s.total}`)}
+            <div class="ds-stats ds-flex-1">
                 <div class="ds-stat tone-green"><b>${s.done}</b><span>완료</span></div>
                 <div class="ds-stat tone-blue"><b>${s.run}</b><span>진행 중</span></div>
                 <div class="ds-stat tone-red"><b>${s.risk}</b><span>주의 · 미실행/완료지연</span></div>
                 <div class="ds-stat tone-gray"><b>${s.wait}</b><span>실행 대기</span></div>
             </div>
-            <div class="ds-bars kpi-hero-bars">
+            <div class="ds-bars ds-flex-12">
                 <div>
                   <div class="ds-bar-l">진척률 <span>완료 ${s.done}/${s.total}건</span><b>${s.pct}%</b></div>
                   <div class="ds-bar"><span style="width:${s.pct}%"></span></div>
@@ -414,7 +399,7 @@
             <span class="kpi-legend"><i class="tl-plan-i"></i>계획 <i class="tl-act-i"></i>실적 <i class="tl-now-i"></i>오늘</span>
           </div>
           <div class="table-wrap">
-            <table class="tbl kpi-tbl">
+            <table class="tbl ds-tbl kpi-tbl">
               <thead><tr>
                 <th>상태</th><th>Action Plan</th><th>담당</th>
                 <th>계획</th><th>실적</th>

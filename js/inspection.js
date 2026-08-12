@@ -167,6 +167,28 @@
   }
   let dragCtx = null;
 
+  /* ─────── 연간 실적 요약 (v2.44) ───────
+     주요일정은 "점검"이 아니므로 완료율 계산에서 제외하고 건수만 별도 표기. */
+  function summary(items) {
+    const plan = items.filter(x => x.category !== "주요일정" && x.status !== "취소");
+    const done = plan.filter(x => x.status === "완료").length;
+    const byCat = CATEGORIES.filter(c => c !== "주요일정").map(cat => {
+      const rows = plan.filter(x => x.category === cat);
+      const d = rows.filter(x => x.status === "완료").length;
+      return { cat, plan: rows.length, done: d, pct: rows.length ? Math.round(d / rows.length * 100) : 0 };
+    }).filter(c => c.plan);
+    let car = 0;
+    items.forEach(x => (x.findings || []).forEach(f => { if (f.type === "시정조치") car++; }));
+    return {
+      pct: plan.length ? Math.round(done / plan.length * 100) : 0,
+      todo: plan.filter(x => x.status === "계획").length,
+      delayed: plan.filter(x => x.status === "연기").length,
+      undated: plan.filter(x => !x.start).length,
+      major: items.filter(x => x.category === "주요일정" && x.status !== "취소").length,
+      car, byCat
+    };
+  }
+
   /* ─────── 연간 매트릭스 뷰 ─────── */
   function matrixHTML(canWrite) {
     const items = list();
@@ -196,7 +218,7 @@
     if (!items.length) return '<div class="empty">등록된 점검이 없습니다.</div>';
     /* v2.36.3: 열 폭 고정 배분(colgroup) — 대상이 남는 폭을 독점해 결과 배지가
        세로로 쪼개지던 문제 해소. 점검관은 약자 대신 실제 이름 표기. */
-    return `<div class="table-wrap"><table class="tbl tbl-cap insp-list" style="--cap:1000px">
+    return `<div class="table-wrap"><table class="tbl tbl-cap ds-tbl insp-list" style="--cap:1000px">
       <colgroup>
         <col style="width:54px"><col style="width:96px"><col>
         <col style="width:118px"><col style="width:150px">
@@ -355,18 +377,49 @@
       const items = list();
       const plan = items.filter(x => x.category !== "주요일정" && x.status !== "취소");
       const done = plan.filter(x => x.status === "완료").length;
+      const s = summary(items);
       root.innerHTML = `
-        <div class="page-head">
-          <div class="page-title">🕵️ 보안점검 일정관리</div>
+        <div class="ds-head">
+          <div class="ds-head-t"><i class="em">🕵️</i>보안점검 일정관리
+            <small>국내정기 · 불시평가 · 해외공항 연간 계획/실적</small></div>
           <span class="spacer"></span>
-          ${canWrite ? '<button class="btn btn-primary" id="insp-add">+ 점검 등록</button>' : ""}
-          <div class="page-desc">국내정기 · 불시평가 · 해외공항 점검 연간 계획/실적 — 완료 ${done}건 / 계획 ${plan.length}건</div>
+          <div class="ds-yearnav">
+            <button class="btn btn-ghost btn-sm" id="insp-prev" title="이전 해">◀</button>
+            <b>${year}년</b>
+            <button class="btn btn-ghost btn-sm" id="insp-next" title="다음 해">▶</button>
+          </div>
+          ${canWrite ? '<button class="btn btn-primary btn-sm" id="insp-add">+ 점검 등록</button>' : ""}
         </div>
-        <div class="card">
-          <div class="cal-toolbar">
-            <button class="btn btn-ghost btn-sm" id="insp-prev">◀</button>
-            <div class="cal-title">${year}년</div>
-            <button class="btn btn-ghost btn-sm" id="insp-next">▶</button>
+
+        <div class="ds-panel ds-panel-tint">
+          <div class="ds-hd">
+            <span class="ds-pill"><i class="em">📊</i>${year}년 실적 요약</span>
+            <span class="spacer"></span>
+            ${s.undated ? `<span class="badge badge-amber" title="계획 월만 있고 점검 일자가 확정되지 않은 건">일자 미정 ${s.undated}건</span>` : ""}
+            ${s.car ? `<span class="badge badge-red" title="점검 결과 시정조치 지적 건수">시정조치 ${s.car}건</span>` : ""}
+            ${s.major ? `<span class="badge badge-gray">주요일정 ${s.major}건</span>` : ""}
+          </div>
+          <div class="ds-flexrow">
+            ${SeMIS.dsRing(s.pct, "완료 " + done + " / " + plan.length)}
+            <div class="ds-stats ds-flex-1">
+              <div class="ds-stat tone-blue"><b>${plan.length}</b><span>연간 계획</span></div>
+              <div class="ds-stat tone-green"><b>${done}</b><span>완료</span></div>
+              <div class="ds-stat tone-gray"><b>${s.todo}</b><span>미실시 (계획)</span></div>
+              <div class="ds-stat tone-red"><b>${s.delayed}</b><span>연기</span></div>
+            </div>
+            <div class="ds-bars ds-flex-12">
+              ${s.byCat.map(c => `<div>
+                <div class="ds-bar-l"><span class="cal-dot ev-${CAT_COLOR[c.cat]}"></span>${esc(c.cat)}
+                  <span>완료 ${c.done}/${c.plan}건</span><b>${c.pct}%</b></div>
+                <div class="ds-bar"><span style="width:${c.pct}%"></span></div>
+              </div>`).join("") || '<div class="ds-empty">등록된 점검이 없습니다.</div>'}
+            </div>
+          </div>
+        </div>
+
+        <div class="ds-panel" style="margin-top:16px">
+          <div class="ds-hd">
+            <span class="ds-pill"><i class="em">🗓</i>${viewMode === "matrix" ? "연간 매트릭스" : "점검 목록"}</span>
             <span class="spacer"></span>
             <div class="cal-views">
               <button class="cal-viewbtn${viewMode === "matrix" ? " active" : ""}" data-imode="matrix">연간 매트릭스</button>

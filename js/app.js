@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.43.0";
+  const VERSION = "2.44.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -853,6 +853,23 @@ const SeMIS = (() => {
     const p = n => String(n).padStart(2, "0");
     return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
   }
+  /* 공통 디자인(Section Kit) 링 게이지 — css/main.css 의 .ds-ring 참조.
+     pct: 0~100, sub: 링 안쪽 보조 문구(예: "완료 8 / 18") */
+  function dsRing(pct, sub) {
+    const R = 54, C = 2 * Math.PI * R;
+    const p = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+    return `<div class="ds-ring">
+      <svg viewBox="0 0 134 134" width="134" height="134" aria-hidden="true">
+        <defs><linearGradient id="dsRingG" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#1552b8"></stop><stop offset="1" stop-color="#4da3f7"></stop>
+        </linearGradient></defs>
+        <circle cx="67" cy="67" r="${R}" fill="none" stroke="#e3ebf6" stroke-width="13"></circle>
+        <circle cx="67" cy="67" r="${R}" fill="none" stroke="url(#dsRingG)" stroke-width="13"
+          stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - p / 100)).toFixed(1)}"></circle>
+      </svg>
+      <div class="ds-ring-c"><span class="ds-ring-p">${p}%</span>${sub ? `<span class="ds-ring-s">${esc(sub)}</span>` : ""}</div>
+    </div>`;
+  }
   function toast(msg, isErr) {
     const wrap = $("#toast-wrap");
     const t = document.createElement("div");
@@ -1261,7 +1278,7 @@ const SeMIS = (() => {
     pwHash, sha256, signCodeFor, signCarFor, signMinuteFor, signCodeFromHash, signUrlFor,
     renderNav, renderHeader, renderSecBadge, renderView,
     openModal, closeModal, confirmModal, toast,
-    $, $$, esc, fmtDate, sortedMenus,
+    $, $$, esc, fmtDate, dsRing, sortedMenus,
     SEC_LEVELS, secCurrent, secNext, levelSorted,
     ROLE_LABEL, ROLE_RANK, VIS_LABEL,
     BASE_USERS, VERSION

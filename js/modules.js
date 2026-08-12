@@ -36,6 +36,65 @@
   };
   window.SemisDash = { DASH_CARDS, cardVis }; // 테스트/외부 참조용
 
+  /* 만료·점검 도래 목록 (출입증/계약/장비/이수증 통합, v2.8)
+     — v2.44: 상단 요약 타일과 카드가 같은 계산을 쓰도록 분리 */
+  function expiryList(d, canWrite) {
+    const dl = (ds) => ds ? Math.round((new Date(ds) - new Date(todayISO())) / 86400000) : null;
+    const items = [];
+    (d.passes || []).forEach(x => {
+      if (x.status !== "사용중" || !x.expire) return;
+      const dd = dl(x.expire);
+      if (dd <= 30) items.push({ d: dd, route: "passes", ico: "🪪", label: `출입증 · ${x.holder}${x.company ? " (" + x.company + ")" : ""}` });
+    });
+    if (canWrite) (d.contracts || []).forEach(x => { // 계약 만료는 대외비 — hq 이상(canEdit)만
+      if (x.status === "해지" || !x.end) return;
+      const dd = dl(x.end);
+      if (dd <= 60) items.push({ d: dd, route: "contracts-mgmt", ico: "💼", label: `계약 · ${x.name}` });
+    });
+    (d.equipment || []).forEach(x => {
+      if (x.status === "폐기" || !window.SemisEquipment || !SemisEquipment.replaceDue) return;
+      const n = SemisEquipment.replaceDue(x);
+      const dd = dl(n);
+      if (dd !== null && dd <= 90) items.push({ d: dd, route: "equipment", ico: "🔧", label: `장비 내용연수 · ${x.name}` });
+    });
+    (d.certs || []).forEach(x => { // v2.15: 교육 이수증 만료 (mgr 이상 카드지만 expiry는 all — 보안관리자 조건)
+      if (!x.expire || SeMIS.roleRank() < 2) return;
+      const dd = dl(x.expire);
+      if (dd <= 60) items.push({ d: dd, route: "certs", ico: "🎖", label: `이수증 · ${x.name} (${x.role || "교육"})` });
+    });
+    return items.sort((a, b) => a.d - b.d);
+  }
+
+  /* v2.44: 상단 한 줄 요약 — 화면을 열자마자 "지금 챙길 것"이 먼저 보이도록.
+     타일을 누르면 해당 메뉴로 이동한다. 일반 사용자(guest)는 표시하지 않음. */
+  function briefStrip(d, canWrite, upcoming, guest) {
+    if (guest) return "";
+    const tiles = [];
+    const wk = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const soon = (upcoming || []).filter(s => String(s.start) <= wk).length;
+    tiles.push({ n: soon, label: "7일 내 일정", tone: soon ? "tone-blue" : "tone-gray", go: "schedule" });
+
+    const m = new Date().getMonth() + 1;
+    const mi = (d.inspections || []).filter(x => x.month === m && x.category !== "주요일정" && x.status !== "취소");
+    const md = mi.filter(x => x.status === "완료").length;
+    tiles.push({ n: md + " / " + mi.length, label: m + "월 점검 완료", tone: mi.length && md >= mi.length ? "tone-green" : "tone-blue", go: "inspection" });
+
+    if (window.SemisCarcap && SemisCarcap.dashStats) {
+      const cs = SemisCarcap.dashStats();
+      tiles.push({ n: cs.overdue || 0, label: "CAR 기한 경과", tone: cs.overdue ? "tone-red" : "tone-gray", go: "carcap" });
+      tiles.push({ n: cs.active || 0, label: "CAR 진행 중", tone: cs.active ? "tone-blue" : "tone-gray", go: "carcap" });
+    }
+    const ex = expiryList(d, canWrite);
+    const ex30 = ex.filter(x => x.d <= 30).length;
+    tiles.push({ n: ex30, label: "30일 내 만료 도래", tone: ex30 ? "tone-amber" : "tone-gray", go: ex[0] ? ex[0].route : "passes" });
+
+    return `<div class="ds-panel ds-panel-tint ds-brief">
+      <div class="ds-stats">${tiles.map(t =>
+        `<div class="ds-stat ${t.tone} ds-stat-go" data-dash-go="${esc(t.go)}" title="클릭하여 이동">
+          <b>${esc(String(t.n))}</b><span>${esc(t.label)}</span></div>`).join("")}</div>
+    </div>`;
+  }
+
   SeMIS.registerModule("dashboard", {
     title: "대시보드",
     render(root) {
@@ -68,53 +127,53 @@
       // v2.19: guest(일반 사용자)는 카드 수가 적어 뉴스·인사이트 중심의 경량 레이아웃 표시
       const guest = SeMIS.roleRank() < 2;
       const C = {
-        notice: cardVis("notice") ? `<div class="card">
-              <div class="card-title">📢 공지사항 <span class="spacer"></span>
+        notice: cardVis("notice") ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">📢</i>공지사항</span> <span class="spacer"></span>
                 ${canWrite ? '<button class="btn btn-primary btn-sm" id="btn-add-notice">+ 새 공지</button>' : ""}
               </div>
               <div id="notice-list"></div>
             </div>` : "",
-        equip: cardVis("equip") && window.SemisEquipment && SemisEquipment.renderDash ? `<div class="card">
-              <div class="card-title">🔧 보안장비 · 고장신고 <span class="spacer"></span>
+        equip: cardVis("equip") && window.SemisEquipment && SemisEquipment.renderDash ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">🔧</i>보안장비 · 고장신고</span> <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-equip">전체보기</button>
                 <a class="btn btn-ghost btn-sm" href="https://airzeta-security-system.web.app" target="_blank" rel="noopener">CARES ↗</a>
               </div>
               <div id="equip-box"></div>
             </div>` : "",
-        cares: cardVis("cares") && window.SemisCares ? `<div class="card">
-              <div class="card-title">🌡 CARES 환경센서 <span class="spacer"></span>
+        cares: cardVis("cares") && window.SemisCares ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">🌡</i>CARES 환경센서</span> <span class="spacer"></span>
                 ${canWrite ? '<button class="btn btn-ghost btn-sm" id="btn-cares-cfg" title="연동 설정">⚙</button>' : ""}
                 <a class="btn btn-ghost btn-sm" href="https://airzeta-security-system.web.app" target="_blank" rel="noopener">CARES ↗</a>
               </div>
               <div id="cares-box"></div>
             </div>` : "",
-        level: cardVis("level") ? `<div class="card">
-              <div class="card-title">🚨 보안등급 <span class="spacer"></span>
+        level: cardVis("level") ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">🚨</i>보안등급</span> <span class="spacer"></span>
                 ${canWrite ? '<button class="btn btn-ghost btn-sm" id="btn-edit-level">변경</button>' : ""}
               </div>
               <div id="level-box"></div>
             </div>` : "",
-        insp: cardVis("insp") ? `<div class="card">
-              <div class="card-title">🕵️ 보안점검 실적 <span class="spacer"></span>
+        insp: cardVis("insp") ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">🕵️</i>보안점검 실적</span> <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-insp">전체보기</button></div>
               <div id="insp-box"></div>
             </div>` : "",
-        car: cardVis("car") && window.SemisCarcap ? `<div class="card">
-              <div class="card-title">📋 부적합·시정조치 (CAR) <span class="spacer"></span>
+        car: cardVis("car") && window.SemisCarcap ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">📋</i>부적합·시정조치 (CAR)</span> <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-car">전체보기</button></div>
               <div id="car-box"></div>
             </div>` : "",
-        expiry: cardVis("expiry") ? `<div class="card">
-              <div class="card-title">⏳ 만료 · 점검 도래</div>
+        expiry: cardVis("expiry") ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">⏳</i>만료 · 점검 도래</span></div>
               <div id="expiry-box"></div>
             </div>` : "",
-        certs: cardVis("certs") && window.SemisCerts ? `<div class="card">
-              <div class="card-title">🎖 교육 이수증 <span class="spacer"></span>
+        certs: cardVis("certs") && window.SemisCerts ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">🎖</i>교육 이수증</span> <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-certs">전체보기</button></div>
               <div id="certs-box"></div>
             </div>` : "",
-        quick: cardVis("quick") ? `<div class="card">
-              <div class="card-title">⚡ 바로가기</div>
+        quick: cardVis("quick") ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">⚡</i>바로가기</span></div>
               <div class="quick-links">
                 ${quicks.map(m => m.type === "module"
                   ? `<a class="quick-link" href="#/${esc(m.module)}">
@@ -127,18 +186,18 @@
                   '<div class="empty">등록된 바로가기가 없습니다.</div>'}
               </div>
             </div>` : "",
-        upcoming: cardVis("upcoming") ? `<div class="card">
-              <div class="card-title">📅 다가오는 일정 <span class="spacer"></span>
+        upcoming: cardVis("upcoming") ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">📅</i>다가오는 일정</span> <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-schedule">전체보기</button></div>
               <div id="upcoming-box"></div>
             </div>` : "",
-        kpi: cardVis("kpi") && window.SemisKpi ? `<div class="card">
-              <div class="card-title">📈 KPI 진행현황 <span class="spacer"></span>
+        kpi: cardVis("kpi") && window.SemisKpi ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">📈</i>KPI 진행현황</span> <span class="spacer"></span>
                 <button class="btn btn-ghost btn-sm" id="btn-go-kpi">전체보기</button></div>
               <div id="kpi-box"></div>
             </div>` : "",
-        news: guest && cardVis("news") && window.SemisNews ? `<div class="card">
-              <div class="card-title">🗞 보안 뉴스 <span class="spacer"></span>
+        news: guest && cardVis("news") && window.SemisNews ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">🗞</i>보안 뉴스</span> <span class="spacer"></span>
                 <span class="news-cats">
                   <button class="news-cat on" data-news-cat="all">전체</button>
                   <button class="news-cat" data-news-cat="aviation">항공</button>
@@ -149,8 +208,8 @@
               </div>
               <div id="news-box"></div>
             </div>` : "",
-        insight: guest && cardVis("insight") && window.SemisNews ? `<div class="card">
-              <div class="card-title">📊 항공보안 인사이트</div>
+        insight: guest && cardVis("insight") && window.SemisNews ? `<div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill ds-pill-lite"><i class="em">📊</i>항공보안 인사이트</span></div>
               <div id="insight-box"></div>
             </div>` : ""
       };
@@ -161,14 +220,19 @@
         ? C.quick + C.cares + C.insight + C.expiry                     // guest 우측: 바로가기 → 환경센서 → 인사이트 → 만료
         : C.level + C.quick + C.upcoming + C.kpi + C.insp + C.car + C.expiry + C.certs; // 우측: 등급→바로가기→일정→KPI→점검→CAR→만료→이수증
       root.innerHTML = `
-        <div class="page-head">
-          <div class="page-title">🏠 대시보드</div>
-          <div class="page-desc">에어제타 보안종합정보시스템 — ${esc(fmtDate(new Date().toISOString()))}</div>
+        <div class="ds-head">
+          <div class="ds-head-t"><i class="em">🏠</i>대시보드 <small>에어제타 보안종합정보시스템</small></div>
+          <span class="spacer"></span>
+          <span class="ds-head-meta">${esc(fmtDate(new Date().toISOString()))}</span>
         </div>
+        ${briefStrip(d, canWrite, upcoming, guest)}
         <div class="dash-grid">
           <div class="dash-col">${colL}</div>
           <div class="dash-col">${colR}</div>
         </div>`;
+
+      // 상단 요약 타일 → 해당 메뉴로 이동
+      $$("[data-dash-go]", root).forEach(el => el.onclick = () => SeMIS.navigate(el.dataset.dashGo));
 
       // 보안등급 (5단계: 평시-관심-주의-경계-심각)
       if ($("#level-box")) {
@@ -300,31 +364,7 @@
 
       // 만료 · 점검 도래 (출입증/계약/장비 통합, v2.8)
       {
-        const dl = (ds) => ds ? Math.round((new Date(ds) - new Date(todayISO())) / 86400000) : null;
-        const items = [];
-        (d.passes || []).forEach(x => {
-          if (x.status !== "사용중" || !x.expire) return;
-          const dd = dl(x.expire);
-          if (dd <= 30) items.push({ d: dd, route: "passes", ico: "🪪", label: `출입증 · ${x.holder}${x.company ? " (" + x.company + ")" : ""}` });
-        });
-        if (canWrite) (d.contracts || []).forEach(x => { // 계약 만료는 대외비 — hq 이상(canEdit)만
-          if (x.status === "해지" || !x.end) return;
-          const dd = dl(x.end);
-          if (dd <= 60) items.push({ d: dd, route: "contracts-mgmt", ico: "💼", label: `계약 · ${x.name}` });
-        });
-        (d.equipment || []).forEach(x => {
-          if (x.status === "폐기" || !window.SemisEquipment || !SemisEquipment.replaceDue) return;
-          const n = SemisEquipment.replaceDue(x);
-          const dd = dl(n);
-          if (dd !== null && dd <= 90) items.push({ d: dd, route: "equipment", ico: "🔧", label: `장비 내용연수 · ${x.name}` });
-        });
-        (d.certs || []).forEach(x => { // v2.15: 교육 이수증 만료 (mgr 이상 카드지만 expiry는 all — 보안관리자 조건)
-          if (!x.expire || SeMIS.roleRank() < 2) return;
-          const dd = dl(x.expire);
-          if (dd <= 60) items.push({ d: dd, route: "certs", ico: "🎖", label: `이수증 · ${x.name} (${x.role || "교육"})` });
-        });
-        items.sort((a, b) => a.d - b.d);
-        items.length = Math.min(items.length, 8);
+        const items = expiryList(d, canWrite).slice(0, 8);
         if ($("#expiry-box")) $("#expiry-box").innerHTML = items.length
           ? items.map(it => `<div class="insp-dash-row" data-exp-go="${esc(it.route)}" title="클릭하여 이동"
               style="display:flex;align-items:center;gap:6px;font-size:.8rem;padding:3px 0;cursor:pointer">

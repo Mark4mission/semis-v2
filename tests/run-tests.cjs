@@ -2670,7 +2670,7 @@ function makeFetchStub(server) {
     const e = makeEnv();
     loginAs(e, "hq");
     go(e, "passes");
-    ok(q(e, ".page-title").textContent.includes("출입증"), "제목");
+    ok(q(e, ".page-title, .ds-head-t").textContent.includes("출입증"), "제목");
     ok(q(e, "#pass-add"), "manager 등록 버튼");
     const e2 = makeEnv();
     loginAs(e2, "manager");
@@ -2816,7 +2816,7 @@ function makeFetchStub(server) {
     const e = makeEnv();
     loginAs(e, "hq");
     go(e, "training");
-    ok(q(e, ".page-title").textContent.includes("보안교육"));
+    ok(q(e, ".page-title, .ds-head-t").textContent.includes("보안교육"));
     const y = new Date().getFullYear();
     ok(q(e, ".cal-title").textContent.includes(String(y)));
     q(e, "#tr-prev").click();
@@ -2868,7 +2868,7 @@ function makeFetchStub(server) {
     const e = makeEnv();
     loginAs(e, "hq");
     go(e, "contracts-mgmt");
-    ok(q(e, ".page-title").textContent.includes("계약서"));
+    ok(q(e, ".page-title, .ds-head-t").textContent.includes("계약서"));
     q(e, "#cn-add").click();
     q(e, "#c-name").value = "보안검색 위탁용역";
     q(e, "#c-party").value = "프로에스콤";
@@ -2886,7 +2886,7 @@ function makeFetchStub(server) {
     const e = makeEnv();
     loginAs(e, "manager");
     go(e, "contracts-mgmt");
-    ok(q(e, ".page-title").textContent.includes("대시보드"), "대시보드로 폴백");
+    ok(q(e, ".page-title, .ds-head-t").textContent.includes("대시보드"), "대시보드로 폴백");
   });
 
   /* ── [DX] 대시보드 만료·점검 도래 통합 카드 ── */
@@ -3022,7 +3022,7 @@ function makeFetchStub(server) {
     const e = makeEnv();
     loginAs(e, "manager");
     go(e, "vault");
-    ok(q(e, ".page-title").textContent.includes("대시보드"), "대시보드 폴백");
+    ok(q(e, ".page-title, .ds-head-t").textContent.includes("대시보드"), "대시보드 폴백");
   });
 
   await ta("VT03 최초 설정 + 암호화 저장: 평문이 어디에도 남지 않음", async () => {
@@ -3364,7 +3364,7 @@ function makeFetchStub(server) {
     ok(fr, "iframe 렌더");
     eq(fr.getAttribute("src"), "https://example.com/page", "src=URL");
     ok(qa(e, ".page-head a").some(a => a.getAttribute("target") === "_blank"), "새 탭 열기 버튼");
-    ok(q(e, ".page-title").textContent.includes("내부화면"), "제목 표시");
+    ok(q(e, ".page-title, .ds-head-t").textContent.includes("내부화면"), "제목 표시");
     // 권한 미달 → 대시보드 폴백
     const e2 = makeEnv({ preData: JSON.parse(JSON.stringify(e.S.data)) });
     loginAs(e2, "user");
@@ -3699,16 +3699,16 @@ function makeFetchStub(server) {
     // 화면 격리
     B.setMonth("2026-07");
     go(e, "billing");
-    ok(/프로에스콤/.test(q(e, ".page-title").textContent), "자기 업체 화면");
+    ok(/프로에스콤/.test(q(e, ".page-title, .ds-head-t").textContent), "자기 업체 화면");
     ok(!qa(e, "[data-bl-vendor]").length, "업체 전환 버튼 없음");
     ok(!/인씨스전용내역/.test(q(e, "#view").textContent), "타 업체 내역 미표시");
     // 라우팅 격리: 허용 목록 밖 모듈 접근 시도 → billing 강제
     go(e, "dashboard");
-    ok(/대금 청구/.test(q(e, ".page-title").textContent), "dashboard 접근 → billing 강제");
+    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "dashboard 접근 → billing 강제");
     go(e, "settings");
-    ok(/대금 청구/.test(q(e, ".page-title").textContent), "settings 접근 → billing 강제");
+    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "settings 접근 → billing 강제");
     go(e, "vault");
-    ok(/대금 청구/.test(q(e, ".page-title").textContent), "vault(암호) 접근 → billing 강제");
+    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "vault(암호) 접근 → billing 강제");
   });
 
   /* ══════════ [VD] 협력업체 계정 접근 범위 (v2.32) ══════════ */
@@ -3720,7 +3720,7 @@ function makeFetchStub(server) {
     go(e, "billing");
     eq(qa(e, "#nav-menu .nav-item").length, 1, "네비 메뉴 1개");
     go(e, "equipment");
-    ok(/대금 청구/.test(q(e, ".page-title").textContent), "장비 접근 → billing 강제");
+    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "장비 접근 → billing 강제");
   });
 
   t("VD02 프로에스콤: 확대 메뉴 4개 + CARES 링크, 순서/라벨 확인", () => {
@@ -3795,7 +3795,7 @@ function makeFetchStub(server) {
     e.S.closeModal();
     // 청구는 자기 업체만
     go(e, "billing");
-    ok(/프로에스콤/.test(q(e, ".page-title").textContent), "청구 화면 자기 업체");
+    ok(/프로에스콤/.test(q(e, ".page-title, .ds-head-t").textContent), "청구 화면 자기 업체");
     ok(!qa(e, "[data-bl-vendor]").length, "인씨스 탭 숨김");
   });
 
@@ -3808,7 +3808,7 @@ function makeFetchStub(server) {
     ok(!B.visible().length, "타 업체 내역 미노출");
     B.setMonth("2026-07");
     go(e, "billing");
-    ok(/프로에스콤/.test(q(e, ".page-title").textContent), "자기 업체 화면 고정");
+    ok(/프로에스콤/.test(q(e, ".page-title, .ds-head-t").textContent), "자기 업체 화면 고정");
     ok(!/타사내역/.test(q(e, "#view").textContent), "타 업체 내역 화면 미표시");
     B.itemForm("인씨스", "2026-07", "X-ray 유지보수", null);
     ok(!q(e, "#bl-save"), "타 업체 청구 폼 차단");
@@ -3854,9 +3854,9 @@ function makeFetchStub(server) {
     go(e, "council");
     ok(q(e, "#hdr-search-wrap").classList.contains("vendor-hide"), "전역 검색 미노출");
     go(e, "settings");
-    ok(/대금 청구/.test(q(e, ".page-title").textContent), "시스템 설정 차단 → billing");
+    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "시스템 설정 차단 → billing");
     go(e, "kpi");
-    ok(/대금 청구/.test(q(e, ".page-title").textContent), "KPI 차단 → billing");
+    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "KPI 차단 → billing");
   });
 
   t("BL04 vendor 입력: 항목 추가/수정 + 자기 업체 저장", () => {
@@ -4168,7 +4168,7 @@ function makeFetchStub(server) {
     // 2026년은 KJ 단독 운용 → 5열 + 월 = 6열 (단일 장비군이라 총계열 없음)
     eq(qa(e, ".bl-yr-tbl tbody tr")[0].children.length, 6, "운용 장비군만 열 구성");
     ok(!/OZ\+BX/.test(tb.textContent), "2026년 OZ+BX 열 없음");
-    ok(/KJ 통합출범/.test(q(e, ".card").textContent), "통합출범 안내 문구");
+    ok(/KJ 통합출범/.test(q(e, ".card, .ds-panel").textContent), "통합출범 안내 문구");
     ok(/부품교체 및/.test(tb.textContent), "부품교체 및 수리비 열");
     ok(/소모품비/.test(tb.textContent), "소모품비 열");
     ok(/6,000,000/.test(tb.textContent), "3월 부품교체 반영");
@@ -4180,7 +4180,7 @@ function makeFetchStub(server) {
     ok(/14,500,000/.test(tb25.textContent), "2025년 소모품비 표시");
     ok(/OZ\+BX/.test(tb25.textContent) && /\(KJ\)/.test(tb25.textContent), "2025년 두 장비군 열");
     eq(qa(e, ".bl-yr-tbl tbody tr")[0].children.length, 12, "월 + 5열×2 + 총계");
-    ok(/전환 구간/.test(q(e, ".card").textContent), "전환 구간 안내");
+    ok(/전환 구간/.test(q(e, ".card, .ds-panel").textContent), "전환 구간 안내");
     B.setView("month");
   });
 
@@ -4446,7 +4446,7 @@ function makeFetchStub(server) {
   {
     const colTitles = (env, i) => {
       const cols = qa(env, ".dash-col");
-      return cols[i] ? Array.from(cols[i].querySelectorAll(".card-title")).map(x => x.textContent.trim()) : [];
+      return cols[i] ? Array.from(cols[i].querySelectorAll(".card-title, .ds-hd")).map(x => x.textContent.trim()) : [];
     };
     const assertOrder = (list, subs, msg) => {
       eq(list.length, subs.length, msg + ": 카드 수");
@@ -4796,7 +4796,7 @@ function makeFetchStub(server) {
     const e = makeEnv();
     loginAs(e, "hq");
     go(e, "council");
-    ok(q(e, ".page-title").textContent.includes("협의회"), "제목");
+    ok(q(e, ".page-title, .ds-head-t").textContent.includes("협의회"), "제목");
     ok(q(e, ".council-banner"), "C6-1 배너 표시");
     ok(q(e, ".council-banner").textContent.includes("C6-1"), "C6-1 근거 언급");
     ok(q(e, "#cn-add"), "작성 버튼(hq)");
@@ -5674,11 +5674,11 @@ function makeFetchStub(server) {
     loginAs(e, "user");
     eq(e.S.canSee(mn), false, "user 미열람");
     go(e, "carcap");
-    ok(!q(e, ".page-title").textContent.includes("부적합"), "user는 CAR 페이지 차단");
+    ok(!q(e, ".page-title, .ds-head-t").textContent.includes("부적합"), "user는 CAR 페이지 차단");
     loginAs(e, "hq");
     eq(e.S.canSee(mn), true, "hq 열람 가능");
     go(e, "carcap");
-    ok(q(e, ".page-title").textContent.includes("부적합"), "hq는 CAR 페이지 표시");
+    ok(q(e, ".page-title, .ds-head-t").textContent.includes("부적합"), "hq는 CAR 페이지 표시");
   });
 
   t("CR13 대시보드 CAR 카드 (mgr 이상) + 알람", () => {
