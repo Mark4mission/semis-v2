@@ -4730,6 +4730,44 @@ function makeFetchStub(server) {
       ok(/Action Plan/.test(html) && /과제 개요/.test(html), "인쇄 문서 구성");
       ok(html.indexOf("예방정비") >= 0, "선택 과제(C6-1) 내용 포함");
     });
+
+    t("K16 레이아웃(v2.43): Section Kit(ds-*) 구성 요소로 렌더", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "kpi");
+      ok(q(e, ".ds-head .ds-head-t"), "화면 머리말");
+      ok(qa(e, ".ds-panel").length >= 6, "패널 6개 이상(요약·개요·KP·Next·다음단계·주의·표)");
+      ok(qa(e, ".ds-pill").length >= 5, "필 헤더");
+      ok(q(e, ".ds-ring .ds-ring-p"), "완료율 링 게이지");
+      eq(qa(e, ".ds-stats .ds-stat").length, 4, "요약 타일 4종");
+      eq(qa(e, ".ds-bars .ds-bar").length, 2, "진척률·기간 경과율 바");
+      ok(qa(e, ".ds-numlist .ds-num").length === 5, "과제 개요 번호 항목 5건");
+      ok(qa(e, ".ds-checks .ds-check").length >= 4, "Key Progress 체크 항목");
+      ok(!q(e, ".page-head") && !q(e, ".kpi-stat-grid"), "구 레이아웃 제거");
+    });
+
+    t("K17 레이아웃: 링 게이지 dashoffset이 완료율과 일치", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "kpi");
+      const K = e.w.SemisKpi;
+      const s = K.stats(e.S.data.kpis.items[0]);
+      eq(q(e, ".ds-ring-p").textContent, s.pct + "%", "표기 완료율");
+      const C = 2 * Math.PI * 54;
+      const arc = qa(e, ".ds-ring circle")[1];
+      const off = parseFloat(arc.getAttribute("stroke-dashoffset"));
+      ok(Math.abs(off - C * (1 - s.pct / 100)) < 0.2, "호 길이 = 완료율 비례");
+    });
+
+    t("K18 클릭 경로 유지: 다음 단계/주의 행(ds-row)에서 세부 모달 열림", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      go(e, "kpi");
+      const row = qa(e, ".ds-row[data-act]")[0];
+      ok(row, "ds-row 렌더");
+      row.click();
+      ok(q(e, "#kf-st"), "세부/수정 모달 표시");
+    });
   }
 
   /* ══════════ [CN*] 보안장비 협의회 회의록 (v2.24) ══════════ */

@@ -110,6 +110,30 @@ SeMIS_v2/
 초기 암호는 별도 전달(보안상 문서 미기재). 로그인 후 시스템 설정 → 사용자/암호에서 변경 권장.
 암호 변경 내역·추가 사용자는 해시로만 저장되며 공용 DB를 통해 전 기기에 공유됨.
 
+## 화면 디자인 규칙 — Section Kit (v2.43)
+
+새 메뉴를 만들거나 기존 화면을 개편할 때는 `css/main.css` 하단의 **Section Kit(`ds-*`)** 조각을 조합한다.
+발표자료 톤(네이비→블루 계조, 라운드 아웃라인 패널, 필 헤더, 번호/체크 리스트)을 전 메뉴에 통일 적용하기 위한 공통 문법.
+적용 예시는 `js/kpi.js`의 `render()`.
+
+| 조각 | 용도 |
+|---|---|
+| `.ds-head` + `.ds-head-t` / `.ds-head-meta` | 화면 머리말. 제목 + 우측 기준정보·액션 버튼 (밑줄 그라디언트 자동) |
+| `.ds-panel` (`.ds-panel-tint`) | 내용 블록. tint = 요약/히어로용 옅은 블루 배경 |
+| `.ds-hd` + `.ds-pill` (`.ds-pill-line`, `.ds-pill-lite`) | 패널 헤더. 필 라벨 + `.spacer` + 우측 배지. 이모지는 `<i class="em">` 으로 감쌀 것 |
+| `.ds-grid-side` / `.ds-grid2` / `.ds-stack` | 좌(주요)·우(보조) 2단 / 균등 2단 / 세로 적층. 980px 이하 자동 1단 |
+| `.ds-stats` + `.ds-stat.tone-{blue,red,green,gray}` | 숫자 요약 타일 (좌측 컬러바 + 큰 숫자 + 라벨) |
+| `.ds-ring` | 완료율 링 게이지 (SVG, `kpi.js`의 `ringGauge()` 참조) |
+| `.ds-bars` + `.ds-bar-l` / `.ds-bar(.tone-gray)` | 진행률 바. 라벨 좌 · 수치 우 정렬 |
+| `.ds-numlist` + `.ds-num` | ①②③ 번호 정의 목록 (제목 + 설명) |
+| `.ds-checks(.tone-navy)` + `.ds-check` | 체크 목록 |
+| `.ds-lead` / `.ds-note` / `.ds-warn` | 옅은 블루 강조 / 네이비 결론 박스 / 주의 박스 |
+| `.ds-rows` + `.ds-row` (`.ds-row-t`, `.ds-row-m`) | 클릭 가능한 행 목록 |
+| `.ds-empty` | 데이터 없음 표시 |
+
+색상 토큰: `--ds-navy-900/800/700`, `--ds-blue-700/600/500/400/200/100/50`, `--ds-line`, `--ds-r-lg/md/sm`.
+표는 `thead th` 를 네이비, 그룹 구분행을 옅은 블루 밴드로 두어 스캔이 쉽도록 한다(`.kpi-tbl`, `.kpi-phase-row` 참조).
+
 ## 테스트
 
 ```

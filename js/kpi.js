@@ -216,6 +216,30 @@
   const stBadge = (st, added) =>
     `<span class="badge ${ (ST_META[st] || {}).badge || "badge-gray" }" style="white-space:nowrap">${esc(st)}</span>${added ? ' <span class="badge badge-amber" title="원본 빈칸을 시스템이 보완한 항목 — 검토 필요">보완</span>' : ""}`;
 
+  /* Design System(ds-*) 조각 — css/main.css "Section Kit" 참조 */
+  const nl = (v) => esc(v == null ? "" : String(v)).replace(/\n/g, "<br>");
+  // 번호 정의 행 (raw=true 이면 body 를 HTML 그대로 사용)
+  const dsNum = (i, t, body, raw) =>
+    `<div class="ds-num"><i>${i}</i><div class="ds-num-b">
+      <div class="ds-num-t">${esc(t)}</div>
+      <div class="ds-num-d">${raw ? body : nl(body)}</div></div></div>`;
+  // 링 게이지 (완료율)
+  function ringGauge(pct, done, total) {
+    const R = 54, C = 2 * Math.PI * R;
+    const p = Math.max(0, Math.min(100, pct || 0));
+    return `<div class="ds-ring">
+      <svg viewBox="0 0 134 134" width="134" height="134" aria-hidden="true">
+        <defs><linearGradient id="dsRingG" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#1552b8"></stop><stop offset="1" stop-color="#4da3f7"></stop>
+        </linearGradient></defs>
+        <circle cx="67" cy="67" r="${R}" fill="none" stroke="#e3ebf6" stroke-width="13"></circle>
+        <circle cx="67" cy="67" r="${R}" fill="none" stroke="url(#dsRingG)" stroke-width="13"
+          stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - p / 100)).toFixed(1)}"></circle>
+      </svg>
+      <div class="ds-ring-c"><span class="ds-ring-p">${p}%</span><span class="ds-ring-s">완료 ${done} / ${total}</span></div>
+    </div>`;
+  }
+
   const stackedBar = (kpi, h) => {
     const s = stats(kpi);
     if (!s.total) return "";
@@ -281,12 +305,10 @@
       const attn = attentionItems(kpi);
 
       root.innerHTML = `
-        <div class="page-head">
-          <div>
-            <div class="page-title">📈 KPI 현황</div>
-            <div class="page-desc">CSI 과제 진도관리 — 기준: ${esc(kpis().updated || "")} (${esc(kpis().src || "xlsx")})</div>
-          </div>
+        <div class="ds-head">
+          <div class="ds-head-t"><i class="em">📈</i>KPI 현황 <small>CSI 과제 진도관리</small></div>
           <span class="spacer"></span>
+          <span class="ds-head-meta">기준 ${esc(kpis().updated || "")} · ${esc(kpis().src || "xlsx")}</span>
           <button class="btn btn-ghost btn-sm" id="kpi-print" title="현재 과제를 인쇄하거나 PDF로 저장">🖨 인쇄 / PDF</button>
         </div>
 
@@ -301,80 +323,93 @@
           }).join("")}
         </div>
 
-        <div class="card">
-          <div class="card-title">🎯 ${esc(kpi.title)}
+        <div class="ds-panel ds-panel-tint">
+          <div class="ds-hd">
+            <span class="ds-pill"><i class="em">🎯</i>${esc(kpi.no)}</span>
+            <span class="kpi-hero-title">${esc(kpi.title)}</span>
             <span class="badge ${kpi.status === "On-track" ? "badge-green" : "badge-amber"}">${esc(kpi.status)}</span>
-            <span class="spacer"></span>
             <span class="badge ${dd !== null && dd < 0 ? "badge-red" : "badge-blue"}" title="과제 종료일까지">${dd !== null ? (dd < 0 ? "종료 D+" + (-dd) : "종료 D-" + dd) : ""}</span>
           </div>
-          <div class="kpi-stat-grid">
-            <div class="kpi-stat"><b>${s.pct}%</b><span>완료율 (${s.done}/${s.total})</span></div>
-            <div class="kpi-stat"><b style="color:#2563eb">${s.run}</b><span>진행 중</span></div>
-            <div class="kpi-stat"><b style="color:#dc2626">${s.risk}</b><span>주의 (미실행·완료지연)</span></div>
-            <div class="kpi-stat"><b style="color:#64748b">${s.wait}</b><span>실행 대기</span></div>
+          <div class="kpi-hero-body">
+            ${ringGauge(s.pct, s.done, s.total)}
+            <div class="ds-stats kpi-hero-stats">
+                <div class="ds-stat tone-green"><b>${s.done}</b><span>완료</span></div>
+                <div class="ds-stat tone-blue"><b>${s.run}</b><span>진행 중</span></div>
+                <div class="ds-stat tone-red"><b>${s.risk}</b><span>주의 · 미실행/완료지연</span></div>
+                <div class="ds-stat tone-gray"><b>${s.wait}</b><span>실행 대기</span></div>
+            </div>
+            <div class="ds-bars kpi-hero-bars">
+                <div>
+                  <div class="ds-bar-l">진척률 <span>완료 ${s.done}/${s.total}건</span><b>${s.pct}%</b></div>
+                  <div class="ds-bar"><span style="width:${s.pct}%"></span></div>
+                </div>
+                <div>
+                  <div class="ds-bar-l">기간 경과율 <span>${esc(period(kpi.start, kpi.end))}</span><b>${tp}%</b></div>
+                  <div class="ds-bar tone-gray"><span style="width:${tp}%"></span></div>
+                </div>
+            </div>
           </div>
-          <div class="kpi-2bars">
-            <div><span class="kpi-bar-label">진척률 (완료 ${s.done}/${s.total}건)</span>
-              <div class="insp-bar"><div class="insp-bar-fill" style="width:${s.pct}%"></div></div></div>
-            <div><span class="kpi-bar-label">기간 경과율 (${esc(period(kpi.start, kpi.end))})</span>
-              <div class="insp-bar"><div class="insp-bar-fill" style="width:${tp}%;background:#94a3b8"></div></div></div>
-          </div>
-          ${s.pct + 7 < tp ? '<div class="kpi-warn">⚠ 완료율이 기간 경과율보다 낮습니다 — 지연 항목의 만회 계획을 확인하세요.</div>' : ""}
+          ${s.pct + 7 < tp ? `<div class="ds-warn" style="margin-top:15px"><span>⚠</span><span>완료율 ${s.pct}% 가 기간 경과율 ${tp}% 보다 낮습니다 — 지연 항목의 만회 계획을 확인하세요.</span></div>` : ""}
           <div class="kpi-chiprow">
             ${ST_ORDER.map(t => s.c[t] ? `<span class="kpi-chip"><i style="background:${ST_META[t].color}"></i>${esc(t)} <b>${s.c[t]}</b></span>` : "").join("")}
           </div>
         </div>
 
-        <div class="kpi-cols">
-          <div class="card">
-            <div class="card-title">📋 과제 개요 <span class="badge badge-gray">${esc(kpi.no)}</span></div>
-            <div class="kpi-def">
-              <div><label>개선 목표</label><p>${esc(kpi.goal).replace(/\n/g, "<br>")}</p></div>
-              <div><label>예상 효과 (관리 지표)</label><p>${esc(kpi.effect).replace(/\n/g, "<br>")}</p></div>
-              <div><label>추진 배경 · 주요 Issue</label><p>${esc(kpi.bg).replace(/\n/g, "<br>")}</p></div>
-              <div><label>과제 Scope</label><p>${esc(kpi.scope).replace(/\n/g, "<br>")}</p></div>
-              <div><label>추진 조직</label><p><b>리더</b> ${esc(kpi.leader)}<br>${kpi.team.map(esc).join(" · ")}</p></div>
-              <div><label>기간</label><p>${esc(period(kpi.start, kpi.end))}</p></div>
+        <div class="ds-grid-side" style="margin-top:16px">
+          <div class="ds-panel">
+            <div class="ds-hd"><span class="ds-pill"><i class="em">📋</i>과제 개요</span>
+              <span class="spacer"></span>
+              <span class="ds-head-meta">${esc(period(kpi.start, kpi.end))}</span></div>
+            <div class="ds-numlist">
+              ${dsNum(1, "개선 목표", kpi.goal)}
+              ${dsNum(2, "예상 효과 (관리 지표)", kpi.effect)}
+              ${dsNum(3, "추진 배경 · 주요 Issue", kpi.bg)}
+              ${dsNum(4, "과제 Scope", kpi.scope)}
+              ${dsNum(5, "추진 조직", `<b>리더</b> ${esc(kpi.leader)} · ${kpi.team.map(esc).join(" · ")}`, true)}
             </div>
           </div>
-          <div>
-            <div class="card">
-              <div class="card-title">🔑 Key Progress &amp; Issues</div>
-              ${(kpi.kp || []).length ? `<ul class="kpi-ul">${kpi.kp.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : '<div class="empty">기록 없음</div>'}
+          <div class="ds-stack">
+            <div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill"><i class="em">🔑</i>Key Progress &amp; Issues</span></div>
+              ${(kpi.kp || []).length ? `<div class="ds-checks">${kpi.kp.map(x => `<div class="ds-check">${esc(x)}</div>`).join("")}</div>` : '<div class="ds-empty">기록 없음</div>'}
             </div>
-            <div class="card">
-              <div class="card-title">⏭ Next Steps &amp; Make-up Plan
+            <div class="ds-panel">
+              <div class="ds-hd"><span class="ds-pill"><i class="em">⏭</i>Next Steps &amp; Make-up Plan</span>
                 ${kpi.nextAdded ? '<span class="badge badge-amber" title="원본 빈칸을 시스템이 보완한 내용 — 검토 필요">보완</span>' : ""}</div>
-              ${(kpi.next || []).length ? `<ul class="kpi-ul">${kpi.next.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : '<div class="empty">기록 없음</div>'}
+              ${(kpi.next || []).length ? `<div class="ds-checks tone-navy">${kpi.next.map(x => `<div class="ds-check">${esc(x)}</div>`).join("")}</div>` : '<div class="ds-empty">기록 없음</div>'}
             </div>
           </div>
         </div>
 
-        <div class="kpi-cols">
-          <div class="card">
-            <div class="card-title">🚀 다음 단계 준비 <span class="badge badge-blue">${nextItems(kpi).length}건 대기</span></div>
-            ${nexts.length ? nexts.map(x => {
+        <div class="ds-grid2" style="margin-top:16px">
+          <div class="ds-panel">
+            <div class="ds-hd"><span class="ds-pill ds-pill-line"><i class="em">🚀</i>다음 단계 준비</span>
+              <span class="spacer"></span>
+              <span class="badge badge-blue">${nextItems(kpi).length}건 대기</span></div>
+            ${nexts.length ? `<div class="ds-rows">${nexts.map(x => {
               const d2 = dday(x.ps);
               const late = x.st === "미실행";
-              return `<div class="kpi-next-row" data-act="${esc(x.id)}" title="클릭하여 세부 확인">
+              return `<div class="ds-row" data-act="${esc(x.id)}" title="클릭하여 세부 확인">
                 <span class="badge ${late ? "badge-red" : d2 !== null && d2 <= 14 ? "badge-amber" : "badge-gray"}">${late ? "지연" : d2 === null ? "-" : d2 < 0 ? "D+" + (-d2) : "D-" + d2}</span>
-                <span class="kpi-next-title">${esc(x.title)}</span>
-                <span class="kpi-next-meta">${esc(mmdd(x.ps))}~${esc(mmdd(x.pe))}${x.main ? " · " + esc(x.main) : ""}</span>
+                <span class="ds-row-t">${esc(x.title)}</span>
+                <span class="ds-row-m">${esc(mmdd(x.ps))}~${esc(mmdd(x.pe))}${x.main ? " · " + esc(x.main) : ""}</span>
               </div>`;
-            }).join("") : '<div class="empty">대기 중인 항목이 없습니다.</div>'}
+            }).join("")}</div>` : '<div class="ds-empty">대기 중인 항목이 없습니다.</div>'}
           </div>
-          <div class="card">
-            <div class="card-title">⚠️ 주의 필요 항목 <span class="badge ${attn.length ? "badge-red" : "badge-green"}">${attn.length}건</span></div>
-            ${attn.length ? attn.map(x => `<div class="kpi-next-row" data-act="${esc(x.id)}" title="클릭하여 세부 확인">
+          <div class="ds-panel">
+            <div class="ds-hd"><span class="ds-pill ds-pill-line"><i class="em">⚠️</i>주의 필요 항목</span>
+              <span class="spacer"></span>
+              <span class="badge ${attn.length ? "badge-red" : "badge-green"}">${attn.length}건</span></div>
+            ${attn.length ? `<div class="ds-rows">${attn.map(x => `<div class="ds-row" data-act="${esc(x.id)}" title="클릭하여 세부 확인">
                 ${stBadge(x.st)}
-                <span class="kpi-next-title">${esc(x.title)}</span>
-                <span class="kpi-next-meta">${esc(x.risk || "")}</span>
-              </div>`).join("") : '<div class="empty">주의 항목이 없습니다. 👍</div>'}
+                <span class="ds-row-t">${esc(x.title)}</span>
+                <span class="ds-row-m">${esc(x.risk || "")}</span>
+              </div>`).join("")}</div>` : '<div class="ds-empty">주의 항목이 없습니다. 👍</div>'}
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-title">🗂 Action Plan · 타임라인
+        <div class="ds-panel" style="margin-top:16px">
+          <div class="ds-hd"><span class="ds-pill"><i class="em">🗂</i>Action Plan · 타임라인</span>
             <span class="spacer"></span>
             <span class="kpi-legend"><i class="tl-plan-i"></i>계획 <i class="tl-act-i"></i>실적 <i class="tl-now-i"></i>오늘</span>
           </div>
