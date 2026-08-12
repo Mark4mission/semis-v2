@@ -13,19 +13,16 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   @page { size: A4; margin: 0; }
   html, body { font-family: "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", sans-serif; color: var(--t1); }
-  .pg { width: 210mm; height: 296mm; page-break-after: always; overflow: hidden; position: relative; background: #fff; padding: 16mm 15mm 18mm; }
+  .pg { width: 210mm; height: 296mm; page-break-after: always; overflow: hidden; position: relative; background: #fff; padding: 14mm 14mm 16mm; display: flex; flex-direction: column; }
   .pg:last-child { page-break-after: auto; }
+  .grow { flex: 1; }
 
-  /* ── 공통 조각 (Section Kit 미러) ── */
-  .hd { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; margin-bottom: 20px; border-bottom: 2.5px solid var(--line); position: relative; }
+  .hd { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; margin-bottom: 14px; border-bottom: 2.5px solid var(--line); position: relative; flex: none; }
   .hd::after { content: ""; position: absolute; left: 0; bottom: -2.5px; width: 42mm; height: 2.5px; background: linear-gradient(90deg, var(--navy8), var(--b400)); }
-  .hd .no { width: 24px; height: 24px; border-radius: 50%; background: var(--b600); color: #fff; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none; }
+  .hd .no { width: 25px; height: 25px; border-radius: 50%; background: var(--b600); color: #fff; font-size: 12.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none; }
   .hd h2 { font-size: 19px; font-weight: 800; letter-spacing: -0.5px; color: var(--navy9); }
   .hd small { margin-left: auto; font-size: 10.5px; color: var(--t3); font-weight: 600; }
 
-  .pill { display: inline-block; padding: 4px 14px; border-radius: 999px; background: linear-gradient(135deg, var(--navy8), var(--b600)); color: #fff; font-size: 11.5px; font-weight: 800; margin-bottom: 10px; }
-  .panel { border: 1px solid var(--line); border-radius: 12px; padding: 13px 15px; background: #fff; }
-  .panel.tint { background: linear-gradient(180deg, #f8fbff, #eff6fe); }
   .lead { background: var(--b50); border: 1px solid #d8e8fa; border-radius: 10px; padding: 11px 14px; font-size: 12px; line-height: 1.7; color: var(--navy9); word-break: keep-all; }
   .note { background: linear-gradient(135deg, var(--navy9), var(--navy7)); color: #fff; border-radius: 10px; padding: 12px 15px; font-size: 12px; line-height: 1.7; word-break: keep-all; }
   .note b { color: #8ec5ff; }
@@ -34,19 +31,13 @@
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 
-  .num { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 10px; }
-  .num i { flex: none; width: 19px; height: 19px; margin-top: 1px; border-radius: 50%; background: var(--b600); color: #fff; font-style: normal; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
-  .num .tt { font-size: 12px; font-weight: 800; color: var(--navy8); margin-bottom: 1px; }
-  .num .dd { font-size: 11.5px; line-height: 1.65; color: var(--t2); word-break: keep-all; }
-  .num .dd b { color: var(--b700); }
-
-  .chk { display: flex; gap: 8px; align-items: flex-start; font-size: 11.5px; line-height: 1.65; color: var(--t2); margin-bottom: 7px; word-break: keep-all; }
-  .chk::before { content: "✓"; flex: none; width: 15px; height: 15px; margin-top: 2px; border-radius: 4px; background: var(--b600); color: #fff; font-size: 9px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+  .chk { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 1.7; color: var(--t2); margin-bottom: 8px; word-break: keep-all; }
+  .chk::before { content: "✓"; flex: none; width: 16px; height: 16px; margin-top: 3px; border-radius: 4px; background: var(--b600); color: #fff; font-size: 9.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
   .chk b { color: var(--navy8); }
 
   table.t { width: 100%; border-collapse: collapse; font-size: 11px; }
   table.t th { background: var(--navy9); color: #fff; font-weight: 700; padding: 7px 9px; text-align: left; border: 1px solid var(--navy7); }
-  table.t td { padding: 6.5px 9px; border: 1px solid var(--line); color: var(--t2); line-height: 1.55; word-break: keep-all; vertical-align: top; }
+  table.t td { padding: 7px 9px; border: 1px solid var(--line); color: var(--t2); line-height: 1.55; word-break: keep-all; vertical-align: top; }
   table.t tr:nth-child(even) td { background: #f8fbff; }
   table.t td b { color: var(--navy8); }
   .bd { display: inline-block; padding: 1.5px 8px; border-radius: 999px; font-size: 9.5px; font-weight: 800; white-space: nowrap; }
@@ -55,34 +46,78 @@
   .bd-hq { background: #fef9c3; color: #854d0e; }
   .bd-adm { background: #fee2e2; color: #b91c1c; }
 
-  .tile { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px 10px 14px; position: relative; overflow: hidden; background: #fff; }
+  .tile { border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px 11px 15px; position: relative; overflow: hidden; background: #fff; }
   .tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--b500); }
-  .tile .em2 { font-size: 16px; }
-  .tile b { display: block; font-size: 12.5px; font-weight: 800; color: var(--navy9); margin: 3px 0 2px; letter-spacing: -0.3px; }
-  .tile span { font-size: 10.5px; line-height: 1.55; color: var(--t3); word-break: keep-all; display: block; }
+  .tile .em2 { font-size: 17px; }
+  .tile b { display: block; font-size: 13px; font-weight: 800; color: var(--navy9); margin: 3px 0 3px; letter-spacing: -0.3px; }
+  .tile span { font-size: 11px; line-height: 1.6; color: var(--t3); word-break: keep-all; display: block; }
 
-  .step { text-align: center; padding: 12px 8px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
-  .step .sn { width: 26px; height: 26px; margin: 0 auto 7px; border-radius: 50%; background: linear-gradient(135deg, var(--navy8), var(--b600)); color: #fff; font-size: 13px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
-  .step b { display: block; font-size: 12px; color: var(--navy9); margin-bottom: 3px; }
-  .step span { font-size: 10.5px; color: var(--t3); line-height: 1.5; word-break: keep-all; }
-  .step .url { display: inline-block; margin-top: 5px; padding: 3px 10px; border-radius: 999px; background: var(--b50); border: 1px solid var(--b200); color: var(--b700); font-weight: 800; font-size: 10.5px; }
+  .sec { margin-bottom: 13px; }
+  .sec-t { font-size: 13.5px; font-weight: 800; color: var(--navy9); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .sec-t::before { content: ""; width: 4px; height: 14px; border-radius: 2px; background: linear-gradient(180deg, var(--navy8), var(--b400)); }
 
-  .sec { margin-bottom: 14px; }
-  .sec-t { font-size: 13px; font-weight: 800; color: var(--navy9); margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
-  .sec-t::before { content: ""; width: 4px; height: 13px; border-radius: 2px; background: linear-gradient(180deg, var(--navy8), var(--b400)); }
+  .foot { position: absolute; left: 14mm; right: 14mm; bottom: 7mm; display: flex; justify-content: space-between; font-size: 9px; color: var(--t3); border-top: 1px solid var(--line); padding-top: 4px; }
 
-  .foot { position: absolute; left: 15mm; right: 15mm; bottom: 8mm; display: flex; justify-content: space-between; font-size: 9px; color: var(--t3); border-top: 1px solid var(--line); padding-top: 4px; }
+  /* 스크린샷 프레임 (브라우저 창 모양) */
+  .shot { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-shadow: 0 3px 14px rgba(11,37,69,.10); background: #fff; }
+  .shot .bar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: #eef2f8; border-bottom: 1px solid var(--line); }
+  .shot .bar i { width: 8px; height: 8px; border-radius: 50%; }
+  .shot .bar i:nth-child(1) { background: #f87171; } .shot .bar i:nth-child(2) { background: #fbbf24; } .shot .bar i:nth-child(3) { background: #34d399; }
+  .shot .bar span { margin-left: 8px; flex: 1; background: #fff; border: 1px solid var(--line); border-radius: 99px; font-size: 8.5px; color: var(--t3); padding: 2px 10px; }
+  .shot img { display: block; width: 100%; }
+  .cap { display: flex; gap: 7px; align-items: baseline; font-size: 10.5px; color: var(--t3); margin-top: 6px; line-height: 1.5; word-break: keep-all; }
+  .cap b { color: var(--b700); font-size: 10px; flex: none; }
+
+  /* 번호 콜아웃 */
+  .anno { position: relative; }
+  .anno .pt { position: absolute; width: 21px; height: 21px; border-radius: 50%; background: #e11d48; color: #fff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 3px rgba(225,29,72,.25), 0 2px 6px rgba(0,0,0,.3); }
+  .leg { display: flex; gap: 8px; align-items: flex-start; font-size: 11.5px; line-height: 1.65; color: var(--t2); margin-bottom: 8px; word-break: keep-all; }
+  .leg i { flex: none; width: 18px; height: 18px; margin-top: 2px; border-radius: 50%; background: #e11d48; color: #fff; font-size: 10px; font-weight: 800; font-style: normal; display: flex; align-items: center; justify-content: center; }
+  .leg b { color: var(--navy8); }
+
+  /* 흐름 도식 (가로 단계) */
+  .flow { display: flex; align-items: stretch; gap: 0; }
+  .flow .fstep { flex: 1; text-align: center; padding: 11px 8px; border: 1.5px solid var(--b200); border-radius: 12px; background: linear-gradient(180deg, #fff, #f4f9ff); position: relative; }
+  .flow .fstep .fi { font-size: 21px; display: block; margin-bottom: 4px; }
+  .flow .fstep b { display: block; font-size: 11.5px; color: var(--navy9); margin-bottom: 2px; }
+  .flow .fstep span { font-size: 9.8px; color: var(--t3); line-height: 1.5; word-break: keep-all; display: block; }
+  .flow .farr { flex: none; width: 22px; display: flex; align-items: center; justify-content: center; color: var(--b400); font-size: 15px; font-weight: 800; }
+
+  /* 와이어프레임 (화면 구성) */
+  .wire { border: 1.5px solid var(--navy7); border-radius: 12px; overflow: hidden; box-shadow: 0 3px 14px rgba(11,37,69,.10); }
+  .wire .w-head { background: var(--navy9); color: #fff; display: flex; align-items: center; gap: 9px; padding: 9px 13px; font-size: 10.5px; }
+  .wire .w-logo { font-weight: 800; font-size: 12px; }
+  .wire .w-logo em { font-style: normal; color: var(--b400); }
+  .wire .w-search { flex: 1; max-width: 300px; background: rgba(255,255,255,.13); border-radius: 99px; padding: 4px 13px; font-size: 9.5px; color: #cbd5e1; }
+  .wire .w-badge { background: #16a34a; border-radius: 99px; padding: 3px 11px; font-size: 9.5px; font-weight: 700; margin-left: auto; }
+  .wire .w-user { background: rgba(255,255,255,.13); border-radius: 99px; padding: 3px 11px; font-size: 9.5px; }
+  .wire .w-body { display: flex; min-height: 84mm; }
+  .wire .w-side { width: 34mm; background: #0f172a; color: #cbd5e1; padding: 9px 0; font-size: 9.8px; flex: none; }
+  .wire .w-side div { padding: 5px 13px; }
+  .wire .w-side .on { background: var(--b700); color: #fff; border-radius: 0 99px 99px 0; margin-right: 9px; font-weight: 700; }
+  .wire .w-side .grp { color: #64748b; font-size: 8.5px; font-weight: 800; letter-spacing: 1px; margin-top: 5px; }
+  .wire .w-main { flex: 1; background: #f4f6fa; padding: 10px 12px; }
+  .wire .w-card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; margin-bottom: 8px; font-size: 9.8px; color: var(--t3); }
+  .wire .w-card b { display: inline-block; background: var(--b100); color: var(--navy8); border-radius: 99px; padding: 2px 9px; font-size: 9px; margin-right: 5px; }
+  .wtag { position: absolute; background: #e11d48; color: #fff; font-size: 9.5px; font-weight: 800; padding: 3px 10px; border-radius: 99px; box-shadow: 0 2px 6px rgba(0,0,0,.28); white-space: nowrap; }
+
+  /* 권한 계단 */
+  .stair { display: flex; align-items: flex-end; gap: 7px; }
+  .stair > div { flex: 1; border-radius: 9px 9px 0 0; color: #fff; text-align: center; padding: 8px 4px 7px; display: flex; flex-direction: column; justify-content: flex-end; }
+  .stair b { font-size: 10.5px; display: block; }
+  .stair span { font-size: 8.6px; opacity: .85; display: block; margin-top: 2px; line-height: 1.35; word-break: keep-all; }
 
   /* 표지 */
-  .cover { background: linear-gradient(150deg, #0b2545 0%, #123166 45%, #1552b8 110%); color: #fff; display: flex; flex-direction: column; padding: 22mm 20mm; }
+  .cover { background: linear-gradient(150deg, #0b2545 0%, #123166 45%, #1552b8 110%); color: #fff; display: flex; flex-direction: column; padding: 20mm 18mm; }
   .cover .tag { display: inline-block; align-self: flex-start; padding: 5px 16px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,.35); font-size: 12px; font-weight: 700; letter-spacing: 2px; }
-  .cover h1 { font-size: 46px; font-weight: 800; letter-spacing: -1.5px; margin-top: 26mm; line-height: 1.15; }
+  .cover h1 { font-size: 44px; font-weight: 800; letter-spacing: -1.5px; margin-top: 16mm; line-height: 1.15; }
   .cover h1 span { color: #8ec5ff; }
-  .cover .sub { font-size: 16px; opacity: .85; margin-top: 6mm; line-height: 1.6; }
-  .cover .feat { margin-top: 18mm; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .cover .feat div { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 10px; padding: 10px 14px; font-size: 12px; font-weight: 600; }
+  .cover .sub { font-size: 15px; opacity: .85; margin-top: 5mm; line-height: 1.6; }
+  .cover .shot { margin-top: 12mm; border: none; box-shadow: 0 12px 40px rgba(0,0,0,.42); }
+  .cover .feat { margin-top: 10mm; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cover .feat div { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 10px; padding: 9px 13px; font-size: 11.5px; font-weight: 600; }
   .cover .btm { margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end; font-size: 12px; opacity: .8; }
-  .toc-i { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; padding: 7px 2px; border-bottom: 1px dashed var(--line); }
+  .toc-i { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; padding: 7.5px 2px; border-bottom: 1px dashed var(--line); }
   .toc-i b { color: var(--b700); font-size: 11px; width: 18px; flex: none; }
   .toc-i span:last-child { margin-left: auto; color: var(--t3); font-size: 10.5px; }
 </style>
@@ -93,12 +128,16 @@
 <div class="pg cover">
   <span class="tag">USER GUIDE</span>
   <h1>SeMIS <span>v2</span><br>사용 안내서</h1>
-  <div class="sub">에어제타 보안종합정보시스템<br>Security Management Information System</div>
+  <div class="sub">에어제타 보안종합정보시스템 · Security Management Information System</div>
+  <div class="shot" style="width:128mm;align-self:center">
+    <div class="bar"><i></i><i></i><i></i><span>semis.pe.kr</span></div>
+    <img src="img/login.jpg" alt="로그인 화면">
+  </div>
   <div class="feat">
     <div>🗂 항공보안 업무를 한 곳에서</div>
     <div>⚡ 입력 즉시 전 사용자 실시간 공유</div>
     <div>🔐 권한별 맞춤 화면 · 간편 로그인</div>
-    <div>🤖 AI 비서 "세미"가 자료 검색을 도와드립니다</div>
+    <div>🤖 AI 비서 "세미"가 검색을 도와드립니다</div>
   </div>
   <div class="btm">
     <span>에어제타 항공보안파트</span>
@@ -109,12 +148,12 @@
 <!-- ═══════ P2 소개 + 목차 ═══════ -->
 <div class="pg">
   <div class="hd"><span class="no">1</span><h2>SeMIS v2 는 어떤 시스템인가요?</h2><small>소개</small></div>
-  <div class="lead" style="margin-bottom:14px">
-    SeMIS(Security Management Information System)는 에어제타 항공보안 업무 전반 — 규정, 점검, 장비,
-    교육, 출입증, 회의, 일정 — 을 <b>하나의 웹사이트</b>에서 관리하는 통합 정보시스템입니다.
+  <div class="lead" style="margin-bottom:12px">
+    SeMIS 는 에어제타 항공보안 업무 전반 — 규정 · 점검 · 장비 · 교육 · 출입증 · 회의 · 일정 — 을
+    <b>하나의 웹사이트</b>에서 관리하는 통합 정보시스템입니다.
     설치 없이 인터넷 브라우저만 있으면 PC · 태블릿 · 휴대폰 어디서나 사용할 수 있습니다.
   </div>
-  <div class="grid3" style="margin-bottom:16px">
+  <div class="grid3" style="margin-bottom:14px">
     <div class="tile"><span class="em2">⚡</span><b>실시간 공유</b><span>입력·수정하면 다른 사용자 화면에도 즉시 반영됩니다. 파일을 주고받을 필요가 없습니다.</span></div>
     <div class="tile"><span class="em2">🔐</span><b>간편 로그인</b><span>부여받은 접속 암호 하나만 입력하면 됩니다. 아이디를 외울 필요가 없습니다.</span></div>
     <div class="tile"><span class="em2">👥</span><b>권한별 화면</b><span>직무에 맞는 메뉴와 정보만 보입니다. 대외비는 권한자에게만 표시됩니다.</span></div>
@@ -123,232 +162,403 @@
     <div class="tile"><span class="em2">🤖</span><b>AI 비서 세미</b><span>화면 오른쪽 아래 말풍선에게 물어보세요. 자료를 찾아주고 등록도 도와줍니다.</span></div>
   </div>
   <div class="sec">
+    <div class="sec-t">데이터가 흐르는 방식 — 입력 한 번, 모두의 화면에</div>
+    <div class="flow">
+      <div class="fstep"><span class="fi">✍️</span><b>담당자가 입력</b><span>점검 결과 · 회의록 · 일정 등을 화면에서 바로 기록</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">☁️</span><b>공용 DB 저장</b><span>저장 즉시 암호화된 공용 데이터베이스에 기록</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">🖥📱</span><b>전원 실시간 반영</b><span>같은 화면을 보는 모든 사용자에게 몇 초 안에 표시</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">📊</span><b>자동 집계</b><span>대시보드 · KPI · 통계에 자동으로 합산</span></div>
+    </div>
+  </div>
+  <div class="sec grow">
     <div class="sec-t">이 안내서의 구성</div>
     <div class="toc-i"><b>1</b><span>SeMIS v2 는 어떤 시스템인가요?</span><span>2쪽</span></div>
     <div class="toc-i"><b>2</b><span>시작하기 — 접속 · 로그인 · 권한</span><span>3쪽</span></div>
-    <div class="toc-i"><b>3</b><span>화면 구성과 기본 사용법</span><span>4쪽</span></div>
+    <div class="toc-i"><b>3</b><span>화면 구성 한눈에 보기</span><span>4쪽</span></div>
     <div class="toc-i"><b>4</b><span>대시보드 읽는 법</span><span>5쪽</span></div>
-    <div class="toc-i"><b>5</b><span>일정관리 · 보안점검</span><span>6쪽</span></div>
-    <div class="toc-i"><b>6</b><span>회의록 · QR 서명 · 협의회</span><span>7쪽</span></div>
-    <div class="toc-i"><b>7</b><span>전체 메뉴 안내</span><span>8쪽</span></div>
-    <div class="toc-i"><b>8</b><span>AI 비서 "세미" · 활용 팁 · 문의</span><span>9쪽</span></div>
+    <div class="toc-i"><b>5</b><span>일정관리 — 팀 공용 캘린더</span><span>6쪽</span></div>
+    <div class="toc-i"><b>6</b><span>보안점검 — 연간 계획과 실적</span><span>7쪽</span></div>
+    <div class="toc-i"><b>7</b><span>회의록 · QR 서명 · 협의회</span><span>8쪽</span></div>
+    <div class="toc-i"><b>8</b><span>전체 메뉴 안내 · HQ 전용 화면</span><span>9쪽</span></div>
+    <div class="toc-i"><b>9</b><span>AI 비서 "세미" · 활용 팁 · 문의</span><span>10쪽</span></div>
   </div>
-  <div class="note">이 안내서는 <b>처음 사용하는 분</b> 기준으로 작성되었습니다. 궁금한 것이 생기면
-    언제든 시스템 안의 AI 비서 <b>세미</b>에게 먼저 물어보세요.</div>
+  <div class="note">이 안내서는 <b>처음 사용하는 분</b> 기준으로 작성되었습니다.
+    궁금한 것이 생기면 언제든 시스템 안의 AI 비서 <b>세미</b>에게 먼저 물어보세요.</div>
   <div class="foot"><span>SeMIS v2 사용 안내서</span><span>2</span></div>
 </div>
 
 <!-- ═══════ P3 시작하기 ═══════ -->
 <div class="pg">
   <div class="hd"><span class="no">2</span><h2>시작하기 — 접속 · 로그인 · 권한</h2><small>3분이면 충분합니다</small></div>
-  <div class="grid3" style="margin-bottom:16px">
-    <div class="step"><div class="sn">1</div><b>주소 입력</b><span>브라우저 주소창에 입력</span><br><span class="url">semis.pe.kr</span></div>
-    <div class="step"><div class="sn">2</div><b>암호 입력</b><span>부여받은 접속 암호만<br>입력하면 로그인 완료</span></div>
-    <div class="step"><div class="sn">3</div><b>바로 사용</b><span>내 권한에 맞는 메뉴가<br>왼쪽에 자동으로 나타남</span></div>
+  <div style="display:grid;grid-template-columns:88mm 1fr;gap:12px;margin-bottom:14px;align-items:start">
+    <div>
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span>semis.pe.kr</span></div>
+        <img src="img/login.jpg" alt="로그인 화면">
+      </div>
+      <div class="cap"><b>▲ 로그인 화면</b>아이디 없이 접속 암호 한 칸만 있습니다. 👁 버튼으로 입력한 암호를 확인할 수 있습니다.</div>
+    </div>
+    <div>
+      <div class="flow" style="flex-direction:column;gap:8px">
+        <div class="fstep" style="text-align:left;display:flex;gap:10px;align-items:center"><span class="fi" style="margin:0">1️⃣</span><span style="font-size:11px;color:var(--t2)"><b style="display:inline;font-size:12px">주소 입력</b> — 브라우저 주소창에 <b style="display:inline;color:var(--b700)">semis.pe.kr</b> 을 입력합니다.</span></div>
+        <div class="fstep" style="text-align:left;display:flex;gap:10px;align-items:center"><span class="fi" style="margin:0">2️⃣</span><span style="font-size:11px;color:var(--t2)"><b style="display:inline;font-size:12px">암호 입력</b> — 부여받은 접속 암호를 입력하고 [로그인]. 그게 전부입니다.</span></div>
+        <div class="fstep" style="text-align:left;display:flex;gap:10px;align-items:center"><span class="fi" style="margin:0">3️⃣</span><span style="font-size:11px;color:var(--t2)"><b style="display:inline;font-size:12px">바로 사용</b> — 내 권한에 맞는 메뉴가 왼쪽에 자동으로 나타납니다.</span></div>
+      </div>
+      <div class="warn" style="margin-top:10px">⚠ 접속 암호는 개인에게 부여된 보안 정보입니다. 타인과 공유하지 마시고, 분실 시 항공보안파트로 즉시 알려주세요.</div>
+      <div class="chk" style="margin-top:10px"><b>로그인이 필요 없는 유일한 경우</b> — 회의 참석 서명. QR 코드를 휴대폰으로 스캔하면 서명 화면으로 바로 연결됩니다. (8쪽 참조)</div>
+    </div>
   </div>
   <div class="sec">
     <div class="sec-t">권한 등급 — 접속 암호가 등급을 결정합니다</div>
+    <div class="stair" style="margin-bottom:8px">
+      <div style="background:#8fa8c6;height:21mm"><b>일반사용자</b><span>일반 직원<br>일반사항 열람</span></div>
+      <div style="background:#2f80ed;height:28mm"><b>보안관리자</b><span>지점·유관부서 감독자<br>보안사항 열람</span></div>
+      <div style="background:#1552b8;height:35mm"><b>항공보안HQ</b><span>항공보안파트원<br>전체 열람 + 등록 + 수정</span></div>
+      <div style="background:#0b2545;height:42mm"><b>시스템관리자</b><span>시스템 운영<br>HQ + 메뉴·계정·설정</span></div>
+    </div>
+    <div class="chk" style="margin-bottom:8px"><b>협력업체 계정</b>(프로에스콤 · 인씨스 등)은 별도 등급으로, 자기 업체 관련 화면만 표시됩니다 — 대금 청구 입력 등.</div>
     <table class="t">
-      <tr><th style="width:24%">등급</th><th>누가 사용하나요</th><th>무엇을 할 수 있나요</th></tr>
-      <tr><td><span class="bd bd-all">일반사용자</span></td><td>일반 직원</td><td>공지 · 보안뉴스 · 보안등급 · 규정 등 일반 사항 열람</td></tr>
-      <tr><td><span class="bd bd-mgr">보안관리자</span></td><td>지점 · 유관부서 보안감독자/담당자</td><td>보안 사항 열람 (점검 · 장비 · 교육 · 연락망 등). 편집은 불가</td></tr>
-      <tr><td><span class="bd bd-hq">항공보안HQ</span></td><td>항공보안파트원</td><td>모든 메뉴 열람 · 등록 · 수정 (비용 · 계약 · KPI · 암호 포함)</td></tr>
-      <tr><td><span class="bd bd-adm">시스템관리자</span></td><td>시스템 운영 담당</td><td>HQ 권한 + 메뉴 구성 · 계정 · 시스템 설정</td></tr>
-      <tr><td><span class="bd bd-mgr">협력업체</span></td><td>프로에스콤 · 인씨스 등</td><td>자기 업체 관련 화면만 (대금 청구 입력 등)</td></tr>
+      <tr><th style="width:22%">등급</th><th>할 수 있는 일</th></tr>
+      <tr><td><span class="bd bd-all">일반사용자</span></td><td>공지 · 보안뉴스 · 보안등급 · 규정 · 출입증 신청 안내 등 일반 사항 열람</td></tr>
+      <tr><td><span class="bd bd-mgr">보안관리자</span></td><td>+ 점검 · 장비 · 교육 · 연락망 · 회의록 등 보안 사항 열람 (편집은 불가)</td></tr>
+      <tr><td><span class="bd bd-hq">항공보안HQ</span></td><td>+ 모든 메뉴 등록 · 수정, 대외비(비용 · 계약 · KPI · 암호) 열람</td></tr>
+      <tr><td><span class="bd bd-adm">시스템관리자</span></td><td>+ 메뉴 구성 · 계정 관리 · 백업 등 시스템 설정</td></tr>
     </table>
-  </div>
-  <div class="warn" style="margin-bottom:12px">⚠ 접속 암호는 개인에게 부여된 보안 정보입니다. 타인과 공유하지 마시고,
-    분실 시 항공보안파트로 즉시 알려주세요.</div>
-  <div class="sec">
-    <div class="sec-t">로그인 없이 쓰는 특별한 경우 — 회의 참석 서명</div>
-    <div class="chk">회의 참석자는 <b>QR 코드를 휴대폰 카메라로 스캔</b>하면 암호 없이 서명 화면으로 바로 연결됩니다.</div>
-    <div class="chk">회의록마다 다른 6자리 코드가 자동 생성되므로, 해당 회의 참석자만 서명할 수 있습니다.</div>
   </div>
   <div class="foot"><span>SeMIS v2 사용 안내서</span><span>3</span></div>
 </div>
 
 <!-- ═══════ P4 화면 구성 ═══════ -->
 <div class="pg">
-  <div class="hd"><span class="no">3</span><h2>화면 구성과 기본 사용법</h2><small>어디에 무엇이 있나요</small></div>
+  <div class="hd"><span class="no">3</span><h2>화면 구성 한눈에 보기</h2><small>어디에 무엇이 있나요</small></div>
+  <div class="anno" style="margin-bottom:8px">
+    <div class="wire">
+      <div class="w-head">
+        <span class="w-logo">SeMIS <em>v2</em></span>
+        <span class="w-search">🔍 통합 검색 — 메뉴 · 문서 · 기록 · 링크 (Ctrl+K)</span>
+        <span class="w-badge">평시</span>
+        <span class="w-user">최상일 프로</span>
+      </div>
+      <div class="w-body">
+        <div class="w-side">
+          <div class="on">🏠 대시보드</div>
+          <div>📅 일정관리</div>
+          <div>🗒️ 회의록 게시판</div>
+          <div>📈 KPI 현황</div>
+          <div class="grp">보안 점검</div>
+          <div>🕵️ 보안점검 일정관리</div>
+          <div>📋 부적합·시정조치</div>
+          <div class="grp">보안장비</div>
+          <div>🔧 보안장비 유지관리</div>
+          <div>🤝 보안장비 협의회</div>
+          <div class="grp">보안 증진</div>
+          <div>🎓 보안교육 관리</div>
+          <div class="grp">비정상 상황</div>
+          <div>☎️ 보고체계 연락망</div>
+        </div>
+        <div class="w-main">
+          <div class="w-card" style="display:flex;gap:6px"><b>7일 내 일정</b><b>이번 달 점검</b><b>CAR</b><b>만료 도래</b></div>
+          <div class="w-card"><b>📢 공지사항</b> 클릭하면 본문이 펼쳐집니다</div>
+          <div class="w-card"><b>🌡 환경센서</b> 장비실 온습도 실시간 표시</div>
+          <div class="w-card"><b>🚨 보안등급</b> 현재 등급과 변경 이력</div>
+          <div class="w-card"><b>📅 다가오는 일정</b> · <b>🕵️ 점검 실적</b> · <b>📈 KPI</b> 카드가 이어집니다</div>
+        </div>
+      </div>
+    </div>
+    <span class="wtag" style="top:4mm;right:46mm">① 헤더 — 검색 · 보안등급 · 내 계정</span>
+    <span class="wtag" style="top:72mm;left:4mm">② 사이드바 — 전체 메뉴</span>
+    <span class="wtag" style="top:34mm;right:12mm">③ 본문 — 선택한 메뉴의 내용</span>
+  </div>
+  <div class="grid3" style="margin-bottom:12px">
+    <div class="leg" style="margin:0"><i>1</i><span><b>헤더</b> — 통합 검색창(Ctrl+K), 현재 보안등급 배지, 내 계정, 로그아웃이 있습니다.</span></div>
+    <div class="leg" style="margin:0"><i>2</i><span><b>사이드바</b> — 업무 그룹별 메뉴. ☰ 버튼으로 접을 수 있고, 내 권한에 없는 메뉴는 아예 보이지 않습니다.</span></div>
+    <div class="leg" style="margin:0"><i>3</i><span><b>본문</b> — 선택한 메뉴의 내용. 로그인 직후에는 대시보드가 표시됩니다.</span></div>
+  </div>
   <div class="sec">
-    <div class="sec-t">화면은 세 부분으로 되어 있습니다</div>
-    <div class="grid3" style="margin-bottom:6px">
-      <div class="tile"><span class="em2">⬆️</span><b>상단 헤더</b><span>통합 검색창, 현재 보안등급 배지, 내 계정 이름, 로그아웃 버튼이 있습니다.</span></div>
-      <div class="tile"><span class="em2">⬅️</span><b>왼쪽 사이드바</b><span>전체 메뉴입니다. 그룹을 접고 펼 수 있고, ☰ 버튼으로 사이드바 전체를 줄일 수 있습니다.</span></div>
-      <div class="tile"><span class="em2">🖥</span><b>가운데 본문</b><span>선택한 메뉴의 내용이 표시됩니다. 처음 화면은 대시보드입니다.</span></div>
+    <div class="sec-t">꼭 알아두면 좋은 기본 조작 5가지</div>
+    <div class="grid2">
+      <div>
+        <div class="chk"><b>통합 검색 (Ctrl+K)</b> — 어느 메뉴에 있는지 몰라도 단어만 입력하면 시스템 전체에서 찾아줍니다.</div>
+        <div class="chk"><b>행 클릭 = 상세 보기</b> — 목록의 줄을 클릭하면 세부 내용이 열립니다. 파란 제목은 문서가 바로 열립니다.</div>
+        <div class="chk"><b>🖨 인쇄 / PDF</b> — 인쇄 버튼이 있는 화면(KPI · 회의록 등)은 A4 보고서로 출력됩니다.</div>
+      </div>
+      <div>
+        <div class="chk"><b>📎 첨부파일</b> — 공지 · 회의록 등에 파일을 붙일 수 있습니다. 끌어다 놓기(드래그앤드롭)도 됩니다.</div>
+        <div class="chk"><b>버튼이 안 보이면 열람 전용</b> — 등록 · 수정 버튼이 없으면 내 권한으로는 보기만 가능한 화면입니다.</div>
+      </div>
     </div>
   </div>
-  <div class="sec">
-    <div class="sec-t">꼭 알아두면 좋은 기본 조작</div>
-    <div class="chk"><b>통합 검색 (Ctrl+K)</b> — 상단 검색창에 단어를 입력하면 메뉴 · 공지 · 회의록 · 규정 · 일정 등 시스템 전체에서 한 번에 찾아줍니다.</div>
-    <div class="chk"><b>행 클릭 = 상세 보기</b> — 목록에서 줄을 클릭하면 세부 내용이 열립니다. 파란 제목은 클릭하면 문서가 바로 열립니다.</div>
-    <div class="chk"><b>🖨 인쇄 / PDF</b> — 인쇄 버튼이 있는 화면(KPI · 회의록 등)은 A4 보고서 형태로 인쇄하거나 PDF로 저장할 수 있습니다.</div>
-    <div class="chk"><b>📎 첨부파일</b> — 공지 · 회의록 · 청구 항목 등에 파일을 붙일 수 있습니다. 파일을 끌어다 놓기(드래그앤드롭)도 됩니다.</div>
-    <div class="chk"><b>수정 권한 표시</b> — 등록 · 수정 버튼이 보이지 않으면 내 권한으로는 열람만 가능한 화면입니다.</div>
-  </div>
-  <div class="sec">
-    <div class="sec-t">휴대폰에서 쓸 때</div>
-    <div class="chk">화면이 자동으로 세로 배치로 바뀝니다. 왼쪽 위 ☰ 버튼으로 메뉴를 열고 닫습니다.</div>
-    <div class="chk">회의 서명, 일정 확인, 공지 열람, 세미와 대화는 휴대폰에서 특히 편리합니다.</div>
-  </div>
-  <div class="note">화면이 이상하게 보이면 <b>새로고침(F5)</b> 을 한 번 해보세요. 업데이트 직후에는
-    브라우저가 이전 버전 화면을 기억하고 있을 수 있습니다.</div>
+  <div class="grow"></div>
+  <div class="note">📱 휴대폰에서는 화면이 자동으로 세로 배치로 바뀝니다. 왼쪽 위 <b>☰</b> 버튼으로 메뉴를 열고 닫으세요.
+    화면이 이상하면 <b>새로고침(F5)</b> — 업데이트 직후에는 브라우저가 이전 화면을 기억하고 있을 수 있습니다.</div>
   <div class="foot"><span>SeMIS v2 사용 안내서</span><span>4</span></div>
 </div>
 
 <!-- ═══════ P5 대시보드 ═══════ -->
 <div class="pg">
   <div class="hd"><span class="no">4</span><h2>대시보드 읽는 법</h2><small>로그인하면 처음 보이는 화면</small></div>
-  <div class="lead" style="margin-bottom:14px">
-    대시보드는 <b>"오늘 무엇을 챙겨야 하는가"</b>를 한눈에 보여주는 화면입니다.
-    맨 위 요약 타일부터 보고, 필요한 카드로 내려가면 됩니다.
+  <div class="anno" style="margin-bottom:8px">
+    <div class="shot">
+      <div class="bar"><i></i><i></i><i></i><span>semis.pe.kr — 대시보드</span></div>
+      <img src="img/dashboard.jpg" alt="대시보드">
+    </div>
+    <span class="pt" style="top:16mm;left:6mm">1</span>
+    <span class="pt" style="top:31mm;left:6mm">2</span>
+    <span class="pt" style="top:31mm;right:56mm">3</span>
   </div>
+  <div class="cap" style="margin-bottom:12px"><b>▲ 대시보드</b>실제 화면입니다. 위에서 아래로 — 요약 타일 → 왼쪽 큰 카드 → 오른쪽 현황 카드 순서로 보면 됩니다.</div>
+  <div class="leg"><i>1</i><span><b>요약 타일 (맨 위)</b> — "오늘 챙길 것"의 개수입니다. <b>7일 내 일정 · 이번 달 점검 완료 · CAR 기한 경과/진행 중 · 30일 내 만료 도래.</b>
+    숫자가 붉거나 주황이면 확인이 필요하다는 뜻이고, 타일을 클릭하면 해당 메뉴로 바로 이동합니다.</span></div>
+  <div class="leg"><i>2</i><span><b>왼쪽 카드</b> — 📢 공지사항(제목 클릭 시 본문 펼침, "고정" 배지는 중요 공지),
+    🌡 CARES 환경센서(장비실 온습도 — 임계치 초과 시 붉게 강조), 🔧 보안장비 · 고장신고 현황.</span></div>
+  <div class="leg"><i>3</i><span><b>오른쪽 카드</b> — 🚨 현재 보안등급과 변경 이력, ⚡ 바로가기(자주 쓰는 화면 · 외부 시스템),
+    📅 다가오는 일정, 📈 KPI 진행현황, 🕵️ 보안점검 실적, ⏳ 만료 · 점검 도래(D-일수 순 정렬) 카드가 이어집니다.</span></div>
   <div class="sec">
-    <div class="sec-t">① 맨 위 — 요약 타일 (클릭하면 해당 메뉴로 이동)</div>
-    <table class="t">
-      <tr><th style="width:30%">타일</th><th>의미</th></tr>
-      <tr><td><b>7일 내 일정</b></td><td>일주일 안에 예정된 일정 수 — 클릭하면 일정관리로</td></tr>
-      <tr><td><b>이번 달 점검 완료</b></td><td>이번 달 보안점검 완료/계획 건수 — 클릭하면 보안점검으로</td></tr>
-      <tr><td><b>CAR 기한 경과 · 진행 중</b></td><td>부적합 시정조치 중 기한이 지난 건과 진행 중인 건</td></tr>
-      <tr><td><b>30일 내 만료 도래</b></td><td>출입증 · 계약 · 이수증 · 장비 내용연수 중 만료가 다가온 건</td></tr>
-    </table>
-  </div>
-  <div class="sec">
-    <div class="sec-t">② 카드 — 업무별 현황 요약</div>
-    <div class="grid2">
-      <div>
-        <div class="chk"><b>📢 공지사항</b> — 제목을 클릭하면 본문이 펼쳐집니다. "고정" 배지는 중요 공지입니다.</div>
-        <div class="chk"><b>🌡 CARES 환경센서</b> — 장비실 온습도 등을 실시간 표시. 임계치 초과 시 붉게 강조됩니다.</div>
-        <div class="chk"><b>🔧 보안장비 · 고장신고</b> — 장비 상태와 최근 고장 신고 현황입니다.</div>
-        <div class="chk"><b>🚨 보안등급</b> — 현재 국가 항공보안등급과 변경 이력입니다.</div>
-      </div>
-      <div>
-        <div class="chk"><b>📅 다가오는 일정</b> / <b>🕵️ 보안점검 실적</b> / <b>📈 KPI 진행현황</b> — 각 "전체보기"로 본 화면 이동.</div>
-        <div class="chk"><b>📋 CAR</b> — 기한 알람이 위험도 순으로 표시됩니다.</div>
-        <div class="chk"><b>⏳ 만료 · 점검 도래</b> — D-일수와 함께 임박한 항목을 모아 보여줍니다.</div>
-        <div class="chk"><b>⚡ 바로가기</b> — 자주 쓰는 화면 · 외부 시스템으로 한 번에 이동합니다.</div>
-      </div>
+    <div class="sec-t">추천 — 아침 1분 확인 루틴</div>
+    <div class="flow">
+      <div class="fstep"><span class="fi">🔑</span><b>접속 · 로그인</b><span>semis.pe.kr → 암호 입력</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">🔢</span><b>요약 타일 확인</b><span>붉은 숫자가 있으면 클릭해서 확인</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">📢</span><b>고정 공지 확인</b><span>새 공지 · 고정 공지 제목 훑어보기</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">📅</span><b>오늘 일정 확인</b><span>다가오는 일정 카드에서 오늘 · 내일 확인</span></div>
     </div>
   </div>
-  <div class="note">일반사용자에게는 보안 카드 대신 <b>보안 뉴스</b>와 <b>항공보안 인사이트</b>(반입물품 · 검색절차 안내)가 표시됩니다.
+  <div class="grow"></div>
+  <div class="note">👤 일반사용자에게는 보안 카드 대신 <b>🗞 보안 뉴스</b>와 <b>📊 항공보안 인사이트</b>(반입물품 · 검색절차 안내)가 표시됩니다.
     같은 주소, 같은 화면이지만 <b>권한에 따라 내용이 달라집니다.</b></div>
   <div class="foot"><span>SeMIS v2 사용 안내서</span><span>5</span></div>
 </div>
 
-<!-- ═══════ P6 일정관리 · 보안점검 ═══════ -->
+<!-- ═══════ P6 일정관리 ═══════ -->
 <div class="pg">
-  <div class="hd"><span class="no">5</span><h2>일정관리 · 보안점검</h2><small>서로 연동되는 두 화면</small></div>
-  <div class="sec">
-    <div class="sec-t">📅 일정관리 — 팀 공용 캘린더</div>
-    <div class="chk"><b>일정 등록</b> — 날짜 칸을 클릭하면 등록 창이 열립니다. 기간 일정, 반복(매주 · 매월 등), 색상, 담당자, 리마인더(2주 전~1시간 전)를 지정할 수 있습니다.</div>
-    <div class="chk"><b>드래그 이동</b> — 일정 막대를 마우스로 끌어 다른 날짜에 놓으면 이동합니다. Esc 로 취소.</div>
-    <div class="chk"><b>보기 전환</b> — 일 / 주 / 2주 / 월 / 년 보기, ⤢ 전체화면 모드를 지원합니다.</div>
-    <div class="chk"><b>구글 캘린더 연동</b> — 🔗 버튼의 구독 주소를 구글 캘린더에 추가하면 휴대폰 캘린더에서도 보입니다.</div>
-    <div class="chk"><b>나에게만 보이기</b> — 개인 일정은 다른 사람에게 보이지 않게 등록할 수 있습니다.</div>
+  <div class="hd"><span class="no">5</span><h2>일정관리 — 팀 공용 캘린더</h2><small>보안점검 · 교육 · 회의 일정을 한 판에</small></div>
+  <div class="shot" style="margin-bottom:6px">
+    <div class="bar"><i></i><i></i><i></i><span>semis.pe.kr — 일정관리</span></div>
+    <img src="img/schedule.jpg" alt="일정관리 월 보기">
   </div>
-  <div class="sec">
-    <div class="sec-t">🕵️ 보안점검 일정관리 — 연간 계획과 실적</div>
-    <div class="chk"><b>연간 실적 요약</b> — 완료율 게이지와 구분별(국내정기 · 불시평가 · 해외공항) 진행 상황이 맨 위에 보입니다.</div>
-    <div class="chk"><b>연간 매트릭스</b> — 구분 × 월 표에서 한 해 계획을 한눈에 봅니다. 빈 칸 클릭 = 새 점검 등록, 칩 클릭 = 수정, 칩을 끌면 계획 월 이동.</div>
-    <div class="chk"><b>점검 결과 기록</b> — 시정조치 · 개선권고 · 현장시정 · 관찰사항 유형별로 결과를 남깁니다.</div>
+  <div class="cap" style="margin-bottom:11px"><b>▲ 월 보기</b>색상은 일정 종류, 왼쪽 아래 이니셜은 담당자입니다.
+    분홍색 <b style="color:#db2777">[계획]/[점검]</b> 일정은 보안점검에서 자동으로 연동된 것입니다 (7쪽).</div>
+  <div class="grid2">
+    <div>
+      <div class="chk"><b>일정 등록</b> — 날짜 칸을 클릭하면 등록 창이 열립니다. 기간 일정, 색상, 담당자를 지정할 수 있습니다.</div>
+      <div class="chk"><b>드래그 이동</b> — 일정 막대를 끌어 다른 날짜에 놓으면 이동합니다. Esc 로 취소.</div>
+      <div class="chk"><b>반복 일정</b> — 매주 · 매월 등 반복을 걸고, 회차별로 완료 체크를 할 수 있습니다.</div>
+      <div class="chk"><b>리마인더</b> — 2주 전 ~ 1시간 전 알림을 설정하면 화면에 미리 알려줍니다.</div>
+    </div>
+    <div>
+      <div class="chk"><b>보기 전환</b> — 일 / 주 / 2주 / 월 / 년 + ⤢ 전체화면. 상단 담당자 칩으로 사람별 필터.</div>
+      <div class="chk"><b>완료 체크</b> — 일정 칩에서 바로 완료 표시. "완료 숨기기"로 남은 일만 볼 수 있습니다.</div>
+      <div class="chk"><b>구글 캘린더 연동</b> — 🔗 버튼의 구독 주소를 구글 캘린더에 추가하면 휴대폰에서도 보입니다.</div>
+      <div class="chk"><b>나에게만 보이기</b> — 개인 일정은 다른 사람에게 보이지 않게 등록할 수 있습니다.</div>
+    </div>
   </div>
-  <div class="lead" style="margin-bottom:12px">
-    <b>자동 연동:</b> 점검을 등록하면 일정관리 캘린더에 분홍색 일정이 자동으로 생깁니다.
-    일자가 미정이면 연분홍 <b>[계획]</b>, 확정되면 분홍 <b>[점검]</b> 으로 표시되고,
-    캘린더에서 일정을 옮기면 점검 일자도 함께 바뀝니다.
+  <div class="sec" style="margin-top:2px">
+    <div class="sec-t">일정 등록은 이렇게 — 4단계</div>
+    <div class="flow">
+      <div class="fstep"><span class="fi">🖱</span><b>① 날짜 칸 클릭</b><span>시작할 날짜를 클릭하면 등록 창이 열림</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">⌨️</span><b>② 내용 입력</b><span>제목 · 기간 · 시간 · 메모(링크 · 사진 첨부 가능)</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">🎨</span><b>③ 색 · 담당 지정</b><span>일정 종류별 색상, 담당자, 리마인더 선택</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">💾</span><b>④ 저장</b><span>저장 즉시 팀 전체 캘린더에 반영</span></div>
+    </div>
   </div>
-  <div class="sec">
-    <div class="sec-t">📋 부적합 · 시정조치 (CAR) — HQ 전용</div>
-    <div class="chk">점검에서 나온 부적합을 <b>CAR → 시정조치(CAP) → 유효성 확인(FAT)</b> 단계로 추적하고, 5×5 위험 매트릭스로 위험도를 평가합니다.</div>
-    <div class="chk">단계별 기한이 자동 계산되고, 기한이 다가오면 대시보드에 알람이 표시됩니다.</div>
-  </div>
+  <div class="grow"></div>
+  <div class="lead">💡 <b>회의실 · 차량 예약</b>도 일정 등록 창의 체크박스로 함께 관리합니다 — 겹치면 등록할 때 알려줍니다.</div>
   <div class="foot"><span>SeMIS v2 사용 안내서</span><span>6</span></div>
 </div>
 
-<!-- ═══════ P7 회의록 ═══════ -->
+<!-- ═══════ P7 보안점검 ═══════ -->
 <div class="pg">
-  <div class="hd"><span class="no">6</span><h2>회의록 · QR 서명 · 협의회</h2><small>회의 자리에서 바로 기록</small></div>
+  <div class="hd"><span class="no">6</span><h2>보안점검 — 연간 계획과 실적</h2><small>국내정기 · 불시평가 · 해외공항</small></div>
+  <div class="shot" style="margin-bottom:6px">
+    <div class="bar"><i></i><i></i><i></i><span>semis.pe.kr — 보안점검 일정관리</span></div>
+    <img src="img/inspection.jpg" alt="보안점검 연간 매트릭스">
+  </div>
+  <div class="cap" style="margin-bottom:11px"><b>▲ 연간 매트릭스</b>위 요약 패널에서 완료율과 구분별 진행 상황을 먼저 보고,
+    아래 표에서 구분 × 월로 한 해 계획을 확인합니다.</div>
+  <div class="grid2" style="margin-bottom:12px">
+    <div>
+      <div class="chk"><b>빈 칸 클릭</b> = 그 구분 · 그 달의 새 점검 등록</div>
+      <div class="chk"><b>칩 클릭</b> = 점검 내용 · 일자 · 결과 수정</div>
+      <div class="chk"><b>칩 드래그</b> = 계획 월 이동 (확정 일자도 함께 이동)</div>
+    </div>
+    <div>
+      <div class="chk"><b>결과 기록</b> — 시정조치 · 개선권고 · 현장시정 · 관찰사항 유형별로 남깁니다.</div>
+      <div class="chk"><b>목록 보기</b> — 표 대신 일자순 목록으로 전환할 수 있습니다.</div>
+      <div class="chk"><b>시정조치(CAR)</b> — 중요한 부적합은 CAR 메뉴에서 기한 · 위험도와 함께 추적합니다. (HQ)</div>
+    </div>
+  </div>
   <div class="sec">
-    <div class="sec-t">🗒️ 회의록 게시판 — 모든 회의의 기록</div>
-    <div class="num"><i>1</i><div><div class="tt">새 회의록은 3초면 만들어집니다</div><div class="dd">[+ 새 회의록] → 폴더(회의체)만 고르면 <b>회차 번호 · 제목 · 장소 · 참석자 명단 · 지난 회의 미결사항</b>이 자동으로 채워집니다.</div></div></div>
-    <div class="num"><i>2</i><div><div class="tt">회의 중에는 논의 내용을 그대로 입력</div><div class="dd">서식(굵게 · 목록 · 표 · 이미지)이 되는 편집기입니다. 자동 저장이 켜져 있어 내용이 사라질 걱정이 없습니다.</div></div></div>
-    <div class="num"><i>3</i><div><div class="tt">참석자 서명은 QR 코드로</div><div class="dd">화면의 QR 을 참석자가 휴대폰으로 스캔 → 이름 확인 → 손가락으로 서명. <b>로그인이 필요 없습니다.</b></div></div></div>
-    <div class="num"><i>4</i><div><div class="tt">결정사항은 자동으로 추적됩니다</div><div class="dd">기한이 있는 결정사항은 일정관리에 자동 등록되고, "결정사항 추적" 탭에서 미완료 건을 모아 볼 수 있습니다. 다음 회의를 만들면 미결 건이 자동 이월됩니다.</div></div></div>
-    <div class="num"><i>5</i><div><div class="tt">끝나면 A4 인쇄</div><div class="dd">🖨 버튼으로 결재 · 보관용 회의록 문서를 바로 출력합니다.</div></div></div>
+    <div class="sec-t">점검 ↔ 캘린더 자동 연동 — 한 번 입력하면 양쪽에</div>
+    <div class="flow">
+      <div class="fstep"><span class="fi">🕵️</span><b>점검 등록</b><span>보안점검 화면에서 대상 · 계획 월 입력</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">📅</span><b>캘린더 자동 생성</b><span>일자 미정이면 연분홍 [계획], 확정되면 분홍 [점검]</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">↔️</span><b>양방향 반영</b><span>캘린더에서 일정을 옮기면 점검 일자도 함께 변경</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">✅</span><b>완료 동기화</b><span>어느 쪽에서 완료 처리해도 양쪽 모두 완료</span></div>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="sec-t">점검 상태 4종 — 칩 색과 표시</div>
+    <table class="t">
+      <tr><th style="width:16%">상태</th><th style="width:12%">표시</th><th>의미</th></tr>
+      <tr><td><span class="bd bd-mgr">계획</span></td><td>—</td><td>아직 실시 전. 일자를 확정하면 캘린더 일정도 확정 표시로 바뀝니다</td></tr>
+      <tr><td><span class="bd bd-all">완료</span></td><td>✓</td><td>실시 완료. 결과(시정조치 등)를 함께 기록합니다</td></tr>
+      <tr><td><span class="bd bd-hq">연기</span></td><td>⏸</td><td>사유가 있어 미룬 점검 — 요약 패널에 별도 집계됩니다</td></tr>
+      <tr><td><span class="bd" style="background:#f1f5f9;color:#64748b">취소</span></td><td>✕</td><td>실시하지 않기로 확정 — 완료율 계산에서 제외됩니다</td></tr>
+    </table>
+  </div>
+  <div class="grow"></div>
+  <div class="note">📌 점검이 <b>원본(우선권)</b>입니다 — 제목 · 구분 · 담당은 점검 값이 항상 기준이 되므로 두 화면이 어긋날 걱정이 없습니다.</div>
+  <div class="foot"><span>SeMIS v2 사용 안내서</span><span>7</span></div>
+</div>
+
+<!-- ═══════ P8 회의록 ═══════ -->
+<div class="pg">
+  <div class="hd"><span class="no">7</span><h2>회의록 · QR 서명 · 협의회</h2><small>회의 자리에서 바로 기록</small></div>
+  <div class="sec">
+    <div class="sec-t">회의록의 한살이 — 만들기부터 다음 회의까지</div>
+    <div class="flow" style="margin-bottom:6px">
+      <div class="fstep"><span class="fi">🗒️</span><b>① 새 회의록</b><span>폴더만 고르면 회차 · 제목 · 장소 · 참석자 명단 자동 채움</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">✍️</span><b>② 회의 중 기록</b><span>서식 편집기에 그대로 입력 — 자동 저장</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">📱</span><b>③ QR 서명</b><span>참석자가 휴대폰으로 스캔 → 손가락 서명</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">📌</span><b>④ 결정사항 추적</b><span>기한 있는 결정은 일정관리에 자동 등록</span></div>
+      <div class="farr">▶</div>
+      <div class="fstep"><span class="fi">🔁</span><b>⑤ 다음 회의로</b><span>미결 사항이 다음 회의록에 자동 이월</span></div>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="sec-t">QR 서명 — 참석자는 로그인이 필요 없습니다</div>
+    <div style="display:grid;grid-template-columns:34mm 1fr;gap:12px;align-items:center">
+      <div style="border:1.5px solid var(--line);border-radius:12px;padding:9px;text-align:center">
+        <div style="width:24mm;height:24mm;margin:0 auto;background:
+          repeating-linear-gradient(0deg,#0b2545 0 2.2mm,#fff 2.2mm 4mm),
+          repeating-linear-gradient(90deg,#0b2545 0 2.2mm,#fff 2.2mm 4mm);background-blend-mode:screen;border:4px solid #fff;outline:1.5px solid var(--navy9)"></div>
+        <div style="font-size:9.5px;color:var(--t3);margin-top:5px;font-weight:700">회의별 QR 코드</div>
+      </div>
+      <div>
+        <div class="chk">회의록 화면의 <b>QR을 크게 띄우고</b>, 참석자가 휴대폰 카메라로 스캔합니다.</div>
+        <div class="chk">이름을 확인(또는 직접 입력)하고 <b>손가락으로 서명</b>하면 참석자 표에 자동 기록됩니다.</div>
+        <div class="chk">회의록마다 다른 6자리 코드가 생성되므로 <b>그 회의 참석자만</b> 서명할 수 있습니다.</div>
+        <div class="chk">끝나면 🖨 버튼으로 서명이 포함된 <b>A4 회의록</b>을 바로 출력합니다.</div>
+      </div>
+    </div>
   </div>
   <div class="sec">
     <div class="sec-t">🤝 보안장비 협의회 — 전용 서식 회의록</div>
     <div class="chk">장비 고장 사례 표(발생일 · 장비 · 증상 · 근본원인 · 조치)가 있는 전용 양식입니다.</div>
     <div class="chk">사례는 CARES(장비관리 시스템)의 고장 이력에서 <b>자동으로 불러올 수 있고</b>, 사례 행을 클릭하면 원본 기록이 열립니다.</div>
-    <div class="chk">참석자 서명 · 결정사항 · 첨부 · A4 인쇄는 회의록 게시판과 동일하게 동작합니다.</div>
   </div>
-  <div class="note">회의록 열람은 <b>"참석 사실"</b> 기준입니다 — 내가 참석한 회의는 언제든 볼 수 있고,
+  <div class="sec">
+    <div class="sec-t">결정사항 추적 탭 — 이렇게 모아서 보입니다 (예시)</div>
+    <table class="t">
+      <tr><th style="width:30%">결정 · 조치사항</th><th style="width:26%">회의</th><th style="width:16%">기한</th><th style="width:13%">담당</th><th>상태</th></tr>
+      <tr><td>X-ray 실화물 부하 테스트 일정 협의</td><td>제5차 보안장비 협의회</td><td>2026-08-31</td><td>최상일</td><td><span class="bd bd-mgr">진행 중</span></td></tr>
+      <tr><td>ETD 보호케이스 1대 시범 설치</td><td>제4차 보안장비 협의회</td><td>2026-08-20</td><td>프로에스콤</td><td><span class="bd bd-hq">⚠ 기한 임박</span></td></tr>
+      <tr><td>지점 보안규정 개정본 배포</td><td>정례회의 7월</td><td>2026-07-31</td><td>이윤민</td><td><span class="bd bd-all">완료</span></td></tr>
+    </table>
+    <div class="cap"><b>▲ 결정사항 추적</b>모든 회의의 결정사항이 한 화면에 모입니다 — 미완료 우선 정렬, 기한 초과는 ⚠ 강조. 행을 누르면 해당 회의록이 열립니다.</div>
+  </div>
+  <div class="grow"></div>
+  <div class="note">🔒 회의록 열람은 <b>"참석 사실"</b> 기준입니다 — 내가 참석한 회의는 언제든 볼 수 있고,
     참석하지 않은 회의는 HQ 이상만 볼 수 있습니다.</div>
-  <div class="foot"><span>SeMIS v2 사용 안내서</span><span>7</span></div>
-</div>
-
-<!-- ═══════ P8 전체 메뉴 ═══════ -->
-<div class="pg">
-  <div class="hd"><span class="no">7</span><h2>전체 메뉴 안내</h2><small>열람 권한과 함께</small></div>
-  <table class="t" style="font-size:10.5px">
-    <tr><th style="width:22%">메뉴</th><th>내용</th><th style="width:13%">열람</th></tr>
-    <tr><td><b>🏠 대시보드</b></td><td>공지 · 요약 타일 · 업무 현황 카드</td><td><span class="bd bd-all">전체</span></td></tr>
-    <tr><td><b>📅 일정관리</b></td><td>팀 캘린더 — 반복 · 리마인더 · 드래그 이동 · 구글 연동</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
-    <tr><td><b>🗒️ 회의록 게시판</b></td><td>회의록 작성 · QR 서명 · 결정사항 추적 · A4 인쇄</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
-    <tr><td><b>📈 KPI 현황</b></td><td>CSI 과제 진도관리 — 완료율 · Action Plan · 타임라인</td><td><span class="bd bd-hq">HQ+</span></td></tr>
-    <tr><td><b>📖 항공보안등급</b></td><td>국가 보안등급 5단계 소개 · 현재 등급</td><td><span class="bd bd-all">전체</span></td></tr>
-    <tr><td><b>🌐 규정 / 인허가</b></td><td>국제 · 국가 · 자체 보안규정 열람, IOSA 안내</td><td><span class="bd bd-all">전체</span></td></tr>
-    <tr><td><b>🌍 지점 / 협력업체</b></td><td>세계지도 지점 관리 · 교육 현황 · 보안감독자 · 계약서(HQ)</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
-    <tr><td><b>🕵️ 보안 점검</b></td><td>연간 점검 계획/실적 · 부적합 시정조치 CAR(HQ)</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
-    <tr><td><b>🪪 출입증</b></td><td>출입증 대장(관리자+) · 신청 절차와 서류 안내(전체)</td><td><span class="bd bd-all">전체</span></td></tr>
-    <tr><td><b>🔧 보안장비</b></td><td>장비 대장 · 협의회 회의록 · 대금 청구(HQ) · CARES 연동</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
-    <tr><td><b>🎓 보안 증진</b></td><td>보안교육 관리 · 교육 이수증 대장(만료 알림)</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
-    <tr><td><b>☎️ 비정상 상황</b></td><td>보고체계 연락망(30분 내 SMS 보고) · 문자의 신(보안동보)</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
-    <tr><td><b>🛡️ 참고 / 링크</b></td><td>에어제타 보안정책 · 보안 서약서 · 보안뉴스 등</td><td><span class="bd bd-all">전체</span></td></tr>
-    <tr><td><b>🔐 암호 관리</b></td><td>부서 공용 계정 · 암호 금고 (암호화 저장)</td><td><span class="bd bd-hq">HQ+</span></td></tr>
-    <tr><td><b>⚙️ 시스템 설정</b></td><td>메뉴 구성 · 계정 관리 · 백업 · 저장소 관리</td><td><span class="bd bd-adm">시스템관리자</span></td></tr>
-  </table>
-  <div class="lead" style="margin-top:12px">
-    표의 "열람" 은 기본 기준입니다. <b>등록 · 수정은 대부분 항공보안HQ 이상</b>에서 가능하며,
-    화면에 등록 · 수정 버튼이 보이면 내 권한으로 편집할 수 있다는 뜻입니다.
-  </div>
   <div class="foot"><span>SeMIS v2 사용 안내서</span><span>8</span></div>
 </div>
 
-<!-- ═══════ P9 세미 + 팁 ═══════ -->
+<!-- ═══════ P9 전체 메뉴 + HQ 화면 ═══════ -->
 <div class="pg">
-  <div class="hd"><span class="no">8</span><h2>AI 비서 "세미" · 활용 팁 · 문의</h2><small>더 편하게 쓰는 방법</small></div>
+  <div class="hd"><span class="no">8</span><h2>전체 메뉴 안내 · HQ 전용 화면</h2><small>열람 권한과 함께</small></div>
+  <table class="t" style="font-size:10px;margin-bottom:11px">
+    <tr><th style="width:21%">메뉴</th><th>내용</th><th style="width:13%">열람</th></tr>
+    <tr><td><b>🏠 대시보드</b></td><td>공지 · 요약 타일 · 업무 현황 카드</td><td><span class="bd bd-all">전체</span></td></tr>
+    <tr><td><b>📅 일정관리</b></td><td>팀 캘린더 — 반복 · 리마인더 · 드래그 · 구글 연동</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
+    <tr><td><b>🗒️ 회의록 게시판</b></td><td>회의록 작성 · QR 서명 · 결정사항 추적 · A4 인쇄</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
+    <tr><td><b>📖 항공보안등급</b></td><td>국가 보안등급 5단계 소개 · 현재 등급</td><td><span class="bd bd-all">전체</span></td></tr>
+    <tr><td><b>🌐 규정 / 인허가</b></td><td>국제 · 국가 · 자체 보안규정 열람, IOSA 안내</td><td><span class="bd bd-all">전체</span></td></tr>
+    <tr><td><b>🌍 지점 / 협력업체</b></td><td>세계지도 지점 관리 · 교육 현황 · 보안감독자 · 계약서(HQ)</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
+    <tr><td><b>🕵️ 보안 점검</b></td><td>연간 계획/실적 · 부적합 시정조치 CAR(HQ)</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
+    <tr><td><b>🪪 출입증</b></td><td>출입증 대장(관리자+) · 신청 절차와 서류 안내(전체)</td><td><span class="bd bd-all">전체</span></td></tr>
+    <tr><td><b>🔧 보안장비</b></td><td>장비 대장 · 협의회 · 대금 청구(HQ) · CARES 연동</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
+    <tr><td><b>🎓 보안 증진</b></td><td>보안교육 관리 · 교육 이수증 대장(만료 알림)</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
+    <tr><td><b>☎️ 비정상 상황</b></td><td>보고체계 연락망(30분 내 SMS 보고) · 문자의 신</td><td><span class="bd bd-mgr">관리자+</span></td></tr>
+    <tr><td><b>📈 KPI · 🔐 암호 · 🛡️ 정책</b></td><td>CSI 과제 진도관리(HQ) · 암호 금고(HQ) · 보안정책(전체)</td><td><span class="bd bd-hq">HQ+</span></td></tr>
+    <tr><td><b>⚙️ 시스템 설정</b></td><td>메뉴 구성 · 계정 관리 · 백업 · 저장소 관리</td><td><span class="bd bd-adm">시스템관리자</span></td></tr>
+  </table>
+  <div class="sec" style="margin-bottom:8px">
+    <div class="sec-t">HQ 전용 화면 예시 — KPI 현황</div>
+    <div class="shot">
+      <div class="bar"><i></i><i></i><i></i><span>semis.pe.kr — KPI 현황 (항공보안HQ 이상)</span></div>
+      <img src="img/kpi.jpg" alt="KPI 현황">
+    </div>
+    <div class="cap"><b>▲ KPI 현황</b>CSI 과제의 완료율 · 진행 상태 · Action Plan 타임라인을 관리하고, 🖨 버튼으로 보고용 A4 문서를 출력합니다.</div>
+  </div>
+  <div class="grow"></div>
+  <div class="lead">표의 "열람"은 기본 기준입니다. <b>등록 · 수정은 대부분 항공보안HQ 이상</b>에서 가능하며,
+    화면에 등록 · 수정 버튼이 보이면 내 권한으로 편집할 수 있다는 뜻입니다.</div>
+  <div class="foot"><span>SeMIS v2 사용 안내서</span><span>9</span></div>
+</div>
+
+<!-- ═══════ P10 세미 + 팁 ═══════ -->
+<div class="pg">
+  <div class="hd"><span class="no">9</span><h2>AI 비서 "세미" · 활용 팁 · 문의</h2><small>더 편하게 쓰는 방법</small></div>
   <div class="sec">
     <div class="sec-t">🤖 세미(SeMI) — 화면 오른쪽 아래 말풍선</div>
-    <div class="grid2" style="margin-bottom:8px">
-      <div class="tile"><span class="em2">🔎</span><b>자료 찾기</b><span>"이번 달 점검 일정 알려줘", "프로에스콤 계약 담당자 누구야?" — 시스템 안의 자료를 찾아 답합니다.</span></div>
-      <div class="tile"><span class="em2">✍️</span><b>등록 도우미</b><span>"다음 주 화요일 협의회 일정 등록해줘" — 초안을 보여주고, 확인하면 등록까지 해줍니다. (HQ 이상)</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+      <div style="border:1.5px solid var(--line);border-radius:12px;padding:11px 13px;background:#f8fbff">
+        <div style="font-size:10px;font-weight:800;color:var(--t3);margin-bottom:6px">이렇게 물어보세요</div>
+        <div style="background:var(--b600);color:#fff;border-radius:12px 12px 3px 12px;padding:7px 11px;font-size:11px;margin-bottom:6px;margin-left:14mm">이번 달 남은 점검 일정 알려줘</div>
+        <div style="background:#fff;border:1px solid var(--line);border-radius:12px 12px 12px 3px;padding:7px 11px;font-size:11px;margin-right:10mm;color:var(--t2)">8월 남은 점검은 2건입니다 — ① 안전심사팀 내부심사 ② SFOSF (해외공항). 자세히 보시겠어요?</div>
+      </div>
+      <div>
+        <div class="chk"><b>자료 찾기</b> — "프로에스콤 계약 담당자 누구야?", "지난 협의회에서 뭘 결정했지?" 처럼 물어보면 시스템 안의 자료를 찾아 답합니다.</div>
+        <div class="chk"><b>등록 도우미</b> — "다음 주 화요일 협의회 일정 등록해줘" 하면 초안을 보여주고, 확인하면 등록까지 해줍니다. (HQ 이상)</div>
+        <div class="chk">세미도 <b>내 권한 범위 안의 자료만</b> 보여줍니다. 같은 창에서 팀원과 채팅도 됩니다.</div>
+      </div>
     </div>
-    <div class="chk">세미도 <b>내 권한 범위 안의 자료만</b> 찾고 보여줍니다. 팀 채팅 기능으로 다른 사용자와 대화할 수도 있습니다.</div>
   </div>
   <div class="sec">
     <div class="sec-t">💡 자주 쓰는 팁</div>
-    <div class="chk"><b>Ctrl+K</b> 를 습관처럼 — 어느 메뉴에 있는지 몰라도 검색하면 나옵니다.</div>
-    <div class="chk">공지 · 회의록에 <b>사진을 붙여넣기(Ctrl+V)</b> 하면 자동으로 크기가 줄어 업로드됩니다.</div>
-    <div class="chk">표 · 목록 화면이 좁아 보이면 브라우저 창을 키우세요 — 화면 폭에 맞춰 열이 늘어납니다.</div>
-    <div class="chk">업데이트 후 화면이 예전 그대로면 <b>새로고침(F5)</b>, 그래도 안 되면 <b>Ctrl+Shift+R</b>(강력 새로고침).</div>
-    <div class="chk">휴대폰 홈 화면에 바로가기를 추가해 두면 앱처럼 쓸 수 있습니다 (브라우저 메뉴 → "홈 화면에 추가").</div>
+    <div class="grid2">
+      <div>
+        <div class="chk"><b>Ctrl+K</b> 를 습관처럼 — 어디 있는지 몰라도 검색하면 나옵니다.</div>
+        <div class="chk">공지 · 회의록에 <b>사진 붙여넣기(Ctrl+V)</b> — 자동으로 크기가 줄어 업로드됩니다.</div>
+      </div>
+      <div>
+        <div class="chk">업데이트 후 화면이 예전 그대로면 <b>F5</b>, 안 되면 <b>Ctrl+Shift+R</b>.</div>
+        <div class="chk">휴대폰 브라우저 메뉴 → <b>"홈 화면에 추가"</b> — 앱처럼 쓸 수 있습니다.</div>
+      </div>
+    </div>
   </div>
   <div class="sec">
     <div class="sec-t">❓ 이런 경우에는</div>
     <table class="t">
-      <tr><th style="width:38%">증상</th><th>해결</th></tr>
+      <tr><th style="width:36%">증상</th><th>해결</th></tr>
       <tr><td>로그인이 안 돼요</td><td>암호 대소문자 확인 → 그래도 안 되면 항공보안파트에 문의 (암호 재발급)</td></tr>
-      <tr><td>메뉴가 안 보여요</td><td>내 권한으로는 표시되지 않는 메뉴입니다. 필요하면 권한 조정을 요청하세요</td></tr>
-      <tr><td>등록 버튼이 없어요</td><td>열람 전용 권한입니다. 내용 수정이 필요하면 항공보안파트로 알려주세요</td></tr>
-      <tr><td>입력한 내용이 다른 PC에 안 보여요</td><td>양쪽 모두 새로고침 — 보통 몇 초 안에 자동 반영됩니다</td></tr>
+      <tr><td>메뉴 · 등록 버튼이 안 보여요</td><td>권한에 따라 표시가 다릅니다. 필요하면 권한 조정을 요청하세요</td></tr>
+      <tr><td>입력 내용이 다른 PC에 안 보여요</td><td>양쪽 모두 새로고침 — 보통 몇 초 안에 자동 반영됩니다</td></tr>
+      <tr><td>첨부파일이 안 열려요</td><td>팝업 차단 확인 → 브라우저 주소창 오른쪽 차단 아이콘에서 허용</td></tr>
+      <tr><td>인쇄하면 색이 빠져요</td><td>인쇄 대화상자에서 "배경 그래픽" 옵션을 켜세요</td></tr>
+      <tr><td>QR 서명 화면이 안 열려요</td><td>휴대폰이 인터넷에 연결되어 있는지 확인 → 카메라 대신 QR 스캔 앱 사용</td></tr>
     </table>
   </div>
-  <div class="note" style="margin-top:4px">
+  <div class="grow"></div>
+  <div class="note">
     <b>문의:</b> 에어제타 항공보안파트 &nbsp;·&nbsp; 시스템 개선 의견은 언제든 환영합니다.<br>
     SeMIS 는 여러분의 의견으로 계속 발전하고 있습니다 — 불편한 점을 알려주시면 다음 업데이트에 반영하겠습니다.
   </div>
-  <div class="foot"><span>SeMIS v2 사용 안내서 · 에어제타 항공보안파트</span><span>9</span></div>
+  <div class="foot"><span>SeMIS v2 사용 안내서 · 에어제타 항공보안파트</span><span>10</span></div>
 </div>
 
 </body>
