@@ -3702,13 +3702,13 @@ function makeFetchStub(server) {
     ok(/프로에스콤/.test(q(e, ".page-title, .ds-head-t").textContent), "자기 업체 화면");
     ok(!qa(e, "[data-bl-vendor]").length, "업체 전환 버튼 없음");
     ok(!/인씨스전용내역/.test(q(e, "#view").textContent), "타 업체 내역 미표시");
-    // 라우팅 격리: 허용 목록 밖 모듈 접근 시도 → billing 강제
+    // 라우팅 격리: 허용 목록 밖 모듈 접근 시도 → 기본 화면(협의회, v2.46.2) 강제
     go(e, "dashboard");
-    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "dashboard 접근 → billing 강제");
+    ok(/보안장비 협의회/.test(q(e, "#view").textContent), "dashboard 접근 → 협의회 강제");
     go(e, "settings");
-    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "settings 접근 → billing 강제");
+    ok(/보안장비 협의회/.test(q(e, "#view").textContent), "settings 접근 → 협의회 강제");
     go(e, "vault");
-    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "vault(암호) 접근 → billing 강제");
+    ok(/보안장비 협의회/.test(q(e, "#view").textContent), "vault(암호) 접근 → 협의회 강제");
   });
 
   /* ══════════ [VD] 협력업체 계정 접근 범위 (v2.32) ══════════ */
@@ -3960,9 +3960,10 @@ function makeFetchStub(server) {
     go(e, "council");
     ok(!q(e, "#hdr-search-wrap").classList.contains("vendor-hide"), "전역 검색 노출(v2.46)");
     go(e, "settings");
-    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "시스템 설정 차단 → billing");
+    ok(/보안장비 협의회/.test(q(e, "#view").textContent), "시스템 설정 차단 → 기본 화면(협의회)");
     go(e, "kpi");
-    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "KPI 차단 → billing");
+    ok(/보안장비 협의회/.test(q(e, "#view").textContent), "KPI 차단 → 기본 화면(협의회)");
+    eq(e.S.vendorHome(e.S.user), "council", "운영 업체 기본 화면 = 협의회 (v2.46.2)");
   });
 
   t("BL04 vendor 입력: 항목 추가/수정 + 자기 업체 저장", () => {

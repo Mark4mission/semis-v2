@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.46.1";
+  const VERSION = "2.46.2";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -105,9 +105,12 @@ const SeMIS = (() => {
     if (!routes.length) routes.push("billing");
     return { routes, links: (a.links || []).slice(), edit: !!a.edit };
   }
-  /* 협력업체 계정의 기본 화면 (허용 목록 밖의 라우트 요청 시 이동) */
+  /* 협력업체 계정의 기본 화면 (첫 접속·허용 목록 밖의 라우트 요청 시 이동)
+     v2.46.2: 공지·대시보드가 없는 vendor 화면 특성상 협업 중심 메뉴인
+     "보안장비 협의회"를 첫 화면으로. 협의회가 없는 업체(청구 전용)는 종전대로. */
   function vendorHome(u) {
     const r = vendorAccess(u).routes;
+    if (r.indexOf("council") >= 0) return "council";
     return r.indexOf("billing") >= 0 ? "billing" : r[0];
   }
   const VIS_LABEL  = { all: "전체", mgr: "보안관리자 이상", hq: "항공보안HQ 이상", admin: "시스템관리자" };
