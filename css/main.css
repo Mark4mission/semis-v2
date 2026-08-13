@@ -1887,6 +1887,28 @@ a.ct-tel:hover { color: var(--primary); }
   width: 30px; height: 30px; border-radius: 8px; }
 .chat-x:hover { background: var(--border); color: var(--text); }
 .chat-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+/* v2.46: 채팅방 바 (팀 탭 상단, 초대제) */
+.chat-roombar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+  padding: 8px 12px 6px; border-bottom: 1px solid var(--border); }
+.chat-room { border: 1px solid var(--border-strong); background: var(--surface);
+  border-radius: 999px; font-size: .76rem; padding: 4px 11px; color: var(--text-2);
+  cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.chat-room:hover { border-color: var(--primary); color: var(--primary); }
+.chat-room.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 700; }
+.chat-room-add { font-weight: 700; padding: 4px 9px; }
+.chat-room-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); display: inline-block; }
+.chat-room-none { font-size: .76rem; color: var(--text-3); padding: 2px 0; }
+.chat-room-row { display: flex; align-items: center; gap: 8px; padding: 6px 0;
+  border-bottom: 1px solid var(--border); font-size: .86rem; }
+.chat-room-cnt { font-size: .74rem; color: var(--text-3); }
+.chat-room-members { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 4px 10px; max-height: 260px; overflow-y: auto; padding: 6px 2px;
+  border: 1px solid var(--border); border-radius: 10px; }
+.chat-room-m { display: flex; align-items: center; gap: 7px; font-size: .86rem;
+  padding: 3px 8px; cursor: pointer; border-radius: 8px; }
+.chat-room-m:hover { background: var(--surface-2); }
+.chat-room-m input { width: auto; margin: 0; }
+.chat-room-m small { color: var(--text-3); font-size: .72rem; }
 .chat-msgs { flex: 1; overflow-y: auto; padding: 14px 14px 8px; display: flex;
   flex-direction: column; gap: 10px; scroll-behavior: smooth; }
 .chat-empty { color: var(--text-3); font-size: .86rem; text-align: center; margin: auto; line-height: 1.7; }

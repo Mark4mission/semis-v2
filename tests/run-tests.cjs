@@ -2401,7 +2401,7 @@ function makeFetchStub(server) {
     await e.Sync.init();
     eq(e.Sync.status, "online");
     const keys = server.rows.map(r => r.key).sort().join(",");
-    eq(keys, "billing,branches,carCfg,cars,certOpts,certs,contacts,contracts,council,customUsers,equipMaint,equipment,gcal,inspections,kpis,levelHistory,menus,minuteFolders,minutes,notices,passOwners,passes,policy,pwOverrides,regulations,schedules,stationOfficers,supervisors,trainings,userOverrides,vault");
+    eq(keys, "billing,branches,carCfg,cars,certOpts,certs,chatRooms,contacts,contracts,council,customUsers,equipMaint,equipment,gcal,inspections,kpis,levelHistory,menus,minuteFolders,minutes,notices,passOwners,passes,policy,pwOverrides,regulations,schedules,stationOfficers,supervisors,trainings,userOverrides,vault");
     ok(server.rows.find(r => r.key === "menus").value.length >= 20);
     e.Sync.stop();
   });
@@ -3905,11 +3905,54 @@ function makeFetchStub(server) {
     ok(q(e, "[data-bl-add]"), "자기 업체 청구 입력은 가능");
   });
 
-  t("VD04 확대 계정도 검색·시스템설정 차단 유지", () => {
+  t("VD09 유지보수 계약/비용 수동 기록 업체 격리 (v2.46)", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.equipMaint = {
+        contracts: [
+          { id: "c-in", vendor: "㈜인씨스", scope: "X-ray 3대", feeMonthly: 870000, units: 3,
+            freeMonths: 0, partsOver: 200000, terms: "", note: "" },
+          { id: "c-pro", vendor: "프로에스콤", scope: "ETD 10대", feeMonthly: 500000, units: 10,
+            freeMonths: 36, partsOver: 0, terms: "", note: "" }],
+        costs: [
+          { id: "t-in", ym: "2026-01", kind: "정기 유지보수", vendor: "인씨스", amount: 2610000, serial: "", memo: "인씨스분" },
+          { id: "t-pro", ym: "2026-01", kind: "정기 유지보수", vendor: "프로에스콤", amount: 5170000, serial: "", memo: "프로분" }] };
+      return d; })();
+    const e = makeEnv({ preData: pre });
+    loginVendor(e, "인씨스", "tvd09");
+    const E = e.w.SemisEquipment;
+    // 격리 뷰: 자기 업체분만 (업체명 표기 편차 "㈜인씨스"도 매칭)
+    eq(E.visContracts().length, 1, "계약: 자기 업체 1건");
+    eq(E.visContracts()[0].id, "c-in", "계약: ㈜인씨스 매칭");
+    eq(E.visCosts().length, 1, "비용: 자기 업체 1건");
+    ok(E.sameVendor("㈜인씨스", "인씨스"), "업체명 정규화 매칭");
+    ok(!E.sameVendor("프로에스콤", "인씨스"), "타 업체 불일치");
+    // 화면: 계약/비용 탭에 타 업체 기록 미표시
+    E.setTab("contracts");
+    go(e, "equipment");
+    const vt = q(e, "#view").textContent;
+    ok(vt.includes("인씨스"), "자기 계약 표시");
+    ok(!vt.includes("프로에스콤"), "타 업체 계약 미표시");
+    E.setTab("costs");
+    E.setCostYear(2026);
+    go(e, "equipment");
+    const ct = q(e, "#view").textContent;
+    ok(ct.includes("인씨스분"), "자기 비용 표시");
+    ok(!ct.includes("프로분"), "타 업체 비용 미표시");
+    ok(!ct.includes("CARES 유상 수리비"), "CARES 참고 블록 숨김(전 장비 비용 노출 방지)");
+    ok(/2,610,000/.test(ct) && !/5,170,000/.test(ct), "집계도 자기 업체분만");
+    E.setTab("list");
+    // 내부 계정은 종전대로 전체
+    const e2 = makeEnv({ preData: pre });
+    loginAs(e2, "hq");
+    eq(e2.w.SemisEquipment.visContracts().length, 2, "hq: 전체 계약");
+    eq(e2.w.SemisEquipment.visCosts().length, 2, "hq: 전체 비용");
+  });
+
+  t("VD04 확대 계정: 검색 제공(v2.46) + 시스템설정 차단 유지", () => {
     const e = makeEnv();
     loginVendor(e, "프로에스콤", "tvd04");
     go(e, "council");
-    ok(q(e, "#hdr-search-wrap").classList.contains("vendor-hide"), "전역 검색 미노출");
+    ok(!q(e, "#hdr-search-wrap").classList.contains("vendor-hide"), "전역 검색 노출(v2.46)");
     go(e, "settings");
     ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "시스템 설정 차단 → billing");
     go(e, "kpi");
@@ -4471,16 +4514,30 @@ function makeFetchStub(server) {
       eq(SS2.search("권한테스트계약").length, 0, "계약서(hq) 미노출");
       eq(SS2.search("권한테스트유지비").length, 0, "유지보수 비용(hq 이중 게이트) 미노출");
     });
-    t("GS14 vendor — 검색 비활성 (결과 없음 + 검색창 숨김)", () => {
+    t("GS14 vendor — 검색 제공하되 허용 메뉴·자기 업체 범위로 제한 (v2.46)", () => {
       const e2 = makeEnv();
       e2.S.data.customUsers.push({ id: "tvendor", name: "T협력", role: "vendor",
         vendor: "프로에스콤", hash: e2.S.pwHash("testpw-vendor-9x") });
+      e2.S.data.billing = [
+        { id: "gb1", vendor: "프로에스콤", month: "2026-07", category: "ETD 유지보수",
+          title: "검색테스트프로청구", amount: 1000, note: "", by: "T", updated: "" },
+        { id: "gb2", vendor: "인씨스", month: "2026-07", category: "X-ray 유지보수",
+          title: "검색테스트타사청구", amount: 2000, note: "", by: "T", updated: "" }];
       e2.S.saveSilent();
       submitLogin(e2, "testpw-vendor-9x");
       mkData(e2.S);
-      eq(e2.w.SemisSearch.search("권한테스트인물").length, 0, "결과 없음");
-      eq(e2.w.SemisSearch.search("대시보드").length, 0, "메뉴도 없음");
-      ok(q(e2, "#hdr-search-wrap").classList.contains("vendor-hide"), "검색창 숨김");
+      const SS = e2.w.SemisSearch;
+      ok(!q(e2, "#hdr-search-wrap").classList.contains("vendor-hide"), "검색창 표시(v2.46)");
+      // 허용 메뉴 밖 데이터·메뉴는 미노출
+      eq(SS.search("권한테스트인물").length, 0, "출입증(비허용 모듈) 미노출");
+      eq(SS.search("대시보드").length, 0, "비허용 메뉴 미노출");
+      eq(SS.search("권한테스트계약").length, 0, "계약서 미노출");
+      // 허용 메뉴는 노출: 규정·장비 + 자기 업체 청구
+      ok(SS.search("보안규정").some(x => x.route === "regs-intl"), "허용 메뉴 히트");
+      ok(SS.search("검색테스트프로청구").length >= 1, "자기 업체 청구 히트");
+      eq(SS.search("검색테스트타사청구").length, 0, "타 업체 청구 미노출");
+      // CARES 외부 링크(vendorAccess.links)도 검색
+      ok(SS.search("CARES").some(x => x.url === "https://airzeta-security-system.web.app"), "업체 링크 히트");
     });
     t("GS15 admin — 시스템 설정 메뉴 검색 (admin 전용 vis)", () => {
       const e3 = makeEnv();
@@ -6463,15 +6520,69 @@ function makeFetchStub(server) {
       ok(qa(e, "#semi-msgs .chat-chip").length >= 2, "추천 질문 칩");
     });
 
-    await ta("CH02 vendor 로그인 → 위젯 미표시 (canUse 게이트)", async () => {
+    await ta("CH02 vendor 로그인 → 위젯 표시(v2.46) · 팀 탭은 초대 방 없으면 빈 상태", async () => {
       const st = makeChatFetch();
       const e = makeEnv({ fetch: st.fetch });
       loginAs(e, "vendor");
       await tick();
-      ok(!q(e, "#chat-fab"), "vendor에겐 FAB 없음");
+      ok(q(e, "#chat-fab"), "vendor에게도 FAB 표시(v2.46)");
+      ok(e.w.SemisChat.canUse({ role: "vendor" }), "vendor 허용");
       ok(!e.w.SemisChat.canUse({ role: "signer" }), "signer 차단");
       ok(!e.w.SemisChat.canUse(null), "미로그인 차단");
       ok(e.w.SemisChat.canUse({ role: "user" }), "user 허용");
+      // 초대된 방이 없으면 팀 탭은 빈 상태 + 입력폼 숨김 + 내부 기본방 미노출
+      eq(e.w.SemisChat.visibleRooms().length, 0, "내부 기본방 미노출");
+      q(e, "#chat-fab").click();
+      e.w.SemisChat.setTab("team");
+      ok(q(e, "#team-msgs").textContent.includes("초대된 채팅방이 없"), "빈 상태 안내");
+      ok(q(e, "#team-form").classList.contains("hidden"), "입력폼 숨김");
+      ok(!q(e, "#chat-room-add"), "vendor에겐 방 만들기 버튼 없음");
+    });
+
+    await ta("CH08 채팅방(v2.46): 내부 기본방 + 초대제 방 가시성·전송 room 태깅", async () => {
+      const st = makeChatFetch();
+      const e = makeEnv({ fetch: st.fetch });
+      loginAs(e, "hq");
+      await tick();
+      // 기본: 내부 계정은 team 방
+      eq(e.w.SemisChat.room, "team", "기본 방 team");
+      ok(e.w.SemisChat.visibleRooms().some(r => r.id === "team"), "내부 기본방 노출");
+      ok(q(e, "#chat-room-add"), "hq: 방 만들기 버튼");
+      // 초대제 방 생성(데이터 직접 주입) — hq 본인 + 인씨스 계정
+      e.S.data.customUsers.push({ id: "insisT", name: "인씨스", role: "vendor",
+        vendor: "인씨스", hash: e.S.pwHash("testpw-insisT-9x") });
+      e.S.data.chatRooms = [
+        { id: "crA", name: "인씨스 협력 채널", members: ["thq", "insisT"], createdBy: "thq", created: "" },
+        { id: "crB", name: "타업체 방", members: ["proscomT"], createdBy: "thq", created: "" }];
+      e.S.saveSilent();
+      const vis = e.w.SemisChat.visibleRooms();
+      ok(vis.some(r => r.id === "crA"), "멤버인 방 노출");
+      ok(!vis.some(r => r.id === "crB"), "비멤버 방 미노출");
+      // 방 전환 + 전송 시 room 태깅
+      e.w.SemisChat.setTab("team");
+      e.w.SemisChat.setRoom("crA");
+      await e.w.SemisChat.sendTeam("협력 채널 첫 메시지");
+      await tick();
+      const post = st.calls.filter(c => c.method === "POST" && c.url.includes("chat_messages")).pop();
+      eq(post.body.room, "crA", "전송 메시지에 방 id");
+      // 다른 방 수신분은 현재 방에 표시되지 않고 배지만
+      e.w.SemisChat.addIncoming({ id: "y1", created_at: new Date().toISOString(),
+        author: "팀원", author_id: "tmgr", role: "manager", room: "team", text: "내부방 메시지" });
+      ok(!q(e, "#team-msgs").textContent.includes("내부방 메시지"), "타 방 메시지 미표시");
+      // vendor 계정으로 재로그인 → 초대된 crA만 보임 + 내부 기본방 없음
+      submitLogin(e, "testpw-insisT-9x");
+      await tick();
+      const vv = e.w.SemisChat.visibleRooms();
+      eq(vv.length, 1, "vendor: 초대된 방 1개만");
+      eq(vv[0].id, "crA", "vendor: crA 노출");
+      eq(e.w.SemisChat.room, "crA", "vendor 기본 방 = 초대된 방");
+      ok(!q(e, "#chat-room-add"), "vendor: 방 관리 버튼 없음");
+    });
+
+    t("CH09 chatRooms 동기화·정규화 (v2.46)", () => {
+      const e = makeEnv();
+      ok(e.Sync.SYNC_KEYS.includes("chatRooms"), "SYNC_KEYS 등록");
+      ok(Array.isArray(e.S.data.chatRooms), "normalize: 배열 보장");
     });
 
     await ta("CH03 팀 채팅 전송 → REST POST(작성자 정보) + 내 말풍선 렌더", async () => {

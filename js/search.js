@@ -6,7 +6,10 @@
    설계 원칙
    - 권한: 결과마다 해당 메뉴의 vis(SeMIS.canSee)를 그대로 적용 —
      접속 계정의 권한 범위 안에서만 노출. 대외비(계약·유지보수 비용·청구)는
-     추가로 minRank(hq 이상) 이중 게이트. vendor 계정은 검색 자체 미노출.
+     추가로 minRank(hq 이상) 이중 게이트.
+   - vendor(협력업체, v2.46): 검색 제공하되 허용 라우트(vendorAccess) 안의
+     모듈만 대상. 자기 업체 격리 모듈(청구·유지보수 계약/비용)은 모듈의
+     격리 뷰(visible/visContracts)를 그대로 사용해 검색으로 우회 불가.
    - 확장성: 메뉴/링크는 DATA.menus를 검색 시점에 실시간 스캔 —
      이후 메뉴를 추가·변경해도 즉시 검색됨. 데이터는 프로바이더 레지스트리
      (SemisSearch.register)로 신규 모듈이 스스로 등록 가능.
@@ -31,7 +34,17 @@ const SemisSearch = (() => {
     if (i >= 0) providers[i] = p; else providers.push(p);
   }
 
+  /* v2.46: vendor 계정 판정 + 허용 라우트 */
+  const isVendor = () => !!(S().user && S().user.role === "vendor");
+  function vendorRoutes() {
+    try { return S().vendorAccess(S().user).routes || []; } catch (e) { return []; }
+  }
   function canUseProvider(p) {
+    if (isVendor()) {
+      // 협력업체: 허용 라우트 안의 모듈만. 데이터 격리는 각 프로바이더의
+      // 격리 뷰가 담당하므로 minRank(대외비 게이트)는 라우트 허용으로 갈음.
+      return !!(p.module && vendorRoutes().indexOf(p.module) >= 0);
+    }
     const rank = S().roleRank();
     if (p.minRank && rank < p.minRank) return false;
     if (p.module) {
@@ -87,12 +100,27 @@ const SemisSearch = (() => {
   function search(q) {
     const ts = terms(q);
     const u = S().user;
-    if (!ts.length || !u || u.role === "vendor") return [];
+    if (!ts.length || !u || u.role === "signer") return [];
     const out = [];
 
-    /* 1) 메뉴/링크 — DATA.menus 실시간 스캔 (메뉴 추가·변경 즉시 반영) */
+    /* 1) 메뉴/링크 — DATA.menus 실시간 스캔 (메뉴 추가·변경 즉시 반영)
+       vendor는 허용 라우트의 모듈 메뉴 + 업체 전용 링크(vendorAccess.links)만 */
     const menuHits = [];
-    S().sortedMenus().forEach(mn => {
+    if (isVendor()) {
+      const routes = vendorRoutes();
+      S().sortedMenus().forEach(mn => {
+        if (!mn || mn.type !== "module" || routes.indexOf(mn.module) < 0) return;
+        const it = { title: mn.label, sub: "메뉴로 이동", icon: mn.icon || "▪", route: mn.module };
+        const sc = scoreOf(it, ts);
+        if (sc) menuHits.push(Object.assign({ group: "메뉴 · 링크", score: sc }, it));
+      });
+      (S().vendorAccess(u).links || []).forEach(l => {
+        const it = { title: l.label, sub: "새 탭으로 열기", icon: l.icon || "🔗",
+          text: [l.label, l.url], url: l.url };
+        const sc = scoreOf(it, ts);
+        if (sc) menuHits.push(Object.assign({ group: "메뉴 · 링크", score: sc }, it));
+      });
+    } else S().sortedMenus().forEach(mn => {
       if (!mn || mn.type === "group" || !S().canSee(mn)) return;
       const it = mn.type === "module"
         ? { title: mn.label, sub: "메뉴로 이동", icon: mn.icon || "▪", route: mn.module }
@@ -202,14 +230,18 @@ const SemisSearch = (() => {
       text: [x.name, x.type, x.serial, x.location, x.vendor, x.cert, x.status, x.note,
              A(x.logs).map(l => (l.kind || "") + " " + (l.text || ""))] })) });
 
-  /* 유지보수 계약·비용 — 대외비: 장비 메뉴 접근 + hq 이상 이중 게이트 */
+  /* 유지보수 계약·비용 — 대외비: 장비 메뉴 접근 + hq 이상 이중 게이트.
+     v2.46: vendor는 SemisEquipment의 격리 뷰(자기 업체분)만 검색 대상 */
   register({ id: "equipMaint", group: "장비 유지보수 (대외비)", icon: "🧰", module: "equipment", minRank: 3,
     items: () => {
+      const E = window.SemisEquipment;
       const m = D().equipMaint || {};
-      return A(m.contracts).map(c => ({
+      const cons = E && E.visContracts ? E.visContracts() : A(m.contracts);
+      const costs = E && E.visCosts ? E.visCosts() : A(m.costs);
+      return cons.map(c => ({
         title: "유지보수 계약 · " + (c.vendor || ""), sub: [c.scope, c.terms].filter(Boolean).join(" · "),
         text: [c.vendor, c.scope, c.terms, c.note] }))
-      .concat(A(m.costs).map(c => ({
+      .concat(costs.map(c => ({
         title: "유지보수 비용 · " + (c.ym || "") + (c.vendor ? " " + c.vendor : ""),
         sub: [c.kind, c.serial, c.memo].filter(Boolean).join(" · "),
         text: [c.ym, c.kind, c.vendor, c.serial, c.memo] })));
@@ -296,8 +328,10 @@ const SemisSearch = (() => {
       sub: [x.org, x.team, x.tel].filter(Boolean).join(" · "),
       text: [x.name, x.org, x.team, x.title, x.empNo, x.passNo, x.tel, x.note] })) });
 
+  /* v2.46: vendor는 SemisBilling.visible()(자기 업체 격리)만 검색 대상 */
   register({ id: "billing", group: "대금 청구 (대외비)", icon: "🧾", module: "billing", minRank: 3,
-    items: () => A(D().billing).map(b => ({
+    items: () => (window.SemisBilling && SemisBilling.visible
+      ? SemisBilling.visible() : A(D().billing)).map(b => ({
       title: "[" + (b.month || "") + "] " + (b.title || ""),
       sub: [b.vendor, b.category, b.amount ? Number(b.amount).toLocaleString() + "원" : ""].filter(Boolean).join(" · "),
       text: [b.vendor, b.title, b.category, b.note, b.month] })) });
@@ -322,7 +356,7 @@ const SemisSearch = (() => {
   function renderPop(q) {
     if (!pop) return;
     const u = S().user;
-    if (!u || u.role === "vendor") { closePop(); return; }
+    if (!u || u.role === "signer") { closePop(); return; }
     const ts = terms(q);
     if (!ts.length) { closePop(); return; }
     items = search(q);
@@ -389,7 +423,7 @@ const SemisSearch = (() => {
     // 단축키: Ctrl/Cmd+K 또는 "/" (입력 중이 아닐 때)
     document.addEventListener("keydown", (e) => {
       const u = S().user;
-      if (!u || u.role === "vendor") return;
+      if (!u || u.role === "signer") return;
       const inField = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || "") ||
         (e.target && e.target.isContentEditable);
       if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") || (!inField && e.key === "/")) {

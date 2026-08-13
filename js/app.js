@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.45.0";
+  const VERSION = "2.46.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -244,6 +244,7 @@ const SeMIS = (() => {
       certs: [],                      // v2.15: 교육 이수증 관리 (외부기관 보안책임자/감독자 등)
       certOpts: { roles: [], orgs: [] }, // v2.17: 이수증 선택지(과정/수료기관 — 사용자 관리, 빈 배열이면 normalize가 기본값 시드)
       billing: [],                    // v2.16: 대금 청구 (협력업체 월별 입력 — 프로에스콤/인씨스)
+      chatRooms: [],                  // v2.46: 팀 채팅 초대제 채팅방 [{id,name,members[],createdBy,created}]
       supervisors: seedSupervisors(),        // v2.34: 보안감독자 현황 (구글시트 이관)
       stationOfficers: seedStationOfficers(), // v2.34: 지점 보안담당자 (구글시트 이관)
       vault: { v: 1, members: [], data: null, updated: "" } // v2.9: 암호 관리 (암호문만 저장)
@@ -342,6 +343,7 @@ const SeMIS = (() => {
     }
     DATA.customUsers = DATA.customUsers || [];
     DATA.schedules = DATA.schedules || [];
+    if (!Array.isArray(DATA.chatRooms)) DATA.chatRooms = []; // v2.46: 초대제 채팅방
     // 구버전 secLevel → levelHistory 마이그레이션
     if (!Array.isArray(DATA.levelHistory) || !DATA.levelHistory.length) {
       const old = DATA.secLevel;
@@ -1165,8 +1167,9 @@ const SeMIS = (() => {
   /* ─────────── 헤더 위젯 ─────────── */
   function renderHeader() {
     $("#user-chip").textContent = currentUser.name + " · " + (ROLE_LABEL[currentUser.role] || currentUser.role);
-    // v2.18: 전역 검색 — vendor(협력업체)·signer(서명) 계정은 검색 미노출
-    const lite = currentUser.role === "vendor" || currentUser.role === "signer";
+    // v2.18: 전역 검색 — signer(서명) 계정만 미노출.
+    // v2.46: vendor(협력업체)에도 제공 — 검색 범위는 search.js가 허용 메뉴로 제한.
+    const lite = currentUser.role === "signer";
     const sw = $("#hdr-search-wrap"), sb = $("#hdr-search-btn");
     if (sw) sw.classList.toggle("vendor-hide", lite);
     if (sb) sb.classList.toggle("vendor-hide", lite);

@@ -217,6 +217,18 @@
     if (!Array.isArray(m.costs)) m.costs = [];
     return m;
   }
+  /* v2.46: 협력업체(vendor) 계정 — 유지보수 계약/비용 수동 기록을 자기 업체분으로 격리.
+     업체명은 자유 입력 필드라 정규화(공백 제거·소문자) 후 포함 관계로 판정 —
+     "㈜인씨스"·"인씨스 " 같은 표기 편차를 흡수. 신규 업체 계정도 자동 적용. */
+  const isVendorUser = () => !!(SeMIS.user && SeMIS.user.role === "vendor");
+  const normName = (s) => String(s || "").replace(/[\s㈜()주식회사]/g, "").toLowerCase();
+  function sameVendor(a, b) {
+    const x = normName(a), y = normName(b);
+    return !!(x && y && (x.includes(y) || y.includes(x)));
+  }
+  const ownMaintRec = (r) => !isVendorUser() || sameVendor(r && r.vendor, SeMIS.user.vendor);
+  const visContracts = () => M().contracts.filter(ownMaintRec);
+  const visCosts = () => M().costs.filter(ownMaintRec);
   /* v2.17: 대금 청구(billing) 연동 — 유지보수 성격 청구를 비용 기록에 자동 반영.
      billing이 원본(가상 행)이라 업체 입력 수정 시 즉시 집계에 반영됨. */
   const blMod = () => (window.SemisBilling && SeMIS.canEdit() ? window.SemisBilling : null);
@@ -240,7 +252,7 @@
     return autoRows.some(a => a.vendor === v && a.ym === c.ym);
   }
   function yearCosts(year) {
-    const all = M().costs.filter(c => String(c.ym || "").slice(0, 4) === String(year));
+    const all = visCosts().filter(c => String(c.ym || "").slice(0, 4) === String(year));
     const autoRows = billingAutoRows(year);
     const excluded = all.filter(c => isDupManual(c, autoRows));
     const rows = all.filter(c => excluded.indexOf(c) < 0);
@@ -538,10 +550,12 @@
   function contractForm(id) {
     const m = M();
     const x = id ? m.contracts.find(c => c.id === id) : null;
+    if (x && !ownMaintRec(x)) return; // v2.46: 타 업체 계약은 vendor 계정에서 열람·수정 불가
+    const vFixed = isVendorUser() ? String(SeMIS.user.vendor || "") : null;
     openModal(`
       <h3>${x ? "계약 수정" : "유지보수 계약 등록"} <span class="badge badge-gray">보안장비</span></h3>
       <div class="form-grid">
-        <div class="form-row"><label>업체</label><input id="mc-vendor" value="${esc(x ? x.vendor : "")}" maxlength="60" placeholder="예: 인씨스"></div>
+        <div class="form-row"><label>업체</label><input id="mc-vendor" value="${esc(x ? x.vendor : (vFixed || ""))}" maxlength="60" placeholder="예: 인씨스" ${vFixed ? "readonly" : ""}></div>
         <div class="form-row"><label>대상 장비</label><input id="mc-scope" value="${esc(x ? x.scope : "")}" maxlength="60" placeholder="예: X-ray 3대"></div>
       </div>
       <div class="form-grid">
@@ -565,8 +579,9 @@
       SeMIS.save(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
     });
     $("#mc-save").onclick = () => {
-      const vendor = $("#mc-vendor").value.trim();
+      const vendor = vFixed || $("#mc-vendor").value.trim();
       if (!vendor) { toast("업체명을 입력하세요.", true); return; }
+      if (vFixed && !sameVendor(vendor, vFixed)) { toast("자기 업체 계약만 등록할 수 있습니다.", true); return; }
       const rec = {
         vendor, scope: $("#mc-scope").value.trim(),
         feeMonthly: Number($("#mc-fee").value) || 0,
@@ -583,7 +598,7 @@
   }
 
   function contractsHTML(canWrite) {
-    const cs = M().contracts;
+    const cs = visContracts();
     if (!cs.length) return '<div class="empty">등록된 유지보수 계약이 없습니다.' + (canWrite ? " '+ 계약 등록'으로 추가하세요." : "") + "</div>";
     const annual = cs.reduce((s, c) => s + (c.feeMonthly || 0) * (c.units || 0) * 12, 0);
     return `
@@ -605,6 +620,8 @@
   function costForm(id) {
     const m = M();
     const x = id ? m.costs.find(c => c.id === id) : null;
+    if (x && !ownMaintRec(x)) return; // v2.46: 타 업체 비용 기록은 vendor 계정에서 열람·수정 불가
+    const vFixed = isVendorUser() ? String(SeMIS.user.vendor || "") : null;
     const defYM = new Date().toISOString().slice(0, 7);
     openModal(`
       <h3>${x ? "비용 기록 수정" : "비용 기록 추가"} <span class="badge badge-gray">보안장비</span></h3>
@@ -614,7 +631,7 @@
           <select id="ct-kind">${COST_KINDS.map(k => `<option ${(x ? x.kind : COST_KINDS[0]) === k ? "selected" : ""}>${k}</option>`).join("")}</select></div>
       </div>
       <div class="form-grid">
-        <div class="form-row"><label>업체</label><input id="ct-vendor" value="${esc(x ? x.vendor || "" : "")}" maxlength="60" placeholder="예: 프로에스콤"></div>
+        <div class="form-row"><label>업체</label><input id="ct-vendor" value="${esc(x ? x.vendor || "" : (vFixed || ""))}" maxlength="60" placeholder="예: 프로에스콤" ${vFixed ? "readonly" : ""}></div>
         <div class="form-row"><label>금액 (원)</label><input type="number" id="ct-amount" min="0" value="${esc(x && x.amount != null ? x.amount : "")}" placeholder="예: 2610000"></div>
       </div>
       <div class="form-grid">
@@ -640,7 +657,9 @@
       const ym = $("#ct-ym").value;
       if (!/^\d{4}-\d{2}$/.test(ym)) { toast("귀속 월을 선택하세요.", true); return; }
       const amount = Number($("#ct-amount").value) || 0;
-      const rec = { ym, kind: $("#ct-kind").value, vendor: $("#ct-vendor").value.trim(),
+      const vend = vFixed || $("#ct-vendor").value.trim();
+      if (vFixed && !sameVendor(vend, vFixed)) { toast("자기 업체 비용만 기록할 수 있습니다.", true); return; }
+      const rec = { ym, kind: $("#ct-kind").value, vendor: vend,
         amount, serial: $("#ct-serial").value.trim(), memo: $("#ct-memo").value.trim(),
         force: !!$("#ct-force").checked };
       if (x) Object.assign(x, rec);
@@ -836,7 +855,7 @@
         🧾 청구 연동: 프로에스콤 ETD·인씨스 X-ray 유지보수 청구가 월별 표에 자동 집계됩니다 (수정은 대금 청구 관리에서).
         같은 달·같은 업체의 수동 기록은 중복 계상 방지를 위해 자동 제외되며, 별개 비용은 기록 수정에서 '항상 집계에 포함'을 체크하세요.</div>` : ""}
       ${billingCostBlock()}
-      ${caresCostBlock()}`;
+      ${isVendorUser() ? "" : caresCostBlock()}`;
   }
 
   /* v2.17: 협력업체 대금 청구(billing) 월별 정산표 — settle() 결과 그대로 자동 대입 + 이동 버튼 */
@@ -1047,6 +1066,7 @@
     TYPES, STATUSES, TYPE_LIFE, COST_KINDS, addMonths,
     lifeBase, lifeYearsOf, replaceDue, isLifeDue,
     stats, list, yearCosts, renderDash, loadCares,
+    visContracts, visCosts, sameVendor, // v2.46: vendor 격리 뷰 (검색·타 모듈 공용)
     setFilter: (f) => { stFilter = f; }, setQuery: (q) => { query = String(q || ""); },
     setTab: (t) => { tab = t; }, setCostYear: (y) => { costYear = Number(y) || new Date().getFullYear(); }
   };
