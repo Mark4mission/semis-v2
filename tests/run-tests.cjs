@@ -3875,9 +3875,15 @@ function makeFetchStub(server) {
     ok(q(e, "#e-save") && !q(e, "#e-del"), "장비 수정 가능·삭제 없음");
     e.S.closeModal();
     go(e, "council");
+    ok(!q(e, "#cn-kpi"), "vendor: C6-1 과제 보기 버튼 없음 (v2.46.1 — KPI는 내부 전용)");
     q(e, '[data-cn-row="im1"]').click();
     ok(q(e, "#cn-edit") && !q(e, "#cn-del"), "회의록 수정 가능·삭제 없음");
     e.S.closeModal();
+    // 내부 hq는 종전대로 버튼 유지 (회귀)
+    const eh = makeEnv({ preData: pre });
+    loginAs(eh, "hq");
+    go(eh, "council");
+    ok(q(eh, "#cn-kpi"), "hq: C6-1 과제 보기 버튼 유지");
   });
 
   t("VD08 인씨스 청구는 인씨스 탭만 — 프로에스콤 내역·탭 차단 (v2.45)", () => {

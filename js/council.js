@@ -72,7 +72,9 @@
     String(b.id || "").localeCompare(String(a.id || "")));
   const nextRound = () => (all().reduce((mx, x) => Math.max(mx, Number(x.round) || 0), 0) + 1);
   const canWrite = () => SeMIS.canEdit();
-  const canSeeKpi = () => SeMIS.roleRank() >= 3;
+  /* v2.46.1: 편집 권한 협력업체(vendor)도 rank 3이지만 KPI는 내부 전용 메뉴 —
+     버튼을 노출하면 라우팅 가드에 막혀 대금 청구로 튕기므로 vendor는 제외 */
+  const canSeeKpi = () => SeMIS.roleRank() >= 3 && !(SeMIS.user && SeMIS.user.role === "vendor");
 
   const nl2br = (s) => esc(String(s || "")).replace(/\n/g, "<br>");
   const meetTitle = (x) => (x.round ? "제" + x.round + "차 " : "") + "보안장비 협의회";
