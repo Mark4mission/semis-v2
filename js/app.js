@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.44.0";
+  const VERSION = "2.45.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -85,12 +85,17 @@ const SeMIS = (() => {
      (rank 3 — 장비 대장·유지보수 계약/비용·구입가, 협의회 회의록, 규정 등록/수정)을 가짐.
      단 레코드 삭제는 항상 내부 계정 전용(canDelete) — 자료 유실 방지.
      업체별 메뉴·편집 권한 조정은 이 표만 수정하면 됩니다. */
+  /* v2.45: 보안장비 위탁 운영·유지보수 업체 공통 접근 범위 (프로에스콤 = ETD / 인씨스 = X-ray).
+     두 업체는 동일한 메뉴·편집 권한을 갖되, 대금 청구는 billing 모듈이 role==="vendor" 계정을
+     자기 업체로 격리(visible()/canWriteFor)하므로 각자 자기 업체 탭·내역만 보게 된다. */
+  const VENDOR_OPS_ACCESS = {
+    routes: ["regs-intl", "equipment", "council", "billing"],
+    links: [{ label: "CARES (보안장비 관제)", icon: "🛰", url: "https://airzeta-security-system.web.app" }],
+    edit: true
+  };
   const VENDOR_ACCESS = {
-    "프로에스콤": {
-      routes: ["regs-intl", "equipment", "council", "billing"],
-      links: [{ label: "CARES (보안장비 관제)", icon: "🛰", url: "https://airzeta-security-system.web.app" }],
-      edit: true
-    }
+    "프로에스콤": VENDOR_OPS_ACCESS,
+    "인씨스": VENDOR_OPS_ACCESS
   };
   const VENDOR_DEFAULT = { routes: ["billing"], links: [], edit: false };
   const VENDOR_NAV_LABEL = { billing: { label: "대금 청구 입력", icon: "🧾" } };

@@ -3712,15 +3712,18 @@ function makeFetchStub(server) {
   });
 
   /* ══════════ [VD] 협력업체 계정 접근 범위 (v2.32) ══════════ */
-  t("VD01 기본 업체(인씨스): 대금 청구 전용 — 네비 1개 + 타 라우트 차단", () => {
+  t("VD01 화이트리스트 미등록 업체: 대금 청구 전용 — 네비 1개 + 타 라우트 차단", () => {
     const e = makeEnv();
-    loginVendor(e, "인씨스", "tvd01");
+    loginVendor(e, "신규협력사", "tvd01");
     eq(e.S.vendorAccess(e.S.user).routes.join(","), "billing", "허용 라우트 billing만");
     eq(e.S.vendorHome(e.S.user), "billing", "기본 화면 billing");
+    eq(e.S.roleRank(), 1, "기본 업체는 등급 1");
+    ok(!e.S.canEdit(), "편집 권한 없음");
     go(e, "billing");
     eq(qa(e, "#nav-menu .nav-item").length, 1, "네비 메뉴 1개");
+    eq(q(e, "#nav-menu .nav-item.active").dataset.route, "billing", "현재 메뉴 billing");
     go(e, "equipment");
-    ok(/대금 청구/.test(q(e, ".page-title, .ds-head-t").textContent), "장비 접근 → billing 강제");
+    eq(q(e, "#nav-menu .nav-item.active").dataset.route, "billing", "장비 접근 → billing 강제");
   });
 
   t("VD02 프로에스콤: 확대 메뉴 4개 + CARES 링크, 순서/라벨 확인", () => {
@@ -3839,11 +3842,65 @@ function makeFetchStub(server) {
     e.S.closeModal();
   });
 
-  t("VD06 비편집 업체(인씨스)는 종전대로 등급 1 + 청구만", () => {
-    const e = makeEnv();
+  t("VD06 인씨스: 프로에스콤과 동일한 메뉴·편집 권한 (v2.45)", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.equipment = [{ id: "iq1", type: "X-RAY(엑스레이)", name: "XR-1", serial: "S1", location: "검색장",
+        vendor: "인씨스", mfgDate: "2024-01-01", installed: "2024-01-01", status: "정상", logs: [], note: "" }];
+      d.council = [{ id: "im1", round: 1, date: "2026-06-01", place: "회의실", vis: "mgr",
+        attendees: [], agendas: [], cases: [], decisions: [], files: [], body: "", updated: "" }];
+      d.regulations = [{ id: "ir1", scope: "intl", title: "ICAO Annex 17", org: "ICAO", ver: "12판",
+        date: "2026-01-01", url: "", fileName: "", note: "", ideas: [] }];
+      return d; })();
+    const e = makeEnv({ preData: pre });
     loginVendor(e, "인씨스", "tvd06");
-    eq(e.S.roleRank(), 1, "등급 1 유지");
-    ok(!e.S.canEdit(), "타 모듈 편집 권한 없음");
+    const acc = e.S.vendorAccess(e.S.user), pro = e.S.VENDOR_ACCESS["프로에스콤"];
+    eq(acc.routes.join(","), pro.routes.join(","), "허용 라우트 프로에스콤과 동일");
+    eq(acc.links.map(l => l.url).join(","), pro.links.map(l => l.url).join(","), "링크(CARES) 동일");
+    eq(e.S.roleRank(), 3, "편집 업체 = hq 동등 등급");
+    ok(e.S.canEdit(), "편집 권한 있음");
+    ok(!e.S.canDelete(), "삭제 권한 없음");
+    go(e, "billing");
+    const items = qa(e, "#nav-menu .nav-item");
+    eq(items.length, 5, "네비 4개 모듈 + CARES 링크");
+    eq(items.map(n => n.dataset.route || "").slice(0, 4).join(","),
+      "regs-intl,equipment,council,billing", "메뉴 순서");
+    eq(items[4].getAttribute("href"), "https://airzeta-security-system.web.app", "CARES 링크");
+    // 확대 메뉴 열람·편집
+    go(e, "regs-intl");
+    ok(/ICAO Annex 17/.test(q(e, "#view").textContent), "규정 목록 열람");
+    go(e, "equipment");
+    ok(/XR-1/.test(q(e, "#view").textContent), "장비 대장 열람");
+    ok(q(e, "#eq-add"), "장비 등록 버튼(편집 가능)");
+    q(e, '[data-eq-row="iq1"]').click();
+    ok(q(e, "#e-save") && !q(e, "#e-del"), "장비 수정 가능·삭제 없음");
+    e.S.closeModal();
+    go(e, "council");
+    q(e, '[data-cn-row="im1"]').click();
+    ok(q(e, "#cn-edit") && !q(e, "#cn-del"), "회의록 수정 가능·삭제 없음");
+    e.S.closeModal();
+  });
+
+  t("VD08 인씨스 청구는 인씨스 탭만 — 프로에스콤 내역·탭 차단 (v2.45)", () => {
+    const e = makeEnv();
+    loginVendor(e, "인씨스", "tvd08");
+    const B = e.w.SemisBilling;
+    e.S.data.billing = [
+      blSeed({ vendor: "프로에스콤", category: "ETD 유지보수", title: "프로내역", amount: 5170000 }),
+      blSeed({ vendor: "프로에스콤", category: "보안검색&경비", title: "도급비내역", amount: 20000000 }),
+      blSeed({ vendor: "인씨스", category: "X-ray 유지보수", title: "인씨스내역", amount: 3300000 })];
+    e.S.saveSilent();
+    B.setMonth("2026-07");
+    go(e, "billing");
+    ok(/인씨스/.test(q(e, ".ds-head-t").textContent), "청구 화면 인씨스 고정");
+    ok(!qa(e, "[data-bl-vendor]").length, "업체 전환 탭 없음");
+    eq(B.visible().length, 1, "자기 업체 레코드만 조회");
+    ok(!B.visible().some(r => r.vendor !== "인씨스"), "타 업체 레코드 미노출");
+    const txt = q(e, "#view").textContent;
+    ok(/인씨스내역/.test(txt), "자기 내역 표시");
+    ok(!/프로내역|도급비내역|프로에스콤/.test(txt), "프로에스콤 내역·업체명 미표시");
+    eq(B.settle("프로에스콤", "2026-07").net, 0, "타 업체 정산 0 (데이터 미노출)");
+    B.itemForm("프로에스콤", "2026-07", "ETD 유지보수", null);
+    ok(!q(e, "#bl-save"), "프로에스콤 청구 폼 차단");
     go(e, "billing");
     ok(q(e, "[data-bl-add]"), "자기 업체 청구 입력은 가능");
   });
