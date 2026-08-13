@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.46.2";
+  const VERSION = "2.46.3";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -572,16 +572,12 @@ const SeMIS = (() => {
     if (!DATA.menus.some(m => m && m.type === "module" && m.module === "minutes")) {
       const sc = DATA.menus.find(m => m && m.type === "module" && m.module === "schedule");
       DATA.menus.push({ id: "minutes", seq: sc ? (sc.seq || 0) + 0.2 : 2.2, type: "module",
-        label: "회의록 게시판", icon: "🗒️", module: "minutes", vis: "all", parent: null });
+        label: "회의록 게시판", icon: "🗒️", module: "minutes", vis: "mgr", parent: null });
     }
-    /* v2.40.2: 회의록 열람은 "직급"이 아니라 "참석 사실"로 통제한다(모듈이 내부에서 판정).
-       참석자가 일반사용자여도 본인 회의는 봐야 하므로 메뉴는 전 계정에 열어 둔다.
-       ※ 1회성 플래그로 처리하면 원격 pull이 menus를 덮어쓸 때 되돌아가므로(플래그는 이미 소진됨)
-         "mgr로는 제한할 수 없다"를 불변식으로 두고 매번 보정한다. hq·admin 제한은 그대로 존중. */
-    {
-      const mn = DATA.menus.find(m => m && m.type === "module" && m.module === "minutes");
-      if (mn && (mn.vis === "mgr" || !mn.vis)) mn.vis = "all";
-    }
+    /* v2.46.3: (v2.40.2 불변식 폐지) 회의록 메뉴 vis는 관리자 설정을 그대로 존중한다.
+       종전에는 "참석자(일반사용자)도 봐야 한다"는 이유로 mgr 설정을 매번 all로 되돌렸으나,
+       전체공개는 운영상 무의미하다는 판단에 따라 제거. 참석 기반 열람 원칙은 canSee()의
+       예외(본인 참석·작성 회의가 있으면 등급 무관 진입 허용)로 유지된다. */
     /* v2.41: HTML 소스를 일반 텍스트로 붙여넣어 "<b>…</b>" 가 글자 그대로 굳어버린 본문 복구.
        요소 노드가 이미 있으면 건너뛰므로 멱등하며, 보정이 생기면 normalize 반환값을 통해
        공용 DB로도 자동 반영된다. (회의록 게시판 · 보안장비 협의회 · 공지사항) */
@@ -840,10 +836,20 @@ const SeMIS = (() => {
   const canEdit = () => roleRank() >= 3; // 편집 권한: hq 이상 (v2.11)
   /* v2.32.1: 레코드 삭제 — 편집 권한 + 내부 계정만 (협력업체는 등록·수정만) */
   const canDelete = () => canEdit() && !(currentUser && currentUser.role === "vendor");
+  /* v2.46.3: 회의록 게시판 참석자 예외 — 등급이 모자라도 "본인이 참석·작성한 회의"가
+     있으면 진입 허용 (v2.40.2 참석 기반 열람 원칙 유지). 무엇을 볼 수 있는지는 모듈의
+     visibleAll()이 그대로 판정하므로 이 예외로 타인 회의가 열리지는 않는다.
+     vis="hq"/"admin" 제한은 관리자 의도로 보고 예외 없이 존중(종전과 동일). */
+  function minutesAttendee(menu) {
+    if (menu.module !== "minutes" || !currentUser) return false;
+    if (currentUser.role === "vendor" || currentUser.role === "signer") return false;
+    if (typeof window === "undefined" || !window.SemisMinutes) return false;
+    try { return window.SemisMinutes.visibleAll().length > 0; } catch (e) { return false; }
+  }
   function canSee(menu) {
     const vis = menu.vis || "all";
     if (vis === "all") return true;
-    if (vis === "mgr") return roleRank() >= 2;
+    if (vis === "mgr") return roleRank() >= 2 || minutesAttendee(menu);
     if (vis === "hq") return roleRank() >= 3;
     return roleRank() >= 4;
   }

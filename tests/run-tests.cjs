@@ -7756,7 +7756,7 @@ function makeFetchStub(server) {
     ok(fs.some(f => f.id === "mf-part"), "항공보안파트 정례회의 폴더");
     const mn = e.S.data.menus.find(m => m.type === "module" && m.module === "minutes");
     ok(mn, "메뉴 등록");
-    eq(mn.vis, "all", "메뉴는 전 계정 개방 — 실제 열람은 참석 여부로 모듈이 통제");
+    eq(mn.vis, "mgr", "기본 열람 권한 mgr (v2.46.3 — 참석자는 canSee 예외로 진입)");
     const sc = e.S.data.menus.find(m => m.type === "module" && m.module === "schedule");
     ok(mn.seq > sc.seq, "일정관리 다음 순서");
     ok(Array.isArray(e.S.data.minutes), "minutes 배열");
@@ -7937,14 +7937,18 @@ function makeFetchStub(server) {
     e2.S.closeModal();
   });
 
-  t("MN09 일반사용자도 모듈 접근 가능 — 단 참석 이력이 없으면 아무것도 안 보임", () => {
+  t("MN09 일반사용자: 참석 이력 없으면 차단, 참석하면 본인 회의만 (v2.46.3)", () => {
     const e = mnEnv("user");
     e.S.data.minutes = [{ id: "mu1", folder: MF, no: 1, date: "2026-08-07", title: "남의 회의",
       attendees: [{ name: "다른사람", org: "A" }], decisions: [], byId: "someone" }];
     go(e, "minutes");
-    ok(q(e, "#view").textContent.indexOf("회의록 게시판") >= 0, "일반사용자도 화면 진입 가능");
-    eq(qa(e, "#mn-body [data-mn-row]").length, 0, "미참석 회의는 목록에 없음");
-    ok(q(e, "#mn-body").textContent.indexOf("열람 가능한 회의록이 없습니다") >= 0, "사유 안내");
+    ok(q(e, "#view").textContent.indexOf("회의록 게시판") < 0, "미참석 일반사용자는 진입 차단(vis=mgr)");
+    // 본인이 참석자로 기록되면 canSee 예외로 진입 가능
+    e.S.data.minutes.push({ id: "mu2", folder: MF, no: 2, date: "2026-08-08", title: "내 회의",
+      attendees: [{ name: "Tuser", org: "지점" }], decisions: [], byId: "someone" });
+    go(e, "minutes");
+    ok(q(e, "#view").textContent.indexOf("회의록 게시판") >= 0, "참석자는 진입 가능");
+    eq(qa(e, "#mn-body [data-mn-row]").length, 2, "본인 참석 + 같은 회의체 회차 열람(기존 명세)");
     ok(!q(e, "#mn-add"), "작성 버튼 없음(mgr 미만)");
   });
 
@@ -8509,33 +8513,56 @@ function makeFetchStub(server) {
     ok(!q(e, "#mn-body"), "회의록 목록 접근 불가");
   });
 
-  t("AC14 회의록 메뉴 vis는 mgr로 제한될 수 없다 (원격 덮어쓰기 후에도 유지)", () => {
+  t("AC14 회의록 메뉴 vis는 관리자 설정 존중 — 원격 pull에도 되돌아가지 않음 (v2.46.3)", () => {
     const e = makeEnv();
     const mn = () => e.S.data.menus.find(m => m && m.module === "minutes");
-    eq(mn().vis, "all", "기본 개방");
-    // 구버전 배포본이 저장해 둔 vis:"mgr" 가 원격 pull 로 다시 들어오는 상황
+    eq(mn().vis, "mgr", "기본 mgr");
+    // 관리자가 mgr로 설정 → 원격 pull(정규화 재실행) 후에도 유지 (v2.40.2 불변식 폐지 검증)
     const menus = JSON.parse(JSON.stringify(e.S.data.menus));
     menus.find(m => m.module === "minutes").vis = "mgr";
     e.w.SemisSync.applyRemote("menus", menus);
-    eq(mn().vis, "all", "원격 반영 후에도 개방 유지(정규화 불변식)");
-    // hq/admin 제한은 관리자 의도로 보고 존중
+    eq(mn().vis, "mgr", "mgr 설정이 정규화 후에도 유지 (자동 되돌림 없음)");
+    // 전체 공개를 원하면 all 도 그대로 유지
+    const menus3 = JSON.parse(JSON.stringify(e.S.data.menus));
+    menus3.find(m => m.module === "minutes").vis = "all";
+    e.w.SemisSync.applyRemote("menus", menus3);
+    eq(mn().vis, "all", "all 설정도 유지");
+    // hq 제한도 관리자 의도로 보고 존중
     const menus2 = JSON.parse(JSON.stringify(e.S.data.menus));
     menus2.find(m => m.module === "minutes").vis = "hq";
     e.w.SemisSync.applyRemote("menus", menus2);
     eq(mn().vis, "hq", "hq 제한은 유지");
   });
 
-  t("AC15 참석자(일반사용자)는 메뉴가 보이고 본인 회의로 진입 가능", () => {
+  t("AC15 참석자(일반사용자)는 vis=mgr여도 canSee 예외로 진입 가능 (v2.46.3)", () => {
     const e = mnEnv("user");
     e.S.data.minutes = acData();
     e.S.renderNav();
     const mn = e.S.data.menus.find(m => m && m.module === "minutes");
-    eq(e.S.canSee(mn), true, "일반사용자도 메뉴 열람 가능");
+    eq(mn.vis, "mgr", "메뉴 권한 mgr");
+    eq(e.S.canSee(mn), true, "참석자(일반사용자)는 예외로 열람 가능");
     ok(q(e, "#nav-menu").textContent.indexOf("회의록 게시판") >= 0, "사이드바에 메뉴 노출");
     go(e, "minutes");
     ok(q(e, "#view").textContent.indexOf("회의록 게시판") >= 0, "라우트 진입 성공(대시보드 우회 아님)");
     ok(q(e, ".page-desc").textContent.indexOf("본인이 참석한 회의") >= 0, "열람 범위 안내 문구");
     eq(qa(e, "#mn-body [data-mn-row]").length, 2, "본인 참석 회의체 2건");
+  });
+
+  t("AC16 미참석 일반사용자는 vis=mgr에서 메뉴·라우트 차단 (v2.46.3)", () => {
+    const e = mnEnv("user");
+    e.S.data.minutes = acData().map(x => Object.assign({}, x, {
+      attendees: (x.attendees || []).filter(a => a.name !== "Tuser") })); // 본인 참석 제거
+    e.S.renderNav();
+    const mn = e.S.data.menus.find(m => m && m.module === "minutes");
+    eq(e.S.canSee(mn), false, "미참석 일반사용자 차단");
+    ok(q(e, "#nav-menu").textContent.indexOf("회의록 게시판") < 0, "사이드바 메뉴 미노출");
+    go(e, "minutes");
+    ok(q(e, "#view").textContent.indexOf("회의록 게시판") < 0, "라우트 진입 차단(대시보드 폴백)");
+    // 보안관리자(rank 2)는 등급으로 진입
+    const em = mnEnv("manager");
+    em.S.data.minutes = acData();
+    const mnm = em.S.data.menus.find(m => m && m.module === "minutes");
+    eq(em.S.canSee(mnm), true, "manager는 등급으로 열람");
   });
 
   /* ── [W] 참석자 표 직책 열 폭 (v2.40.3) ── */
