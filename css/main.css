@@ -1559,7 +1559,11 @@ a.ct-tel:hover { color: var(--primary); }
 /* 빈 게시판 — 사용법 안내 */
 .mn-guide { padding: 26px 20px; text-align: center; }
 .mn-guide-h { font-size: 1.05rem; font-weight: 800; color: var(--text); }
-.mn-guide-sub { font-size: .88rem; color: var(--text-2); margin: 6px 0 18px; }
+.mn-guide-sub { font-size: .88rem; color: var(--text-2); margin: 6px 0 12px; }
+/* v2.46.4: 본인 확인 기준 안내 박스 */
+.mn-guide-crit { font-size: .84rem; color: var(--text-2); line-height: 1.7;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 14px; margin: 0 auto 18px; max-width: 560px; text-align: left; }
 .mn-guide-steps { display: flex; flex-direction: column; gap: 10px; max-width: 620px; margin: 0 auto 18px; text-align: left; }
 .mn-gs { display: flex; gap: 11px; align-items: flex-start; font-size: .86rem; color: var(--text-2);
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; line-height: 1.6; }

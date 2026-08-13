@@ -293,14 +293,19 @@
       // 회의록은 있는데 본인에게 보이는 게 없는 경우 — 왜 비었는지 분명히 알린다
       if (all().length && !visibleAll().length) return `<div class="mn-guide">
         <div class="mn-guide-h">🔒 열람 가능한 회의록이 없습니다</div>
-        <div class="mn-guide-sub">회의록은 <b>본인이 참석한 회의</b>만 열람할 수 있습니다.</div>
+        <div class="mn-guide-sub">회의록 게시판은 누구나 열 수 있지만, 회의 내용은 <b>본인이 참석한 회의</b>만 보입니다.</div>
+        <div class="mn-guide-crit">본인 참석 여부는 이렇게 확인합니다 —
+          ① 로그인 계정 이름이 참석자 명단과 일치하거나
+          ② <b>지금 이 기기에서 QR 참석 서명한 이름</b>이거나 (공통 계정 사용자는 이 방법)
+          ③ 본인 계정으로 작성한 회의록.
+          본인 회의가 있으면 <b>같은 회의체의 다른 회차</b>도 함께 열람됩니다.</div>
         <div class="mn-guide-steps">
           <div class="mn-gs"><span class="mn-gs-n">1</span><div>
             회의에서 <b>QR로 참석 서명</b>을 하면, 그 회의와 <b>같은 회의체의 다른 회차</b>까지 열람할 수 있게 됩니다
             (부득이 참석하지 못한 직전 회의도 포함).</div></div>
           <div class="mn-gs"><span class="mn-gs-n">2</span><div>
-            <b>서명했는데도 보이지 않는다면</b> — 서명한 기기(휴대폰)와 다른 기기로 접속했거나,
-            계정 이름이 참석자 명단의 이름과 다른 경우입니다. 서명한 기기에서 다시 접속해 보세요.</div></div>
+            <b>서명했는데도 보이지 않는다면</b> — 서명할 때 쓴 기기(휴대폰)가 아닌 다른 기기로 접속한 경우입니다.
+            서명한 기기에서 다시 접속해 보세요.</div></div>
           <div class="mn-gs"><span class="mn-gs-n">3</span><div>
             그래도 필요하면 <b>항공보안파트</b>에 문의해 주세요. 전체 열람은 항공보안HQ 권한입니다.</div></div>
         </div>
@@ -519,7 +524,7 @@
           ${canManageFolders() ? '<button class="btn btn-ghost" id="mn-folders">🗂 폴더 관리</button>' : ""}
           ${canWrite() ? '<button class="btn btn-primary" id="mn-add">+ 새 회의록</button>' : ""}
           <div class="page-desc">회의마다 빈 회의록을 열어 바로 기록 — 폴더 분류 · 참석자 QR 서명 · A4 인쇄
-            ${rank() >= 3 ? "" : " · <b>본인이 참석한 회의</b>만 표시됩니다"}</div>
+            ${rank() >= 3 ? "" : " · <b>본인이 참석한 회의</b>만 표시됩니다 (계정 이름 또는 이 기기의 QR 서명 이력으로 확인)"}</div>
         </div>
 
         <div class="stat-row">

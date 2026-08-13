@@ -7952,6 +7952,27 @@ function makeFetchStub(server) {
     ok(!q(e, "#mn-add"), "작성 버튼 없음(mgr 미만)");
   });
 
+  t("MN09-1 참석 회의가 없으면 '참석한 회의만 보인다' 안내 + 본인 확인 기준 (v2.46.4)", () => {
+    // vis=all 운영(전체 공개) 시 일반사용자도 진입 — 빈 화면 대신 안내를 보여준다
+    const e = mnEnv("user");
+    e.S.data.menus.find(m => m && m.module === "minutes").vis = "all";
+    e.S.data.minutes = [{ id: "g1", folder: MF, no: 1, date: "2026-08-07", title: "남의 회의",
+      attendees: [{ name: "다른사람", org: "A" }], decisions: [], byId: "someone" }];
+    go(e, "minutes");
+    const txt = q(e, "#view").textContent;
+    ok(txt.indexOf("회의록 게시판") >= 0, "vis=all: 일반사용자 진입 가능");
+    ok(txt.indexOf("열람 가능한 회의록이 없습니다") >= 0, "빈 사유 안내");
+    ok(txt.indexOf("본인이 참석한 회의") >= 0, "'참석한 회의만' 안내");
+    ok(txt.indexOf("본인 참석 여부는 이렇게 확인합니다") >= 0, "본인 확인 기준 안내(신규)");
+    ok(txt.indexOf("QR 참석 서명한 이름") >= 0, "기기 서명 이력 기준 명시");
+    // manager(rank 2)도 참석 이력이 없으면 동일 안내
+    const em = mnEnv("manager");
+    em.S.data.minutes = [{ id: "g2", folder: MF, no: 1, date: "2026-08-07", title: "남의 회의",
+      attendees: [{ name: "다른사람", org: "A" }], decisions: [], byId: "someone" }];
+    go(em, "minutes");
+    ok(q(em, "#view").textContent.indexOf("본인 참석 여부는 이렇게 확인합니다") >= 0, "manager도 동일 안내");
+  });
+
   t("MN10 차기 회의 → 일정관리 자동 등록·해제", () => {
     const e = mnEnv("hq");
     const M = e.w.SemisMinutes;
