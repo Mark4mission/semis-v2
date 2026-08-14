@@ -667,6 +667,12 @@ tr.insp-cancel td { opacity: .5; text-decoration: line-through; }
 .insp-list .il-result .badge { display: inline-block; white-space: nowrap; margin: 1px 3px 1px 0; }
 .insp-bar { height: 7px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; margin-top: 7px; overflow: hidden; }
 .insp-bar-fill { height: 100%; background: var(--success); border-radius: 5px; transition: width .3s; }
+.insp-matrix .insp-sum-x { font-size: .68rem; font-weight: 600; color: var(--warning, #b45309); margin-top: 2px; }
+/* v2.47 완료율 산식 각주 (연기 건 분모 제외) */
+.insp-pct-note {
+  margin: 12px 0 0; padding-top: 10px; border-top: 1px dashed var(--border);
+  font-size: .78rem; color: var(--text-3); word-break: keep-all; line-height: 1.55;
+}
 
 /* ═══════ CARES 환경센서 위젯 ═══════ */
 .cares-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }

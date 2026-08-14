@@ -9150,6 +9150,124 @@ function makeFetchStub(server) {
     eq(after.assignee, "홍길동", "담당 복원");
   });
 
+  /* ══════════ [PP] 완료율 산식 — 연기 건 분모 제외 (v2.47) ══════════
+     완료율 = 완료 / (완료 + 미실시(계획)). 취소·연기·주요일정은 분모에서 제외. */
+  {
+    const YR = 2026;
+    const mkInsp = (id, cat, status, month) => ({
+      id, year: YR, category: cat, target: "PP" + id, month: month || 3,
+      inspectors: [], start: "", end: "", status, note: "", linkCal: false, findings: []
+    });
+    /* 국내정기: 완료2 · 계획1 · 연기2 · 취소1  → 완료율 2/3 = 67%
+       불시평가: 완료1 · 연기1              → 완료율 1/1 = 100%
+       주요일정: 1건(집계 제외) */
+    const ppEnv = () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      e.S.data.inspections = [
+        mkInsp("pp1", "국내정기", "완료"), mkInsp("pp2", "국내정기", "완료"),
+        mkInsp("pp3", "국내정기", "계획"),
+        mkInsp("pp4", "국내정기", "연기"), mkInsp("pp5", "국내정기", "연기"),
+        mkInsp("pp6", "국내정기", "취소"),
+        mkInsp("pp7", "불시평가", "완료"), mkInsp("pp8", "불시평가", "연기"),
+        mkInsp("pp9", "주요일정", "계획")
+      ];
+      e.S.saveSilent();
+      e.w.SemisInspection.setYear(YR);
+      return e;
+    };
+
+    t("PP01 실적 요약 완료율이 연기 건을 분모에서 제외한다", () => {
+      const e = ppEnv();
+      go(e, "inspection");
+      eq(q(e, ".ds-ring-p").textContent, "75%", "완료 3 / 대상 4 = 75%");
+      eq(q(e, ".ds-ring-s").textContent, "완료 3 / 4", "링 부제는 유효 모집단 기준");
+    });
+
+    t("PP02 지표 4종: 연간 계획(연기 포함)·완료·미실시·연기(제외)", () => {
+      const e = ppEnv();
+      go(e, "inspection");
+      const stats = qa(e, ".ds-panel-tint .ds-stat").map(el => ({
+        n: el.querySelector("b").textContent.trim(), label: el.querySelector("span").textContent.trim()
+      }));
+      const find = (kw) => stats.find(s => s.label.indexOf(kw) >= 0);
+      eq(find("연간 계획").n, "7", "취소 제외·연기 포함 7건");
+      eq(find("완료").n, "3");
+      eq(find("미실시").n, "1");
+      ok(find("연기"), "연기 지표 존재");
+      eq(find("연기").n, "3");
+      ok(find("연기").label.indexOf("제외") >= 0, "연기 라벨에 '제외' 명시");
+    });
+
+    t("PP03 산식 각주가 분모 구성을 밝힌다", () => {
+      const e = ppEnv();
+      go(e, "inspection");
+      const note = q(e, "#insp-pct-note");
+      ok(note, "각주 표시");
+      ok(note.textContent.indexOf("완료 3 / 대상 4") >= 0, "완료/대상 표기: " + note.textContent);
+      ok(note.textContent.indexOf("연기 3건은 분모에서 제외") >= 0, "연기 제외 명시");
+    });
+
+    t("PP04 구분별 막대도 연기 제외 기준으로 계산된다", () => {
+      const e = ppEnv();
+      go(e, "inspection");
+      const bars = qa(e, ".ds-bars .ds-bar-l").map(el => el.textContent.replace(/\s+/g, " ").trim());
+      const dom = bars.find(b => b.indexOf("국내정기") >= 0);
+      const sud = bars.find(b => b.indexOf("불시평가") >= 0);
+      ok(dom.indexOf("완료 2/3건") >= 0, "국내정기 2/3: " + dom);
+      ok(dom.indexOf("67%") >= 0, "국내정기 67%: " + dom);
+      ok(dom.indexOf("연기 2") >= 0, "연기 건수 병기");
+      ok(sud.indexOf("완료 1/1건") >= 0 && sud.indexOf("100%") >= 0, "불시평가 100%: " + sud);
+      ok(!bars.some(b => b.indexOf("주요일정") >= 0), "주요일정은 완료율 대상 아님");
+    });
+
+    t("PP05 매트릭스 '계' 열도 동일 분모 (연기 별도 표기)", () => {
+      const e = ppEnv();
+      e.w.SemisInspection.setViewMode("matrix");
+      go(e, "inspection");
+      const rows = qa(e, ".insp-matrix tbody tr");
+      const cell = (cat) => rows.find(r => r.textContent.indexOf(cat) >= 0).querySelector(".insp-sum");
+      ok(cell("국내정기").textContent.indexOf("2 / 3") >= 0, "국내정기 2 / 3: " + cell("국내정기").textContent);
+      ok(cell("국내정기").querySelector(".insp-sum-x"), "연기 별도 표기");
+      eq(cell("국내정기").querySelector(".insp-sum-x").textContent.trim(), "연기 2");
+      ok(cell("주요일정").textContent.indexOf("1건") >= 0, "주요일정은 건수만");
+    });
+
+    t("PP06 대시보드 점검실적 카드도 같은 산식", () => {
+      const e = ppEnv();
+      go(e, "dashboard");
+      const box = q(e, "#insp-box");
+      ok(box, "점검실적 카드");
+      const head = box.querySelector("div").textContent.replace(/\s+/g, " ").trim();
+      ok(head.indexOf("3 / 4건") >= 0, "완료 3 / 4건: " + head);
+      ok(head.indexOf("75%") >= 0, "75%: " + head);
+      ok(head.indexOf("연기 3건 제외") >= 0, "연기 제외 안내");
+      eq(box.querySelector(".insp-bar-fill").style.width, "75%", "막대 폭");
+    });
+
+    t("PP07 전부 연기여도 NaN 없이 0%", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      e.S.data.inspections = [mkInsp("pz1", "국내정기", "연기"), mkInsp("pz2", "국내정기", "취소")];
+      e.S.saveSilent();
+      e.w.SemisInspection.setYear(YR);
+      go(e, "inspection");
+      eq(q(e, ".ds-ring-p").textContent, "0%");
+      eq(q(e, ".ds-ring-s").textContent, "완료 0 / 0");
+      ok(q(e, "#insp-pct-note").textContent.indexOf("NaN") < 0, "NaN 없음");
+    });
+
+    t("PP08 연기를 완료로 되돌리면 분모에 다시 포함된다", () => {
+      const e = ppEnv();
+      const x = e.S.data.inspections.find(i => i.id === "pp4");
+      x.status = "완료";
+      e.S.saveSilent();
+      go(e, "inspection");
+      eq(q(e, ".ds-ring-s").textContent, "완료 4 / 5", "완료 4 / 대상 5");
+      eq(q(e, ".ds-ring-p").textContent, "80%");
+    });
+  }
+
   /* ══════════ 결과 ══════════ */
   console.log("\n════════════════════════════════════");
   console.log(`  SeMIS v2.9 테스트: ${passed + failed}건 실행`);

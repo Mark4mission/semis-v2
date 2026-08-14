@@ -167,20 +167,31 @@
   }
   let dragCtx = null;
 
-  /* ─────── 연간 실적 요약 (v2.44) ───────
-     주요일정은 "점검"이 아니므로 완료율 계산에서 제외하고 건수만 별도 표기. */
+  /* ─────── 연간 실적 요약 (v2.47) ───────
+     주요일정은 "점검"이 아니므로 완료율 계산에서 제외하고 건수만 별도 표기.
+     v2.47 완료율 산식 변경: **연기 건은 분모에서 제외**한다.
+       완료율 = 완료 / (완료 + 미실시(계획))   ※ 취소·연기·주요일정 제외
+     연기는 해당 연도 내 미실시로 종결될 개연성이 높아, 분모에 두면 만회 가능한
+     "미실시(계획)"과 뒤섞여 실제 이행 수준이 과소평가된다. 연기 건수는 분모에서
+     빼되 화면에는 별도 지표로 계속 노출한다. */
   function summary(items) {
-    const plan = items.filter(x => x.category !== "주요일정" && x.status !== "취소");
-    const done = plan.filter(x => x.status === "완료").length;
+    const plan = items.filter(x => x.category !== "주요일정" && x.status !== "취소"); // 취소 제외 전체
+    const base = plan.filter(x => x.status !== "연기");   // 완료율 모집단 (완료 + 계획)
+    const done = base.filter(x => x.status === "완료").length;
     const byCat = CATEGORIES.filter(c => c !== "주요일정").map(cat => {
       const rows = plan.filter(x => x.category === cat);
-      const d = rows.filter(x => x.status === "완료").length;
-      return { cat, plan: rows.length, done: d, pct: rows.length ? Math.round(d / rows.length * 100) : 0 };
+      const b = rows.filter(x => x.status !== "연기");
+      const d = b.filter(x => x.status === "완료").length;
+      return { cat, plan: rows.length, base: b.length, done: d, delayed: rows.length - b.length,
+               pct: b.length ? Math.round(d / b.length * 100) : 0 };
     }).filter(c => c.plan);
     let car = 0;
     items.forEach(x => (x.findings || []).forEach(f => { if (f.type === "시정조치") car++; }));
     return {
-      pct: plan.length ? Math.round(done / plan.length * 100) : 0,
+      pct: base.length ? Math.round(done / base.length * 100) : 0,
+      total: plan.length,       // 취소 제외 계획 전체 (연기 포함)
+      base: base.length,        // 완료율 분모
+      done,
       todo: plan.filter(x => x.status === "계획").length,
       delayed: plan.filter(x => x.status === "연기").length,
       undated: plan.filter(x => !x.start).length,
@@ -198,14 +209,18 @@
     CATEGORIES.forEach(cat => {
       const rows = items.filter(x => x.category === cat);
       const doneN = rows.filter(x => x.status === "완료").length;
-      const planN = rows.filter(x => x.status !== "취소").length;
+      /* v2.47: 계 열의 분모도 완료율과 동일하게 취소·연기를 제외 */
+      const planN = rows.filter(x => x.status !== "취소" && x.status !== "연기").length;
+      const dlyN = rows.filter(x => x.status === "연기").length;
       html += `<tr><td class="insp-cat"><span class="cal-dot ev-${CAT_COLOR[cat]}"></span> ${esc(cat)}</td>`;
       for (let m = 1; m <= 12; m++) {
         const cell = rows.filter(x => x.month === m);
         html += `<td class="insp-cell${m === new Date().getMonth() + 1 && year === new Date().getFullYear() ? " now" : ""}" data-cat="${esc(cat)}" data-month="${m}">
           ${cell.map(x => chip(x, canWrite)).join("")}</td>`;
       }
-      html += `<td class="insp-sum">${cat === "주요일정" ? rows.length + "건" : doneN + " / " + planN}</td></tr>`;
+      html += `<td class="insp-sum"${cat !== "주요일정" && dlyN ? ` title="연기 ${dlyN}건은 분모에서 제외"` : ""}>${
+        cat === "주요일정" ? rows.length + "건"
+          : doneN + " / " + planN + (dlyN ? `<div class="insp-sum-x">연기 ${dlyN}</div>` : "")}</td></tr>`;
     });
     return html + "</tbody></table></div>" +
       (canWrite ? '<p class="form-hint" style="margin-top:8px">빈 칸을 클릭하면 해당 구분·월로 새 점검을 등록합니다. 칩 클릭 시 수정.</p>' : "");
@@ -375,8 +390,6 @@
     render(root) {
       const canWrite = SeMIS.canEdit();
       const items = list();
-      const plan = items.filter(x => x.category !== "주요일정" && x.status !== "취소");
-      const done = plan.filter(x => x.status === "완료").length;
       const s = summary(items);
       root.innerHTML = `
         <div class="ds-head">
@@ -400,21 +413,22 @@
             ${s.major ? `<span class="badge badge-gray">주요일정 ${s.major}건</span>` : ""}
           </div>
           <div class="ds-flexrow">
-            ${SeMIS.dsRing(s.pct, "완료 " + done + " / " + plan.length)}
+            ${SeMIS.dsRing(s.pct, "완료 " + s.done + " / " + s.base)}
             <div class="ds-stats ds-flex-1">
-              <div class="ds-stat tone-blue"><b>${plan.length}</b><span>연간 계획</span></div>
-              <div class="ds-stat tone-green"><b>${done}</b><span>완료</span></div>
-              <div class="ds-stat tone-gray"><b>${s.todo}</b><span>미실시 (계획)</span></div>
-              <div class="ds-stat tone-red"><b>${s.delayed}</b><span>연기</span></div>
+              <div class="ds-stat tone-blue" title="취소를 제외한 연간 계획 건수 (연기 포함)"><b>${s.total}</b><span>연간 계획</span></div>
+              <div class="ds-stat tone-green"><b>${s.done}</b><span>완료</span></div>
+              <div class="ds-stat tone-gray" title="아직 실시하지 않은 계획 건 — 완료율 분모에 포함"><b>${s.todo}</b><span>미실시 (계획)</span></div>
+              <div class="ds-stat tone-red" title="연기 건은 완료율 분모에서 제외"><b>${s.delayed}</b><span>연기 (제외)</span></div>
             </div>
             <div class="ds-bars ds-flex-12">
               ${s.byCat.map(c => `<div>
                 <div class="ds-bar-l"><span class="cal-dot ev-${CAT_COLOR[c.cat]}"></span>${esc(c.cat)}
-                  <span>완료 ${c.done}/${c.plan}건</span><b>${c.pct}%</b></div>
+                  <span>완료 ${c.done}/${c.base}건${c.delayed ? " · 연기 " + c.delayed : ""}</span><b>${c.pct}%</b></div>
                 <div class="ds-bar"><span style="width:${c.pct}%"></span></div>
               </div>`).join("") || '<div class="ds-empty">등록된 점검이 없습니다.</div>'}
             </div>
           </div>
+          <p class="insp-pct-note" id="insp-pct-note">완료율 = 완료 ${s.done} / 대상 ${s.base}건 (완료 + 미실시)${s.delayed ? ` — 연기 ${s.delayed}건은 분모에서 제외` : ""}${s.major ? `, 주요일정 ${s.major}건 및 취소 건 제외` : ""}</p>
         </div>
 
         <div class="ds-panel" style="margin-top:16px">

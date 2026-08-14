@@ -75,7 +75,9 @@
     tiles.push({ n: soon, label: "7일 내 일정", tone: soon ? "tone-blue" : "tone-gray", go: "schedule" });
 
     const m = new Date().getMonth() + 1;
-    const mi = (d.inspections || []).filter(x => x.month === m && x.category !== "주요일정" && x.status !== "취소");
+    /* v2.47: 연기 건은 완료 집계 대상에서 제외 (모듈 완료율 산식과 일치) */
+    const mi = (d.inspections || []).filter(x => x.month === m && x.category !== "주요일정"
+      && x.status !== "취소" && x.status !== "연기");
     const md = mi.filter(x => x.status === "완료").length;
     tiles.push({ n: md + " / " + mi.length, label: m + "월 점검 완료", tone: mi.length && md >= mi.length ? "tone-green" : "tone-blue", go: "inspection" });
 
@@ -302,8 +304,12 @@
 
       // 보안점검 실적
       if ($("#insp-box")) {
-      const insp = (d.inspections || []).filter(x => x.category !== "주요일정" && x.status !== "취소");
+      /* v2.47: 완료율 분모에서 연기 건 제외 (보안점검 모듈 summary()와 동일 산식) */
+      const inspAll = (d.inspections || []).filter(x => x.category !== "주요일정" && x.status !== "취소");
+      const insp = inspAll.filter(x => x.status !== "연기");
+      const inspDly = inspAll.length - insp.length;
       const done = insp.filter(x => x.status === "완료").length;
+      const inspPct = insp.length ? Math.round(done / insp.length * 100) : 0;
       const thisMonth = new Date().getMonth() + 1;
       const monthList = (d.inspections || []).filter(x => x.month === thisMonth && x.category !== "주요일정");
       // 점검 결과 유형별 통계 (시정조치/개선권고/현장시정/관찰사항)
@@ -313,9 +319,10 @@
       $("#insp-box").innerHTML = `
         <div style="display:flex;align-items:baseline;gap:8px">
           <span style="font-size:1.25rem;font-weight:800">${done}<span style="font-size:.85rem;color:var(--text-3)"> / ${insp.length}건</span></span>
-          <span style="font-size:.78rem;color:var(--text-2)">완료 (계획 대비 ${insp.length ? Math.round(done / insp.length * 100) : 0}%)</span>
+          <span style="font-size:.78rem;color:var(--text-2)" title="완료율 = 완료 / (완료 + 미실시). 연기·취소 건 제외">완료 (계획 대비 ${inspPct}%)</span>
+          ${inspDly ? `<span style="font-size:.72rem;color:var(--text-3);margin-left:auto" title="연기 ${inspDly}건은 완료율 분모에서 제외">연기 ${inspDly}건 제외</span>` : ""}
         </div>
-        <div class="insp-bar"><div class="insp-bar-fill" style="width:${insp.length ? Math.round(done / insp.length * 100) : 0}%"></div></div>
+        <div class="insp-bar"><div class="insp-bar-fill" style="width:${inspPct}%"></div></div>
         <div class="insp-fdgrid">${FD_ORDER.map((t, i) =>
           `<div class="insp-fdcell"><b class="fd-c${i + 1}">${fdCnt[t] || 0}</b><span>${esc(t)}</span></div>`).join("")}</div>
         <div style="font-size:.74rem;font-weight:700;color:var(--text-3);margin:10px 0 4px">이번 달 (${thisMonth}월)</div>
