@@ -306,6 +306,8 @@
   function eqForm(id) {
     const x = id ? list().find(e => e.id === id) : null;
     let logs = x ? (x.logs || []).map(l => Object.assign({}, l)) : [];
+    /* v2.48: 구입가는 대외비 — confid 없는 협력업체 계정에는 입력란 자체를 숨기고 기존 값 보존 */
+    const conf = SeMIS.canConfid ? SeMIS.canConfid() : SeMIS.roleRank() >= 3;
     openModal(`
       <h3>${x ? "장비 수정" : "장비 등록"} <span class="badge badge-gray">보안장비</span></h3>
       <div class="form-hint" style="margin-bottom:8px">장비 상태·고장/점검 이력은 CARES가 마스터입니다 (S/N 일치 시 자동 연동).
@@ -339,8 +341,8 @@
         <div class="form-row"><label>교체예정일 (수동 지정 시)</label><input type="date" id="e-repdue" value="${esc(x ? x.replaceDue || "" : "")}"></div>
       </div>
       <div class="form-grid">
-        <div class="form-row"><label>구입가 (원)</label>
-          <input type="number" id="e-price" min="0" value="${esc(x && x.price != null ? x.price : "")}" placeholder="예: 460000000"></div>
+        ${conf ? `<div class="form-row"><label>구입가 (원)</label>
+          <input type="number" id="e-price" min="0" value="${esc(x && x.price != null ? x.price : "")}" placeholder="예: 460000000"></div>` : ""}
         <div class="form-row"><label>인증 취득 (TSA/ECAC 등)</label>
           <input id="e-cert" value="${esc(x ? x.cert || "" : "")}" maxlength="120" placeholder="예: TSA, ECAC, KIAST"></div>
       </div>
@@ -406,7 +408,8 @@
         installed: $("#e-installed").value || "",
         lifeYears: lifeRaw === "" ? null : Math.max(0, Number(lifeRaw) || 0),
         replaceDue: $("#e-repdue").value || "",
-        price: $("#e-price").value === "" ? null : Math.max(0, Number($("#e-price").value) || 0),
+        price: !conf ? (x ? (x.price != null ? x.price : null) : null)
+          : $("#e-price").value === "" ? null : Math.max(0, Number($("#e-price").value) || 0),
         cert: $("#e-cert").value.trim(),
         status: $("#e-status").value,
         logs: cleanLogs,
@@ -435,7 +438,7 @@
         <tr><td style="color:var(--text-2)">업체</td><td>${esc(x.vendor || "-")}</td></tr>
         <tr><td style="color:var(--text-2)">제조/설치</td><td>제조 ${esc(x.mfgDate || "-")} · 설치 ${esc(x.installed || "-")}</td></tr>
         <tr><td style="color:var(--text-2)">내용연수</td><td>${lifeYearsOf(x) || "-"}년 · 교체예정 ${esc(replaceDue(x) || "-")} ${lifeBadge(x)}</td></tr>
-        ${x.price != null && SeMIS.roleRank() >= 3 ? `<tr><td style="color:var(--text-2)">구입가</td><td>${fmtWon(x.price)}원</td></tr>` : ""}
+        ${x.price != null && (SeMIS.canConfid ? SeMIS.canConfid() : SeMIS.roleRank() >= 3) ? `<tr><td style="color:var(--text-2)">구입가</td><td>${fmtWon(x.price)}원</td></tr>` : ""}
         ${x.cert ? `<tr><td style="color:var(--text-2)">인증</td><td>${esc(x.cert)}</td></tr>` : ""}
         ${x.note ? `<tr><td style="color:var(--text-2)">비고</td><td>${esc(x.note)}</td></tr>` : ""}
       </table>
@@ -968,7 +971,9 @@
     title: "보안장비 유지관리",
     render(root) {
       const canWrite = SeMIS.canEdit();
-      const canConfid = SeMIS.roleRank() >= 3; // 대외비(계약·비용·구입가): hq 이상
+      /* 대외비(계약·비용·구입가): hq 이상. v2.48: 협력업체는 SeMIS.canConfid()가
+         프리셋 confid 플래그로 판정 — 제조사·기술지원 업체(뉴원S&T 등)는 차단 */
+      const canConfid = SeMIS.canConfid ? SeMIS.canConfid() : SeMIS.roleRank() >= 3;
       const s = stats();
       const tabs = canConfid
         ? [["list", "장비 대장"], ["contracts", "유지보수 계약"], ["costs", "비용 기록"]]

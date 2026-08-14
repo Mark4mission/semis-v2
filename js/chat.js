@@ -631,7 +631,9 @@
             name: u.name, role: u.role, uid: u.origId || u.id,
             // v2.46: vendor — 업체명·허용 라우트를 전달해 서버가 조회·쓰기 범위를 제한
             vendor: u.role === "vendor" ? String(u.vendor || "") : undefined,
-            routes: u.role === "vendor" && S().vendorAccess ? S().vendorAccess(u).routes : undefined
+            routes: u.role === "vendor" && S().vendorAccess ? S().vendorAccess(u).routes : undefined,
+            // v2.48: confid 없는 업체(제조사 등)는 서버가 유지보수 계약·비용(equipMaint)을 제외
+            confid: u.role === "vendor" && S().vendorAccess ? S().vendorAccess(u).confid : undefined
           },
           messages: convLoad().slice(-MAX_CONV)
         })

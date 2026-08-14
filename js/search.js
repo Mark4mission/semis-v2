@@ -43,6 +43,9 @@ const SemisSearch = (() => {
     if (isVendor()) {
       // 협력업체: 허용 라우트 안의 모듈만. 데이터 격리는 각 프로바이더의
       // 격리 뷰가 담당하므로 minRank(대외비 게이트)는 라우트 허용으로 갈음.
+      // v2.48: 단 대외비 프로바이더(minRank 3+, 유지보수 계약·비용 등)는
+      // confid 없는 업체(제조사·기술지원)에 검색 경로로도 열리지 않는다.
+      if (p.minRank >= 3 && S().canConfid && !S().canConfid()) return false;
       return !!(p.module && vendorRoutes().indexOf(p.module) >= 0);
     }
     const rank = S().roleRank();

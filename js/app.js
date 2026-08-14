@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.47.0";
+  const VERSION = "2.48.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -93,17 +93,37 @@ const SeMIS = (() => {
     links: [{ label: "CARES (보안장비 관제)", icon: "🛰", url: "https://airzeta-security-system.web.app" }],
     edit: true
   };
+  /* v2.48: 제조사·기술지원 업체 공통 접근 범위 (뉴원S&T = ETD 제조사, 고장/수리 지원 등).
+     운영·유지보수 업체와 같은 협업 메뉴(규정·장비·협의회)를 편집 권한으로 열되,
+     대금 청구를 직접 하지 않으므로 billing 라우트 제외 + confid:false 로
+     대외비(유지보수 계약·비용·구입가)를 화면·검색·세미(AI) 전 경로에서 차단.
+     같은 성격의 업체가 늘면 VENDOR_ACCESS 에 이 프리셋으로 한 줄만 추가하면 된다. */
+  const VENDOR_MFG_ACCESS = {
+    routes: ["regs-intl", "equipment", "council"],
+    links: [{ label: "CARES (보안장비 관제)", icon: "🛰", url: "https://airzeta-security-system.web.app" }],
+    edit: true, confid: false
+  };
   const VENDOR_ACCESS = {
     "프로에스콤": VENDOR_OPS_ACCESS,
-    "인씨스": VENDOR_OPS_ACCESS
+    "인씨스": VENDOR_OPS_ACCESS,
+    "뉴원S&T": VENDOR_MFG_ACCESS,
+    "뉴원에스엔티": VENDOR_MFG_ACCESS
   };
-  const VENDOR_DEFAULT = { routes: ["billing"], links: [], edit: false };
+  const VENDOR_DEFAULT = { routes: ["billing"], links: [], edit: false, confid: false };
   const VENDOR_NAV_LABEL = { billing: { label: "대금 청구 입력", icon: "🧾" } };
+  /* v2.48: 업체명 표기 편차 흡수 — "㈜뉴원S&T"·"뉴원 S&T"도 같은 프리셋으로 매칭 */
+  const normVendorKey = (s) => String(s || "").replace(/[\s㈜()]|주식회사/g, "").toLowerCase();
   function vendorAccess(u) {
-    const a = VENDOR_ACCESS[String((u && u.vendor) || "").trim()] || VENDOR_DEFAULT;
+    const raw = String((u && u.vendor) || "").trim();
+    let a = VENDOR_ACCESS[raw];
+    if (!a && raw) {
+      const key = Object.keys(VENDOR_ACCESS).find(k => normVendorKey(k) === normVendorKey(raw));
+      if (key) a = VENDOR_ACCESS[key];
+    }
+    a = a || VENDOR_DEFAULT;
     const routes = (a.routes || []).slice();
     if (!routes.length) routes.push("billing");
-    return { routes, links: (a.links || []).slice(), edit: !!a.edit };
+    return { routes, links: (a.links || []).slice(), edit: !!a.edit, confid: a.confid !== false };
   }
   /* 협력업체 계정의 기본 화면 (첫 접속·허용 목록 밖의 라우트 요청 시 이동)
      v2.46.2: 공지·대시보드가 없는 vendor 화면 특성상 협업 중심 메뉴인
@@ -845,6 +865,14 @@ const SeMIS = (() => {
   const canEdit = () => roleRank() >= 3; // 편집 권한: hq 이상 (v2.11)
   /* v2.32.1: 레코드 삭제 — 편집 권한 + 내부 계정만 (협력업체는 등록·수정만) */
   const canDelete = () => canEdit() && !(currentUser && currentUser.role === "vendor");
+  /* v2.48: 대외비(유지보수 계약·비용·구입가) 열람 — hq 이상, 단 협력업체는
+     프리셋의 confid 플래그가 열린 업체(운영·유지보수 위탁사)만.
+     제조사·기술지원 업체(confid:false)는 편집 등급(3)이어도 대외비 전면 차단. */
+  const canConfid = () => {
+    if (roleRank() < 3) return false;
+    if (currentUser && currentUser.role === "vendor") return vendorAccess(currentUser).confid;
+    return true;
+  };
   /* v2.46.3: 회의록 게시판 참석자 예외 — 등급이 모자라도 "본인이 참석·작성한 회의"가
      있으면 진입 허용 (v2.40.2 참석 기반 열람 원칙 유지). 무엇을 볼 수 있는지는 모듈의
      visibleAll()이 그대로 판정하므로 이 예외로 타인 회의가 열리지는 않는다.
@@ -1299,7 +1327,7 @@ const SeMIS = (() => {
     get data() { return DATA; },
     save, load, onSave, saveSilent, normalizeData,
     get user() { return currentUser; },
-    allUsers, isAdmin, roleRank, canEdit, canDelete, canSee,
+    allUsers, isAdmin, roleRank, canEdit, canDelete, canConfid, canSee,
     VENDOR_ACCESS, vendorAccess, vendorHome,
     pwHash, sha256, signCodeFor, signCarFor, signMinuteFor, signCodeFromHash, signUrlFor,
     renderNav, renderHeader, renderSecBadge, renderView,

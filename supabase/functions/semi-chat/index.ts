@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   SeMIS v2.37 — 세미(Semi) AI 도우미 Edge Function (v3.4)
+   SeMIS v2.37 — 세미(Semi) AI 도우미 Edge Function (v3.5)
    Claude API 프록시 + semis_store 조회 도구 + 쓰기 도구(rank3+)
    쓰기: 공지·일정·점검계획 등록 + 점검 결과·협의회 회의록 추가(append 전용)
 
@@ -10,6 +10,7 @@
    - 데이터 접근: 사용자 역할(rank)별 허용 키만 도구에 노출 + 서버 이중 검증
      (vault·pwOverrides·userOverrides·customUsers·gcal은 어떤 등급에도 미노출)
    - v3.3: 일정 "나에게만 보이기"(priv/owner)는 소유 계정에게만 노출(stripPrivate)
+   - v3.5: confid 없는 업체(제조사·기술지원)는 equipMaint(계약·비용) 도구 제외
    - v3.4: 협력업체(vendor) 지원 — 허용 라우트(user.routes)를 데이터 키로 매핑해
      조회 범위 제한 + 대외비(청구·유지보수비)는 자기 업체분만 필터(scopeVendor).
      쓰기는 허용 메뉴 내에서만: 협의회(update_council). 신규 업체 계정 자동 적용.
@@ -469,14 +470,14 @@ Deno.serve(async (req: Request) => {
   if (body.dbg === "store") {
     try {
       const v = await fetchStore("levelHistory");
-      return json({ ok: true, rows: Array.isArray(v) ? v.length : (v ? 1 : 0), ver: "3.4" });
+      return json({ ok: true, rows: Array.isArray(v) ? v.length : (v ? 1 : 0), ver: "3.5" });
     } catch (e) {
       return json({ ok: false, error: String(e).slice(0, 200) });
     }
   }
 
   const user = (body.user || {}) as {
-    name?: string; role?: string; uid?: string; vendor?: string; routes?: unknown;
+    name?: string; role?: string; uid?: string; vendor?: string; routes?: unknown; confid?: unknown;
   };
   const uid = String(user.uid || "").slice(0, 60);   // v2.37: 개인 일정 소유 판정용 계정 id
   const role = String(user.role || "");
@@ -510,7 +511,11 @@ Deno.serve(async (req: Request) => {
   }
   if (!msgs.length || msgs[msgs.length - 1].role !== "user") return json({ error: "no_message" }, 400);
 
-  const allowed = isVend ? vendorKeys(vendorRoutes) : allowedKeys(rank);
+  /* v3.5: confid 없는 협력업체(제조사·기술지원, SeMIS VENDOR_ACCESS.confid=false)는
+     대외비인 유지보수 계약·비용(equipMaint)을 도구 목록에서 제외 */
+  const vendConfid = isVend && user.confid !== false;
+  const allowed = (isVend ? vendorKeys(vendorRoutes) : allowedKeys(rank))
+    .filter((k) => !(isVend && !vendConfid && k === "equipMaint"));
   if (isVend && !allowed.length) {
     return json({ reply: "지금 계정에 조회 가능한 메뉴가 없어요. 관리자에게 접근 범위 확인을 부탁드려 주세요 🙏" });
   }

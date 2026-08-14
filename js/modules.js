@@ -914,7 +914,7 @@
     ["hq", "항공보안HQ (파트원 · 편집 가능)"],
     ["vendor", "협력업체 (대금 청구 입력 + 업체별 허용 메뉴)"],
     ["admin", "시스템관리자"]];
-  const VENDOR_NAMES = ["프로에스콤", "인씨스"];
+  const VENDOR_NAMES = ["프로에스콤", "인씨스", "뉴원S&T"];
   const vendorRowHTML = (u) => `
       <div class="form-row" id="row-vendor" ${u && u.role === "vendor" ? "" : 'style="display:none"'}>
         <label>업체명 (협력업체 계정)</label>
@@ -930,7 +930,7 @@
         const mn = D().menus.find(m => m && m.type === "module" && m.module === r);
         return (mn && mn.label) || r;
       }).concat((a.links || []).map(l => l.label));
-      return `<br>· ${esc(name)}: ${esc(names.join(" · "))} <b>${a.edit ? "[편집 가능]" : "[열람 전용]"}</b>`;
+      return `<br>· ${esc(name)}: ${esc(names.join(" · "))} <b>${a.edit ? "[편집 가능]" : "[열람 전용]"}${a.confid === false ? " [계약·비용 비공개]" : ""}</b>`;
     });
     return rows.length ? rows.join("") + "<br>· (그 외 업체: 대금 청구 입력만)" : "";
   }

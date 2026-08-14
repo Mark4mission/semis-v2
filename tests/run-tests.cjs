@@ -3966,6 +3966,86 @@ function makeFetchStub(server) {
     eq(e.S.vendorHome(e.S.user), "council", "운영 업체 기본 화면 = 협의회 (v2.46.2)");
   });
 
+  t("VD10 뉴원S&T(제조사 카테고리, v2.48): 청구 제외 + 계약·비용·구입가 전면 차단", () => {
+    const pre = (() => { const t0 = makeEnv(); const d = JSON.parse(JSON.stringify(t0.S.data));
+      d.equipment = [{ id: "nw1", type: "ETD(폭발물흔적)", name: "ETD-NW", serial: "SN1", location: "검색장",
+        vendor: "뉴원S&T", mfgDate: "2024-01-01", installed: "2024-01-01", status: "정상",
+        price: 460000000, cert: "", logs: [], note: "" }];
+      d.equipMaint = { contracts: [{ id: "nc1", vendor: "뉴원S&T", scope: "ETD 수리", feeMonthly: 100000,
+          units: 1, freeMonths: 0, partsOver: 0, terms: "", note: "" }],
+        costs: [{ id: "nt1", ym: "2026-01", kind: "수리/부품", vendor: "뉴원S&T", amount: 990000,
+          serial: "", memo: "뉴원수리비검색표식" }] };
+      d.council = [{ id: "nm1", round: 1, date: "2026-06-01", place: "회의실", vis: "mgr",
+        attendees: [], agendas: [], cases: [], decisions: [], files: [], body: "", updated: "" }];
+      return d; })();
+    const e = makeEnv({ preData: pre });
+    loginVendor(e, "뉴원S&T", "tnwsnt");
+    // 접근 범위: 청구 제외 3개 라우트 + CARES 링크, 편집 가능·대외비 차단
+    const acc = e.S.vendorAccess(e.S.user);
+    eq(acc.routes.join(","), "regs-intl,equipment,council", "허용 라우트 3종 (billing 없음)");
+    eq(acc.links.map(l => l.url).join(","), "https://airzeta-security-system.web.app", "CARES 링크");
+    ok(acc.edit, "편집 가능 프리셋");
+    ok(!acc.confid, "confid=false (대외비 차단)");
+    eq(e.S.roleRank(), 3, "허용 메뉴 안 hq 동등 등급");
+    ok(e.S.canEdit(), "편집 권한 있음");
+    ok(!e.S.canDelete(), "삭제 권한 없음");
+    ok(!e.S.canConfid(), "canConfid=false");
+    eq(e.S.vendorHome(e.S.user), "council", "기본 화면 협의회");
+    // 업체명 표기 편차: "㈜뉴원S&T"·"뉴원 S&T"·"뉴원에스엔티" 모두 같은 프리셋
+    ["㈜뉴원S&T", "뉴원 S&T", "뉴원에스엔티"].forEach(nm => {
+      eq(e.S.vendorAccess({ vendor: nm }).routes.join(","), "regs-intl,equipment,council", nm + " 매칭");
+    });
+    eq(e.S.vendorAccess({ vendor: "미등록업체" }).routes.join(","), "billing", "미등록 업체는 기본(청구 전용)");
+    // 네비: 모듈 3개 + CARES 링크, billing 접근 시 협의회 강제
+    go(e, "council");
+    const items = qa(e, "#nav-menu .nav-item");
+    eq(items.length, 4, "네비 3개 모듈 + CARES 링크");
+    eq(items.map(n => n.dataset.route || "").slice(0, 3).join(","), "regs-intl,equipment,council", "메뉴 순서");
+    go(e, "billing");
+    ok(/보안장비 협의회/.test(q(e, "#view").textContent), "billing 접근 → 협의회 강제");
+    // 장비: 대장 열람·편집 가능하되 계약/비용 탭·구입가 미노출
+    const E = e.w.SemisEquipment;
+    E.setTab("list");
+    go(e, "equipment");
+    ok(/ETD-NW/.test(q(e, "#view").textContent), "장비 대장 열람");
+    ok(q(e, "#eq-add"), "장비 등록 버튼(편집 가능)");
+    ok(!/유지보수 계약/.test(q(e, "#view").textContent), "유지보수 계약 탭 미노출");
+    ok(!/비용 기록/.test(q(e, "#view").textContent), "비용 기록 탭 미노출");
+    E.setTab("costs"); // 우회 시도
+    go(e, "equipment");
+    const bt = q(e, "#view").textContent;
+    ok(/ETD-NW/.test(bt) && !/뉴원수리비검색표식/.test(bt) && !/990,000/.test(bt), "costs 우회 → 대장 강제·비용 미노출");
+    // 편집 폼: 구입가 입력란 없음 + 저장 시 기존 구입가 보존
+    q(e, '[data-eq-row="nw1"]').click();
+    ok(q(e, "#e-save"), "장비 수정 폼(편집 가능)");
+    ok(!q(e, "#e-price"), "구입가 입력란 미노출");
+    ok(!/460000000|460,000,000/.test(q(e, "#modal-box").innerHTML), "폼에 구입가 값 미표시");
+    q(e, "#e-save").click();
+    eq(e.S.data.equipment[0].price, 460000000, "저장 후 구입가 보존");
+    // 상세 화면에도 구입가 미표시
+    q(e, '[data-eq-row="nw1"]').click();
+    q(e, "#e-detail").click();
+    ok(!/구입가|460,000,000/.test(q(e, "#modal-box").textContent), "상세: 구입가 미표시");
+    e.S.closeModal();
+    // 협의회: 회의록 수정 가능·삭제 불가 (다른 협력업체와 동일)
+    go(e, "council");
+    q(e, '[data-cn-row="nm1"]').click();
+    ok(q(e, "#cn-edit") && !q(e, "#cn-del"), "회의록 수정 가능·삭제 없음");
+    e.S.closeModal();
+    // 검색: 자기 업체분이라도 계약·비용은 미노출, 대장은 히트
+    const SS = e.w.SemisSearch;
+    eq(SS.search("뉴원수리비검색표식").length, 0, "검색: 비용 기록 차단");
+    eq(SS.search("ETD 수리").filter(x => /유지보수 계약/.test(x.title || "")).length, 0, "검색: 계약 차단");
+    ok(SS.search("ETD-NW").length >= 1, "검색: 장비 대장 히트");
+    // 내부 hq는 종전대로 대외비 열람 (회귀)
+    const eh = makeEnv({ preData: pre });
+    loginAs(eh, "hq");
+    ok(eh.S.canConfid(), "hq: canConfid 유지");
+    go(eh, "equipment");
+    ok(/유지보수 계약/.test(q(eh, "#view").textContent), "hq: 계약 탭 유지");
+    ok(eh.w.SemisSearch.search("뉴원수리비검색표식").length >= 1, "hq: 비용 검색 유지");
+  });
+
   t("BL04 vendor 입력: 항목 추가/수정 + 자기 업체 저장", () => {
     const e = makeEnv();
     loginVendor(e, "인씨스", "tincis");
