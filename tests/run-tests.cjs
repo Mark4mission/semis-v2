@@ -4697,7 +4697,7 @@ function makeFetchStub(server) {
       ok(all.every(a => !a.ps || !a.pe || a.ps <= a.pe), "계획 시작≤종료");
     });
 
-    t("K03 시드: 원본 엑셀 대비 건수/상태 (L1=18건, C6-2=9건, C6-1 보완 4건)", () => {
+    t("K03 시드: 원본 엑셀 대비 건수/상태 (L1=18건, C6-2=9건, C6-1=23건 원본만)", () => {
       const e = makeEnv();
       const K = e.w.SemisKpi;
       const [l1, c61, c62] = e.S.data.kpis.items;
@@ -4708,8 +4708,23 @@ function makeFetchStub(server) {
       eq(K.stats(l1).c["실행대기"], 2, "L1 실행대기 2");
       eq(c62.actions.length, 9, "C6-2 총 9건");
       eq(K.stats(c62).done, 4, "C6-2 완료 4");
-      eq(c61.actions.filter(a => a.added).length, 4, "C6-1 보완 항목 4건");
-      ok(c61.actions.some(a => a.phase === "관리증진 종합시스템 구축"), "C6-1 빈 Sub과제 보완");
+      eq(c61.actions.length, 23, "C6-1 총 23건 (원본만)");
+      eq(c61.actions.filter(a => a.added).length, 0, "C6-1 보완 항목 없음 (v2.46.5 삭제)");
+      ok(!c61.actions.some(a => a.phase === "관리증진 종합시스템 구축"), "관리증진 Sub과제 없음");
+    });
+
+    t("K03b 마이그레이션(v2.46.5): 기존 데이터의 '관리증진 종합시스템 구축' 항목 제거", () => {
+      const e0 = makeEnv();
+      const old = JSON.parse(JSON.stringify(e0.S.data));
+      const c61old = old.kpis.items.find(k => k.id === "C6-1");
+      c61old.actions.push(
+        { id: "C6-1-a24", phase: "관리증진 종합시스템 구축", title: "CARES 권한관리 체계 고도화", main: "최상일", st: "정상완료", added: true },
+        { id: "C6-1-a27", phase: "관리증진 종합시스템 구축", title: "전사 보안장비 통합 관제 고도화", main: "최상일", st: "실행대기", added: true });
+      const e = makeEnv({ preData: old });
+      const c61 = e.S.data.kpis.items.find(k => k.id === "C6-1");
+      ok(!c61.actions.some(a => a.phase === "관리증진 종합시스템 구축"), "구데이터 관리증진 항목 제거");
+      eq(c61.actions.length, 23, "원본 23건 유지");
+      ok(c61.actions.some(a => a.phase === "사용연한 연장"), "다른 Sub과제 보존");
     });
 
     t("K04 메뉴: kpi 모듈 메뉴 자동 삽입 (vis=hq)", () => {

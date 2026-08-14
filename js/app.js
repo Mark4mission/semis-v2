@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.46.4";
+  const VERSION = "2.46.5";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -551,6 +551,15 @@ const SeMIS = (() => {
         : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
       DATA.menus.push({ id: "kpi", seq, type: "module", label: "KPI 현황",
         icon: "📈", module: "kpi", vis: "hq", parent: null });
+    }
+    // v2.46.5: KPI C6-1 "관리증진 종합시스템 구축" 보완 항목 제거 — 연초 회사 제출 KPI
+    //  원본에 없는 임의 추가분(added)이므로 삭제. 공용 DB의 기존 데이터도 normalize
+    //  경유(변경 반환 → 자동 push)로 정리된다. (idempotent)
+    if (DATA.kpis && Array.isArray(DATA.kpis.items)) {
+      DATA.kpis.items.forEach(k => {
+        if (k && Array.isArray(k.actions))
+          k.actions = k.actions.filter(x => !(x && x.phase === "관리증진 종합시스템 구축"));
+      });
     }
     // v2.24: 보안장비 협의회 회의록 — 데이터 보정 + 메뉴 자동 삽입(보안장비 유지관리 다음, mgr 열람) + 구링크 구분
     if (!Array.isArray(DATA.council)) DATA.council = [];
