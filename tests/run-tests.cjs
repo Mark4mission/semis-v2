@@ -5760,7 +5760,7 @@ function makeFetchStub(server) {
     ok(!q(e, "#cn-sign-home"), "복귀 후 버튼 미표시");
   });
 
-  /* ══════════ [CR*] 부적합·시정조치 (CAR·CAP·FAT) v2.29 ══════════ */
+  /* ══════════ [CR*] 부적합·시정조치 (CAR) v2.49 단순화 ══════════ */
   t("CR01 normalize: cars 배열 + carCfg 객체 + insp-car 메뉴(vis hq, grp-inspect)", () => {
     const e = makeEnv();
     const d = e.S.data;
@@ -5814,38 +5814,48 @@ function makeFetchStub(server) {
 
   t("CR05 날짜 유틸 (addDays/addMonths 말일보정/daysBetween)", () => {
     const CC = makeEnv().w.SemisCarcap;
-    eq(CC.addDays("2026-07-01", 21), "2026-07-22", "발행+21");
+    eq(CC.addDays("2026-07-01", 21), "2026-07-22", "+21일");
     eq(CC.addMonths("2026-01-31", 1), "2026-02-28", "1/31+1개월=2/28");
     eq(CC.addMonths("2026-07-01", 3), "2026-10-01", "+3개월");
     eq(CC.daysBetween("2026-07-01", "2026-07-22"), 21, "21일");
   });
 
-  t("CR06 기한 계산 (CAP 마감=발행+21, FAT=회신+완료기한)", () => {
+  t("CR06 조치기한 단일화 (직접입력 > 구버전 필드 > 점검일+기본일수)", () => {
     const CC = makeEnv().w.SemisCarcap;
-    eq(CC.calcCapDue({ issuedDate: "2026-07-01" }), "2026-07-22", "CAP 마감");
-    eq(CC.calcFatDue({ classification: "시정", capSubmitted: "2026-07-01" }), "2026-08-01", "시정 완료 1개월");
-    eq(CC.calcFatDue({ classification: "개선권고", capSubmitted: "2026-07-01" }), "2026-10-01", "개선권고 3개월");
+    eq(CC.calcDue({ dueDate: "2026-08-01", auditDate: "2026-07-01" }), "2026-08-01", "직접 입력 우선");
+    eq(CC.calcDue({ fatDue: "2026-09-10", auditDate: "2026-07-01" }), "2026-09-10", "구버전 FAT 마감 승계");
+    eq(CC.calcDue({ capDue: "2026-07-22", auditDate: "2026-07-01" }), "2026-07-22", "구버전 CAP 마감 승계");
+    eq(CC.calcDue({ auditDate: "2026-07-01" }), "2026-07-31", "점검일+30일 자동");
+    eq(CC.calcDue({}), "", "근거 없으면 빈값");
+    eq(CC.calcDone({ doneDate: "2026-08-05" }), "2026-08-05", "완료일");
+    eq(CC.calcDone({ closedDate: "2026-08-06" }), "2026-08-06", "구버전 종결일 승계");
   });
 
   t("CR07 escLevel 에스컬레이션 (경과/임박/종결)", () => {
     const CC = makeEnv().w.SemisCarcap;
     const today = new Date().toISOString().slice(0, 10);
-    const over = CC.escLevel({ stage: "CAR", issuedDate: CC.addDays(today, -40), capSubmitted: "" });
+    const over = CC.escLevel({ stage: "조치중", dueDate: CC.addDays(today, -19) });
     ok(over && over.over, "기한 경과 감지");
     eq(over.state, "심각", "경과 19일→심각");
     eq(over.band, "red", "red 밴드");
-    const soon = CC.escLevel({ stage: "CAR", issuedDate: CC.addDays(today, -19), capSubmitted: "" });
+    eq(over.kind, "조치기한", "단일 기한 라벨");
+    const soon = CC.escLevel({ stage: "접수", dueDate: CC.addDays(today, 2) });
     ok(soon && !soon.over && soon.state === "임박", "D-2 임박");
-    eq(CC.escLevel({ stage: "종결", issuedDate: "2020-01-01" }), null, "종결은 알람 없음");
+    eq(CC.escLevel({ stage: "종결", dueDate: "2020-01-01" }), null, "종결은 알람 없음");
+    eq(CC.escLevel({ stage: "기각", dueDate: "2020-01-01" }), null, "기각도 알람 없음");
+    // 점검일 기반 자동 기한으로도 경과 판정
+    ok(CC.escLevel({ stage: "접수", auditDate: CC.addDays(today, -60) }).over, "점검일+30일 자동기한 경과");
   });
 
-  t("CR08 CAR 번호 자동생성 (YY-LOC-DEPT-##F/R)", () => {
+  t("CR08 관리번호 자동생성 (연도-순번)", () => {
     const e = makeEnv();
     const CC = e.w.SemisCarcap;
-    eq(CC.nextNo({ year: 2026, locCode: "BKK", deptCode: "SU", classification: "시정" }), "26-BKK-SU-01F", "최초 01F");
-    e.S.data.cars.push({ id: "c1", no: "26-BKK-SU-01F", year: 2026 });
-    eq(CC.nextNo({ year: 2026, locCode: "BKK", deptCode: "SU", classification: "시정" }), "26-BKK-SU-02F", "다음 02F");
-    eq(CC.nextNo({ year: 2026, locCode: "BKK", deptCode: "SU", classification: "개선권고" }), "26-BKK-SU-02R", "개선권고 R");
+    eq(CC.nextNo({ year: 2026 }), "26-01", "최초 26-01");
+    e.S.data.cars.push({ id: "c1", no: "26-01", year: 2026 });
+    eq(CC.nextNo({ year: 2026 }), "26-02", "다음 26-02");
+    e.S.data.cars.push({ id: "c2", no: "26-BKK-SU-07F", year: 2026 });   // 구버전 번호는 순번 계산에서 제외
+    eq(CC.nextNo({ year: 2026 }), "26-02", "구형식 번호 무시");
+    eq(CC.nextNo({ year: 2027 }), "27-01", "연도별 초기화");
   });
 
   t("CR09 다빈도 재발 recurrence (집중관리 임계)", () => {
@@ -5858,30 +5868,39 @@ function makeFetchStub(server) {
     ok(r.focus, "4건≥임계 → 집중관리");
   });
 
-  t("CR10 CAR 등록 폼 저장 (hq)", () => {
+  t("CR10 부적합 등록 폼 저장 (hq)", () => {
     const e = makeEnv();
     loginAs(e, "hq");
     go(e, "carcap");
     ok(q(e, "#car-add"), "등록 버튼(hq)");
     q(e, "#car-add").click();
+    ok(!q(e, "#cf-issued"), "CAR 발행일 입력 없음(발행 기능 제거)");
+    ok(!q(e, "#cf-capsub"), "CAP 접수일 입력 없음");
+    ok(q(e, "#cf-due"), "조치기한 입력 존재");
     q(e, "#cf-target").value = "FRASF";
     q(e, "#cf-nc").value = "화물 보안검색 세부사항 누락";
-    q(e, "#cf-issued").value = "2026-07-10";
+    q(e, "#cf-audit").value = "2026-07-10";
+    q(e, "#cf-due").value = "2026-08-09";
     q(e, "#cf-save").click();
     eq(e.S.data.cars.length, 1, "1건 저장");
-    eq(e.S.data.cars[0].target, "FRASF", "대상 저장");
-    ok(e.S.data.cars[0].no || e.S.data.cars[0].seq, "번호/순번 부여");
+    const rec = e.S.data.cars[0];
+    eq(rec.target, "FRASF", "대상 저장");
+    eq(rec.dueDate, "2026-08-09", "조치기한 저장");
+    eq(rec.stage, "접수", "기본 단계=접수");
+    ok(rec.no || rec.seq, "번호/순번 부여");
   });
 
   t("CR11 목록·단계 배지·위험도 렌더", () => {
     const e = makeEnv();
-    e.S.data.cars.push({ id: "c1", year: new Date().getFullYear(), no: "26-LSG-OM-01F", target: "LSG",
-      domain: "화물보안", classification: "시정", stage: "CAP", risk: { L: 4, S: "B" }, nonconformance: "봉인 미부착" });
+    e.S.data.cars.push({ id: "c1", year: new Date().getFullYear(), no: "26-03", target: "LSG",
+      domain: "화물보안", classification: "시정", stage: "조치중", risk: { L: 4, S: "B" }, nonconformance: "봉인 미부착" });
     loginAs(e, "hq");
     go(e, "carcap");
     ok(q(e, ".car-tbl"), "목록 테이블");
-    ok(q(e, "#car-body").textContent.includes("26-LSG-OM-01F"), "CAR 번호 표시");
-    ok(q(e, "#car-body").textContent.includes("4B"), "위험도 4B 표시");
+    const body = q(e, "#car-body");
+    ok(body.textContent.includes("26-03"), "관리번호 표시");
+    ok(body.textContent.includes("4B"), "위험도 4B 표시");
+    ok(body.textContent.includes("조치중"), "단계 배지");
   });
 
   t("CR12 권한: user 열람 차단 / hq 열람", () => {
@@ -5901,8 +5920,8 @@ function makeFetchStub(server) {
     const e = makeEnv();
     eq(e.w.SemisDash.DASH_CARDS.car, "mgr", "카드 vis=mgr");
     const today = new Date().toISOString().slice(0, 10);
-    e.S.data.cars.push({ id: "c1", year: new Date().getFullYear(), no: "26-BKK-SU-01F", target: "BKK지점",
-      stage: "CAR", issuedDate: e.w.SemisCarcap.addDays(today, -40), capSubmitted: "" });
+    e.S.data.cars.push({ id: "c1", year: new Date().getFullYear(), no: "26-01", target: "BKK지점",
+      stage: "조치중", dueDate: e.w.SemisCarcap.addDays(today, -40) });
     loginAs(e, "manager");
     ok(e.w.SemisDash.cardVis("car"), "manager 카드 열람");
     go(e, "dashboard");
@@ -5913,10 +5932,10 @@ function makeFetchStub(server) {
   t("CR14 설정(carCfg) 병합 반영", () => {
     const e = makeEnv();
     const CC = e.w.SemisCarcap;
-    e.S.data.carCfg = { capDueDays: 30 };
-    eq(CC.cfg().capDueDays, 30, "설정 반영");
+    e.S.data.carCfg = { dueDays: 45 };
+    eq(CC.cfg().dueDays, 45, "설정 반영");
     eq(CC.cfg().likelihood.length, 5, "기본 빈도 유지");
-    eq(CC.calcCapDue({ issuedDate: "2026-07-01" }), "2026-07-31", "마감 30일 적용");
+    eq(CC.calcDue({ auditDate: "2026-07-01" }), "2026-08-15", "조치기한 45일 적용");
     e.S.data.carCfg = { cellOverride: { "3C": "lv5" } };
     eq(CC.bandOf(3, "C").key, "lv5", "셀별 위험수준 변경 반영(3C→Lv5)");
   });
@@ -5931,58 +5950,72 @@ function makeFetchStub(server) {
     e.w.SemisCarcap.setView("board");
     go(e, "carcap");
     ok(q(e, ".car-board"), "프로세스 보드");
+    eq(qa(e, ".car-col").length, 3, "3단계 = 3열");
     e.w.SemisCarcap.setView("list");
   });
 
-  t("CR16 상세 문서 뷰 렌더 (타임라인·서명그리드·기한)", () => {
+  t("CR16 상세 문서 뷰 — 타임라인 3단계 · 서명란 없음", () => {
     const e = makeEnv();
     const Y = new Date().getFullYear();
-    e.S.data.cars.push({ id: "d1", year: Y, no: "26-PSC-HQ-01F", target: "ProScom", domain: "보안검색",
-      classification: "시정", stage: "CAP", issuedDate: "2026-07-01", capSubmitted: "2026-07-10",
+    e.S.data.cars.push({ id: "d1", year: Y, no: "26-05", target: "ProScom", domain: "보안검색",
+      classification: "시정", stage: "조치중", auditDate: "2026-07-01", dueDate: "2026-07-31",
       risk: { L: 5, S: "B" }, nonconformance: "위해물품 검색 실패", reference: "국가항공보안계획 8.9.3",
-      cap: { rootCause: "적극적 검색 미실시", action: "규정 준수 교육" }, signs: {} });
+      cap: { rootCause: "적극적 검색 미실시", action: "규정 준수 교육" } });
     loginAs(e, "hq");
     e.w.SemisCarcap.open("d1");
     const box = q(e, "#modal-box");
-    ok(box.textContent.includes("Corrective Action Report"), "CAR 문서 제목");
+    ok(box.textContent.includes("시정조치 기록"), "문서 제목");
     ok(q(e, ".cr-flow"), "프로세스 타임라인");
-    ok(q(e, ".cr-signs"), "서명 그리드");
-    ok(qa(e, ".cr-sign").length === 8, "서명 슬롯 8종(발행/접수확인/작성/검토/승인/수리/검증/종결)");
-    ok(box.textContent.includes("근본원인"), "CAP 근본원인 표시");
+    eq(qa(e, ".cr-flow-step").length, 3, "타임라인 3단계");
+    ok(!q(e, ".cr-signs"), "서명 그리드 제거됨");
+    ok(!q(e, ".cr-ackbox"), "접수확인 배너 제거됨");
+    ok(!box.textContent.includes("승인 서명"), "승인 서명 문구 없음");
+    ok(box.textContent.includes("근본원인"), "근본원인 표시");
+    ok(box.textContent.includes("조치기한"), "조치기한 표시");
+    e.S.closeModal();
   });
 
-  t("CR17 설정 모달 저장 (기한/밴드 수정)", () => {
+  t("CR17 설정 모달 저장 (조치기한 기본값)", () => {
     const e = makeEnv();
     loginAs(e, "hq");
     go(e, "carcap");
     ok(q(e, "#car-cfg"), "설정 버튼(hq)");
     q(e, "#car-cfg").click();
     ok(q(e, "#cs-save"), "설정 모달 열림");
-    q(e, "#cs-capdays").value = "30";
+    ok(!q(e, "#cs-ackdays"), "접수확인 기한 설정 제거");
+    ok(!q(e, "#cs-effdays"), "효과성 확인 설정 제거");
+    q(e, "#cs-duedays").value = "45";
     q(e, "#cs-save").click();
-    eq(e.S.data.carCfg.capDueDays, 30, "CAP 마감일수 저장");
-    eq(e.w.SemisCarcap.calcCapDue({ issuedDate: "2026-07-01" }), "2026-07-31", "저장값 적용");
+    eq(e.S.data.carCfg.dueDays, 45, "조치기한 기본값 저장");
+    eq(e.w.SemisCarcap.calcDue({ auditDate: "2026-07-01" }), "2026-08-15", "저장값 적용");
   });
 
-  t("CR18 워크플로 게이트: 지적→CAR→CAP 진행", () => {
+  t("CR18 단계 이동: 접수 → 조치중 → 종결 (서명 없이)", () => {
     const e = makeEnv();
     const Y = new Date().getFullYear();
-    e.S.data.cars.push({ id: "w1", year: Y, no: "26-BKK-SU-01F", target: "BKK지점", classification: "시정",
-      stage: "지적", issuedDate: "2026-07-01", risk: { L: 4, S: "C" },
-      signs: { carIssue: { name: "최상일", img: "x", at: "2026-07-01T00:00:00Z" } } });
+    e.S.data.cars.push({ id: "w1", year: Y, no: "26-01", target: "BKK지점", classification: "시정",
+      stage: "접수", auditDate: "2026-07-01", risk: { L: 4, S: "C" } });
     loginAs(e, "hq");
     e.w.SemisCarcap.open("w1");
-    ok(q(e, "#cd-adv"), "발행 버튼");
-    q(e, "#cd-adv").click(); // 지적 → CAR (carIssue 사전 서명 → 서명패드 생략)
-    eq(e.S.data.cars[0].stage, "CAR", "CAR 발행됨");
-    ok(e.S.data.cars[0].capDue, "CAP 마감기한 자동설정");
-    q(e, "#cd-adv").click(); // CAR → CAP 접수 처리 모달
-    ok(q(e, "#cg-ok"), "CAP 접수 모달");
-    q(e, "#cg-sub").value = "2026-07-15";
+    ok(q(e, "#cd-adv"), "다음 단계 버튼");
+    ok(q(e, "#cd-adv").textContent.includes("조치 착수"), "조치 착수 라벨");
+    q(e, "#cd-adv").click();
+    ok(q(e, "#cg-ok"), "조치 착수 모달(서명 패드 아님)");
+    ok(!q(e, ".sign-pad"), "서명 패드 미노출");
+    q(e, "#cg-due").value = "2026-07-31";
     q(e, "#cg-ok").click();
-    eq(e.S.data.cars[0].stage, "CAP", "CAP 접수됨");
-    eq(e.S.data.cars[0].capSubmitted, "2026-07-15", "접수일 기록");
-    ok(e.S.data.cars[0].fatDue, "FAT 마감기한 자동설정");
+    eq(e.S.data.cars[0].stage, "조치중", "조치중 전환");
+    eq(e.S.data.cars[0].dueDate, "2026-07-31", "조치기한 기록");
+    ok(q(e, "#cd-adv").textContent.includes("종결"), "종결 버튼");
+    q(e, "#cd-adv").click();
+    q(e, "#cg-done").value = "2026-07-25";
+    q(e, "#cg-mit").value = "봉인 재부착 및 교육 완료";
+    q(e, "#cg-ok").click();
+    eq(e.S.data.cars[0].stage, "종결", "종결 처리");
+    eq(e.S.data.cars[0].doneDate, "2026-07-25", "완료일 기록");
+    eq(e.S.data.cars[0].mitigationResult, "봉인 재부착 및 교육 완료", "조치 결과 기록");
+    ok(!q(e, "#cd-adv"), "종결 후 다음 단계 없음");
+    e.S.closeModal();
   });
 
   t("CR19 분야 기본값(여객 제외) + carCfg 편집 반영", () => {
@@ -6021,70 +6054,68 @@ function makeFetchStub(server) {
     ok(q(e, "#cf-domain").textContent.includes("특송화물"), "등록 폼 드롭다운 반영");
   });
 
-  t("CR22 CAR 코드 원격 로그인 → signer 세션", () => {
+  t("CR22 구버전 데이터 마이그레이션 (5단계→3단계 · 기한 승계)", () => {
     const e = makeEnv();
     const Y = new Date().getFullYear();
-    e.S.data.cars.push({ id: "sc1", year: Y, no: "26-BKK-SU-09F", target: "BKK지점", classification: "시정", stage: "CAR", issuedDate: "2026-07-10", nonconformance: "봉인 미부착", signs: {} });
-    const code = e.S.signCodeFor(e.S.data.cars.find(c => c.id === "sc1"));
-    ok(/^\d{6}$/.test(code), "6자리 코드");
-    eq(e.S.signCarFor(code).id, "sc1", "코드→CAR 매칭");
-    submitLogin(e, code);
-    ok(e.S.user && e.S.user.role === "signer", "signer 로그인");
-    eq(e.S.user.signCarId, "sc1", "signCarId 세팅");
-    e.S.renderView();
-    ok(q(e, ".cr-sign-page"), "접수확인 서명 화면 렌더");
-    ok(q(e, "#crs-sign"), "서명 버튼");
+    e.S.data.cars = [
+      { id: "m1", year: Y, stage: "지적", auditDate: "2026-07-01" },
+      { id: "m2", year: Y, stage: "CAR", issuedDate: "2026-07-01", capDue: "2026-07-22" },
+      { id: "m3", year: Y, stage: "CAP", capSubmitted: "2026-07-10", fatDue: "2026-08-10" },
+      { id: "m4", year: Y, stage: "FAT", fatDue: "2026-08-10", fatDone: "2026-08-05" },
+      { id: "m5", year: Y, stage: "종결", closedDate: "2026-08-06" },
+      { id: "m6", year: Y, stage: "기각", closedDate: "2026-08-07" }
+    ];
+    ok(e.S.normalizeData(), "마이그레이션 수행");
+    const g = (id) => e.S.data.cars.find(c => c.id === id);
+    eq(g("m1").stage, "접수", "지적→접수");
+    eq(g("m2").stage, "접수", "CAR→접수");
+    eq(g("m2").dueDate, "2026-07-22", "CAP 마감→조치기한");
+    eq(g("m3").stage, "조치중", "CAP→조치중");
+    eq(g("m3").dueDate, "2026-08-10", "FAT 마감→조치기한");
+    eq(g("m4").stage, "조치중", "FAT→조치중");
+    eq(g("m4").doneDate, "2026-08-05", "FAT 완료일→완료일");
+    eq(g("m5").stage, "종결", "종결 유지");
+    eq(g("m5").doneDate, "2026-08-06", "종결일→완료일");
+    eq(g("m6").stage, "기각", "기각 유지");
+    eq(e.S.normalizeData(), false, "재실행 멱등");
+    // 구버전 필드는 보존(수동 복구 여지)
+    eq(g("m3").capSubmitted, "2026-07-10", "구버전 필드 보존");
   });
 
-  t("CR23 renderSigning 안전정보 표시 + orgAck 반영", () => {
+  t("CR23 CAR 승인·서명 기능 완전 제거", () => {
     const e = makeEnv();
     const Y = new Date().getFullYear();
-    e.S.data.cars.push({ id: "sc2", year: Y, no: "26-LSG-OM-09F", target: "LSG", classification: "시정", stage: "CAR", issuedDate: "2026-07-10", nonconformance: "봉인 미부착 확인", reference: "자체보안계획 8.1.2", signs: {} });
+    e.S.data.cars.push({ id: "s1", year: Y, no: "26-09", target: "BKK지점", classification: "시정",
+      stage: "접수", auditDate: "2026-07-10", nonconformance: "봉인 미부착" });
+    eq(typeof e.S.signCarFor, "undefined", "signCarFor API 제거");
     const CC = e.w.SemisCarcap;
-    const root = e.w.document.getElementById("view");
-    CC.renderSigning(root, "sc2");
-    ok(root.textContent.includes("LSG"), "수검조직 표시");
-    ok(root.textContent.includes("봉인 미부착"), "부적합 내용 표시");
-    ok(root.textContent.includes("접수확인"), "접수확인 안내");
-    const rec = e.S.data.cars.find(c => c.id === "sc2");
-    rec.signs.orgAck = { name: "LSG 소장", img: "data:img", at: "2026-07-12T00:00:00Z" };
-    const ai = CC.ackInfo(rec);
-    ok(ai.acked, "ackInfo.acked");
-    eq(ai.at.slice(0, 10), "2026-07-12", "서명일");
-  });
-
-  t("CR24 접수확인 기한/경과 (ackDays)", () => {
-    const CC = makeEnv().w.SemisCarcap;
-    eq(CC.calcAckDue({ issuedDate: "2026-07-10" }), "2026-07-17", "발행+7일");
-    const today = new Date().toISOString().slice(0, 10);
-    ok(CC.ackInfo({ stage: "CAR", issuedDate: CC.addDays(today, -10), signs: {} }).overdue, "미서명 기한경과");
-    ok(!CC.ackInfo({ stage: "CAR", issuedDate: CC.addDays(today, -10), signs: { orgAck: { name: "x", at: "2026" } } }).overdue, "서명완료시 경과 아님");
-  });
-
-  t("CR25 상세 접수확인 배너 + 코드 (hq)", () => {
-    const e = makeEnv();
-    const Y = new Date().getFullYear();
-    e.S.data.cars.push({ id: "sc3", year: Y, no: "26-BKK-SU-08F", target: "BKK", classification: "시정", stage: "CAR", issuedDate: "2026-07-10", signs: {} });
-    loginAs(e, "hq");
-    e.w.SemisCarcap.open("sc3");
-    const box = q(e, "#modal-box");
-    ok(box.textContent.includes("접수확인"), "상세 접수확인 배너");
-    const code = e.S.signCodeFor(e.S.data.cars.find(c => c.id === "sc3"));
-    ok(box.textContent.includes(code), "코드 표시");
-    ok(q(e, "#cd-copycode"), "코드 복사 버튼");
-  });
-
-  t("CR26 signer 격리 — 단일 메뉴만", () => {
-    const e = makeEnv();
-    const Y = new Date().getFullYear();
-    e.S.data.cars.push({ id: "sc4", year: Y, no: "26-ABC-DE-01F", target: "T", classification: "시정", stage: "CAR", issuedDate: "2026-07-10", signs: {} });
-    const code = e.S.signCodeFor(e.S.data.cars.find(c => c.id === "sc4"));
+    eq(typeof CC.renderSigning, "undefined", "CAR 서명 화면 제거");
+    eq(typeof CC.ackInfo, "undefined", "접수확인 로직 제거");
+    eq(typeof CC.calcCapDue, "undefined", "CAP 마감 계산 제거");
+    eq(typeof CC.calcFatDue, "undefined", "FAT 마감 계산 제거");
+    // CAR 코드로는 더 이상 원격 로그인되지 않음
+    const code = e.S.signCodeFor(e.S.data.cars[0]);
+    ok(/^\d{6}$/.test(code), "코드 파생 자체는 공통 유틸");
     submitLogin(e, code);
-    ok(e.S.user && e.S.user.role === "signer", "signer");
-    e.S.renderNav();
-    const items = qa(e, "#nav-menu .nav-item");
-    eq(items.length, 1, "단일 메뉴");
-    ok(items[0].textContent.includes("접수확인"), "접수확인 서명 메뉴");
+    ok(!(e.S.user && e.S.user.role === "signer"), "CAR 코드 원격 로그인 차단");
+    // 소스에도 서명 잔재 없음
+    const src = read("js/carcap.js");
+    ok(!/openSignPad|SIGN_SLOTS|signGridHTML|orgAck/.test(src), "carcap.js 서명 코드 없음");
+    ok(!/cr-signs|cr-ackbox/.test(read("css/main.css")), "CSS 서명 잔재 없음");
+  });
+
+  t("CR24 기각·개선불요 처리", () => {
+    const e = makeEnv();
+    const Y = new Date().getFullYear();
+    e.S.data.cars.push({ id: "v1", year: Y, no: "26-02", target: "LSG", classification: "관찰사항",
+      stage: "접수", auditDate: "2026-07-01" });
+    loginAs(e, "hq");
+    e.w.SemisCarcap.open("v1");
+    ok(q(e, "#cd-void"), "기각 버튼");
+    q(e, "#cd-void").click();
+    q(e, "#modal-box [data-act=ok]").click();
+    eq(e.S.data.cars[0].stage, "기각", "기각 처리");
+    eq(e.w.SemisCarcap.escLevel(e.S.data.cars[0]), null, "기각 건은 기한 알람 제외");
   });
 
   t("CR27 25셀 색상 배정이 항공보안파트 기준과 정확히 일치", () => {
@@ -8302,23 +8333,6 @@ function makeFetchStub(server) {
     const html = frames[frames.length - 1].contentWindow.document.documentElement.innerHTML;
     ok(html.indexOf("제9차") >= 0, "협의회 회차 제목");
     ok(html.indexOf("<svg") >= 0, "QR 포함");
-  });
-
-  t("MN22 CAR 접수확인 안내에도 QR 병행 제공", () => {
-    const e = mnEnv("hq");
-    e.S.data.cars = [{ id: "cr1", year: new Date().getFullYear(), no: "26-TST-OM-01F", stage: "CAR", target: "인천지점",
-      domain: "출입통제", issuedDate: new Date().toISOString().slice(0, 10), classification: "시정", findingLevel: "",
-      nonconformance: "출입통제 절차 미준수", reference: "", risk: {},
-      signs: {}, caps: [], attachments: [] }];
-    go(e, "carcap");
-    const row = q(e, "#car-body [data-car]");
-    ok(row, "CAR 목록 행 존재");
-    row.click();
-    const box = q(e, "#modal-box");
-    ok(box.querySelector(".cr-ackbox"), "접수확인 안내 박스");
-    ok(box.querySelector(".cr-ack-qr svg"), "접수확인 QR 삽입");
-    ok(box.innerHTML.indexOf(e.S.signCodeFor(e.S.data.cars[0])) >= 0, "6자리 코드 병행 표시");
-    e.S.closeModal();
   });
 
   t("MN23 동기화 키에 회의록 포함 (기기 간 공유)", () => {

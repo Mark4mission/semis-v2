@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.48.0";
+  const VERSION = "2.49.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -422,8 +422,21 @@ const SeMIS = (() => {
       DATA.menus.push({ id: "insp-mgmt", seq, type: "module", label: "보안점검 일정관리",
         icon: "🕵️", module: "inspection", vis: "all", parent: grp ? "grp-inspect" : null });
     }
-    // v2.29: 부적합·시정조치(CAR→CAP→FAT) 컬렉션/설정 + 메뉴 보장
+    // v2.29: 부적합·시정조치(CAR) 컬렉션/설정 + 메뉴 보장
     if (!Array.isArray(DATA.cars)) DATA.cars = [];
+    /* v2.49: CAR 단순화 마이그레이션 — 5단계→3단계(접수·조치중·종결), 기한 4종→조치기한 1종.
+       구버전 필드(issuedDate/capDue/capSubmitted/fatDue/fatDone/effStart/effSustain/
+       closedDate/signs)는 지우지 않고 보존만 한다(오기재 시 수동 복구 여지). */
+    DATA.cars.forEach(c => {
+      if (!c || typeof c !== "object") return;
+      const st = c.stage;
+      const mapped = (st === "접수" || st === "조치중" || st === "종결" || st === "기각") ? st
+        : (st === "CAP" || st === "FAT") ? "조치중"
+        : "접수";
+      if (st !== mapped) c.stage = mapped;
+      if (!c.dueDate) { const d = c.fatDue || c.capDue || ""; if (d) c.dueDate = d; }
+      if (!c.doneDate) { const d = c.fatDone || c.closedDate || ""; if (d) c.doneDate = d; }
+    });
     if (!DATA.carCfg || typeof DATA.carCfg !== "object" || Array.isArray(DATA.carCfg)) DATA.carCfg = {};
     if (!DATA.menus.some(m => m && m.type === "module" && m.module === "carcap")) {
       const grpC = DATA.menus.find(m => m && m.id === "grp-inspect" && m.type === "group");
@@ -764,12 +777,6 @@ const SeMIS = (() => {
     if (!list.length) return null;
     return list.sort((a, b) => (Number(b.round) || 0) - (Number(a.round) || 0))[0];
   }
-  // v2.29.2: CAR(시정조치) 접수확인 원격 서명 — 수검조직에게 6자리 코드 부여
-  function signCarFor(pw) {
-    const code = String(pw || "").trim();
-    if (!/^\d{6}$/.test(code)) return null;
-    return (DATA.cars || []).find(c => c && signCodeFor(c) === code) || null;
-  }
   // v2.40: 회의록 게시판 참석 서명 — 회의록 id 기반 6자리 코드 (QR 접속도 동일 코드)
   function signMinuteFor(pw) {
     const code = String(pw || "").trim();
@@ -783,12 +790,6 @@ const SeMIS = (() => {
     if (m) {
       currentUser = { id: "__signer__", name: "보안장비 협의회", role: "signer", signMeetingId: m.id };
       sessionStorage.setItem(SS_SESSION, JSON.stringify({ uid: "__signer__", signMeetingId: m.id, ts: Date.now() }));
-      return currentUser;
-    }
-    const car = signCarFor(pw);
-    if (car) {
-      currentUser = { id: "__signer__", name: "수검조직 서명", role: "signer", signCarId: car.id };
-      sessionStorage.setItem(SS_SESSION, JSON.stringify({ uid: "__signer__", signCarId: car.id, ts: Date.now() }));
       return currentUser;
     }
     const mi = signMinuteFor(pw);
@@ -822,12 +823,6 @@ const SeMIS = (() => {
       const s = JSON.parse(sessionStorage.getItem(SS_SESSION));
       if (!s) return false;
       if (s.uid === "__signer__") {
-        if (s.signCarId) {
-          const car = (DATA.cars || []).find(c => c && c.id === s.signCarId);
-          if (!car) return false;
-          currentUser = { id: "__signer__", name: "수검조직 서명", role: "signer", signCarId: car.id };
-          return true;
-        }
         if (s.signMinuteId) {
           const mi = (DATA.minutes || []).find(c => c && c.id === s.signMinuteId);
           if (!mi) return false;
@@ -1010,8 +1005,8 @@ const SeMIS = (() => {
       return;
     }
     if (currentUser && currentUser.role === "signer") {
-      // v2.26/v2.29.2/v2.40: 서명 참석자 — 협의회·CAR 접수확인·회의록 서명 화면만 접근
-      const sRoute = currentUser.signCarId ? "carcap" : (currentUser.signMinuteId ? "minutes" : "council");
+      // v2.26/v2.40: 서명 참석자 — 협의회·회의록 서명 화면만 접근 (v2.49: CAR 접수확인 서명 폐지)
+      const sRoute = currentUser.signMinuteId ? "minutes" : "council";
       view.classList.remove("view-wide"); view.classList.remove("view-mid"); // 서명 화면은 기본 폭(모바일 중심)
       const def = modules[sRoute] || modules.dashboard;
       def.render(view);
@@ -1104,14 +1099,13 @@ const SeMIS = (() => {
       return;
     }
     if (currentUser && currentUser.role === "signer") {
-      // v2.26/v2.29.2/v2.40: 서명 참석자 — 협의회·CAR 접수확인·회의록 서명 메뉴만 표시
-      const isCar = !!currentUser.signCarId, isMin = !!currentUser.signMinuteId;
+      // v2.26/v2.40: 서명 참석자 — 협의회·회의록 서명 메뉴만 표시 (v2.49: CAR 접수확인 서명 폐지)
+      const isMin = !!currentUser.signMinuteId;
       const b = document.createElement("button");
       b.className = "nav-item active";
-      b.dataset.route = isCar ? "carcap" : (isMin ? "minutes" : "council");
-      b.innerHTML = isCar ? '<span class="nav-ico">📋</span><span>시정조치 · 접수확인 서명</span>'
-        : (isMin ? '<span class="nav-ico">🗒️</span><span>회의록 · 참석 서명</span>'
-          : '<span class="nav-ico">🤝</span><span>보안장비 협의회 · 서명</span>');
+      b.dataset.route = isMin ? "minutes" : "council";
+      b.innerHTML = isMin ? '<span class="nav-ico">🗒️</span><span>회의록 · 참석 서명</span>'
+        : '<span class="nav-ico">🤝</span><span>보안장비 협의회 · 서명</span>';
       b.onclick = () => renderView();
       box.appendChild(b);
       return;
@@ -1329,7 +1323,7 @@ const SeMIS = (() => {
     get user() { return currentUser; },
     allUsers, isAdmin, roleRank, canEdit, canDelete, canConfid, canSee,
     VENDOR_ACCESS, vendorAccess, vendorHome,
-    pwHash, sha256, signCodeFor, signCarFor, signMinuteFor, signCodeFromHash, signUrlFor,
+    pwHash, sha256, signCodeFor, signMinuteFor, signCodeFromHash, signUrlFor,
     renderNav, renderHeader, renderSecBadge, renderView,
     openModal, closeModal, confirmModal, toast,
     $, $$, esc, fmtDate, dsRing, sortedMenus,
