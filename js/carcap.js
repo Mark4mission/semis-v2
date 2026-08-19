@@ -10,7 +10,7 @@
      [접수] ─(조치 착수)─▶ [조치중] ─(조치 완료)─▶ [종결]        (별도: 기각·개선불요)
 
    데이터: DATA.cars = [{ id, no, year, scope, target, domain, auditDate, inspId,
-        classification, findingLevel, nonconformance, reference, auditor,
+        classification, nonconformance, reference, auditor,
         risk:{L,S,band,score}, dueDate, doneDate,
         cap:{rootCause, action}, mitigationResult,
         stage, seq, attachments[], note }]
@@ -116,7 +116,6 @@
   // 화물전용 항공사 기준 기본 분야(여객 항목 제외) — 설정에서 자유롭게 편집 가능
   const DOMAINS = ["화물보안", "보호구역·출입통제", "항공기 보안", "보안검색", "보안교육", "문서·규정", "보안장비", "우편·특송", "기타"];
   const SCOPES = ["국내", "해외", "본부·부문"];
-  const LEVELS = ["", "Lvl 1", "Lvl 2", "Lvl 3"];
 
   const BAND_HEX = {
     red:    { bg: "#fee2e2", bd: "#fca5a5", tx: "#991b1b" },
@@ -500,10 +499,7 @@
             `<option value="${esc(s.id)}" ${x && x.inspId === s.id ? "selected" : ""}>${esc((s.start || "") + " · " + s.category + " · " + s.target)}</option>`).join("")}</select></div>
 
         <div class="cr-sec">2. 부적합 사항</div>
-        <div class="form-grid">
-          <div class="form-row"><label>분류</label><select id="cf-class">${CLASSES.map(c => `<option value="${c.key}" ${(x ? x.classification : p.classification) === c.key ? "selected" : ""}>${esc(c.full)}</option>`).join("")}</select></div>
-          <div class="form-row"><label>Finding Level (KAB753)</label><select id="cf-level">${LEVELS.map(l => `<option ${(x ? x.findingLevel : "") === l ? "selected" : ""}>${l || "— 미지정 —"}</option>`).join("")}</select></div>
-        </div>
+        <div class="form-row"><label>분류</label><select id="cf-class">${CLASSES.map(c => `<option value="${c.key}" ${(x ? x.classification : p.classification) === c.key ? "selected" : ""}>${esc(c.full)}</option>`).join("")}</select></div>
         <div class="form-row"><label>관리번호 (선택)</label>
           <div class="cr-inline"><input id="cf-no" maxlength="40" value="${g("no")}" placeholder="예: 26-01 또는 외부 점검기관 부여 번호">
           <button type="button" class="btn btn-ghost btn-sm" id="cf-no-auto">🔄 자동생성</button></div>
@@ -594,7 +590,6 @@
     $("#cf-save").onclick = () => {
       const target = $("#cf-target").value.trim();
       if (!target) { toast("점검 대상을 입력하세요.", true); return; }
-      const lvl = $("#cf-level").value; const flvl = LEVELS.includes(lvl) ? lvl : "";
       const rec = {
         year: Number($("#cf-year").value) || year,
         scope: $("#cf-scope").value,
@@ -604,7 +599,6 @@
         auditor: $("#cf-auditor").value.trim(),
         inspId: $("#cf-insp").value || "",
         classification: $("#cf-class").value,
-        findingLevel: flvl === "— 미지정 —" ? "" : flvl,
         no: $("#cf-no").value.trim(),
         nonconformance: $("#cf-nc").value.trim(),
         reference: $("#cf-ref").value.trim(),
@@ -678,7 +672,7 @@
         <table class="tbl cr-dt">
           ${row("점검 대상 / 분야", `<b>${esc(x.target || "-")}</b> · ${esc(x.domain || "-")}`)}
           ${row("점검일 / 담당자", esc((x.auditDate || "-") + " · " + (x.auditor || "-")))}
-          ${row("분류 / Level", `<span class="badge ${classOf(x.classification).badge}">${esc(classOf(x.classification).full)}</span> ${x.findingLevel ? '<span class="badge badge-gray">' + esc(x.findingLevel) + "</span>" : ""}`)}
+          ${row("분류", `<span class="badge ${classOf(x.classification).badge}">${esc(classOf(x.classification).full)}</span>`)}
           ${row("부적합 내용", esc(x.nonconformance || "-"))}
           ${row("관련근거", esc(x.reference || "-"))}
           ${row("위험평가", x.risk && x.risk.L ? `발생빈도 ${esc(x.risk.L)} × 심각도 ${esc(x.risk.S)} = 지수 ${bandOf(x.risk.L, x.risk.S).score} · ${riskBadge(x.risk)}` : "미평가")}

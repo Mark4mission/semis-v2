@@ -5877,6 +5877,7 @@ function makeFetchStub(server) {
     ok(!q(e, "#cf-issued"), "CAR 발행일 입력 없음(발행 기능 제거)");
     ok(!q(e, "#cf-capsub"), "CAP 접수일 입력 없음");
     ok(q(e, "#cf-due"), "조치기한 입력 존재");
+    ok(!q(e, "#cf-level"), "Finding Level 입력 제거(v2.49.1)");
     q(e, "#cf-target").value = "FRASF";
     q(e, "#cf-nc").value = "화물 보안검색 세부사항 누락";
     q(e, "#cf-audit").value = "2026-07-10";
