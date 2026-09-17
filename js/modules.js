@@ -1105,6 +1105,17 @@
         </div>
       </div>
       <div class="card">
+        <div class="card-title">🛟 변경 이력 (서버 자동 백업)</div>
+        <p class="form-hint" style="margin-bottom:12px">
+          공용 DB의 모든 컬렉션 변경 직전 값이 서버에 자동 보관됩니다(90일).<br>
+          실수로 지운 데이터는 아래에서 그 시점으로 되돌릴 수 있습니다.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+          <select id="hist-key" class="hist-sel"></select>
+          <button class="btn btn-ghost" id="btn-hist-reload">↻ 불러오기</button>
+        </div>
+        <div id="hist-body" class="form-hint">불러오는 중…</div>
+      </div>
+      <div class="card">
         <div class="card-title">🧹 초기화</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-ghost" id="btn-reset-menu">메뉴 기본값으로 재설정</button>
@@ -1170,6 +1181,59 @@
       });
 
     // 동기화 상태 / 수동 동기화 (sync.js 로드 시)
+    {   /* 변경 이력 */
+      const sel = $("#hist-key"), body = $("#hist-body");
+      const KEYS = (window.SemisSync && SemisSync.SYNC_KEYS) || [];
+      const LABEL = { menus: "메뉴", notices: "공지사항", schedules: "일정", minutes: "회의록",
+        minuteFolders: "회의록 폴더", levelHistory: "보안등급 이력", pwOverrides: "암호",
+        userOverrides: "사용자 설정", customUsers: "추가 사용자", gcal: "구글 캘린더",
+        inspections: "보안점검", contacts: "비상연락망", branches: "지점", passes: "출입증",
+        passOwners: "출입증 소지자", equipment: "보안장비", equipMaint: "장비 정비",
+        trainings: "교육", contracts: "계약", regulations: "규정", policy: "정책", certs: "자격",
+        certOpts: "자격 설정", billing: "정산", vault: "보안자료실", kpis: "KPI", council: "협의체",
+        cars: "시정조치(CAR)", carCfg: "CAR 설정", supervisors: "감독자",
+        stationOfficers: "지점 담당자", chatRooms: "대화방" };
+      if (sel) sel.innerHTML = '<option value="">전체 컬렉션</option>'
+        + KEYS.map(k => `<option value="${esc(k)}">${esc(LABEL[k] || k)} (${esc(k)})</option>`).join("");
+      const fmt = (t) => {
+        const d = new Date(t);
+        return isNaN(d) ? String(t || "") :
+          d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0")
+          + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+      };
+      const load = () => {
+        if (!window.SemisSync || !SemisSync.history) { if (body) body.textContent = "동기화 모듈이 로드되지 않았습니다."; return; }
+        if (body) body.textContent = "불러오는 중…";
+        SemisSync.history(sel ? sel.value : "", 60).then(rows => {
+          if (!body) return;
+          if (!rows.length) { body.textContent = "보관된 변경 이력이 없습니다."; return; }
+          body.innerHTML = `<table class="tbl"><thead><tr>
+              <th style="width:130px">변경 시각</th><th>컬렉션</th>
+              <th style="width:110px">건수</th><th>변경자</th><th style="width:90px"></th></tr></thead><tbody>`
+            + rows.map(r => {
+                const drop = Number(r.old_len) > 0 && Number(r.new_len) === 0;
+                return `<tr${drop ? ' style="background:var(--danger-soft,#fef2f2)"' : ""}>
+                  <td>${esc(fmt(r.changed_at))}</td>
+                  <td>${esc(LABEL[r.key] || r.key)}</td>
+                  <td>${r.old_len == null ? "-" : esc(String(r.old_len))} → ${r.new_len == null ? "-" : esc(String(r.new_len))}${drop ? ' <span class="badge badge-red">전량삭제</span>' : ""}</td>
+                  <td style="font-size:.85rem;color:var(--text-3)">${esc(r.changed_by || "")}</td>
+                  <td><button class="btn btn-ghost btn-sm" data-hist="${esc(String(r.id))}">되돌리기</button></td></tr>`;
+              }).join("")
+            + "</tbody></table>";
+          $$("#hist-body [data-hist]").forEach(b => {
+            b.onclick = () => confirmModal("이 시점의 값으로 되돌립니다. 현재 값은 다시 이력에 보관됩니다. 계속하시겠습니까?", () => {
+              SemisSync.restoreHistory(b.dataset.hist)
+                .then(k => { toast((LABEL[k] || k) + " 데이터를 되돌렸습니다."); load(); })
+                .catch(() => toast("되돌리기에 실패했습니다.", true));
+            });
+          });
+        }).catch(() => { if (body) body.textContent = "변경 이력을 불러오지 못했습니다."; });
+      };
+      if (sel) sel.onchange = load;
+      const rb = $("#btn-hist-reload"); if (rb) rb.onclick = load;
+      load();
+    }
+
     const syncInfo = $("#sysinfo-sync");
     if (syncInfo) {
       const label = { online: "🟢 연결됨 (실시간)", syncing: "🟡 동기화 중", offline: "🔴 오프라인 (로컬 저장)", init: "⏳ 연결 중" };

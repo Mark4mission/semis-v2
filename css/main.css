@@ -2424,3 +2424,8 @@ a.ct-tel:hover { color: var(--primary); }
 .ds-stat-go:hover { box-shadow: 0 3px 12px rgba(21,82,184,.16); transform: translateY(-1px); }
 .ds-brief { margin-bottom: 18px; padding: 14px 16px; }
 .ds-brief .ds-stats { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+
+.hist-sel { max-width: 240px; padding: 8px 10px; font: inherit; font-size: .93rem;
+  color: var(--text); background: #fff; border: 1px solid var(--border-strong, var(--border)); border-radius: var(--radius-sm); }
+.hist-sel:focus { border-color: var(--primary); outline: none; }
+#hist-body .tbl td { vertical-align: middle; }

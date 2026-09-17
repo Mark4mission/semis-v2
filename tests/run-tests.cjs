@@ -121,7 +121,18 @@ function makeFetchStub(server) {
     const method = opts.method || "GET";
     fn.calls.push({ url: String(url), method, body: opts.body ? JSON.parse(opts.body) : null });
     if (server.fail) return Promise.reject(new Error("network down"));
-    if (method === "GET") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(server.rows.slice()) });
+    if (method === "GET") {
+      if (String(url).indexOf("semis_store_history") >= 0) {
+        const hist = (server.history || []).slice();
+        const m = /[?&]id=eq\.([^&]+)/.exec(String(url));
+        const km = /[?&]key=eq\.([^&]+)/.exec(String(url));
+        let out = hist;
+        if (m) out = hist.filter(h => String(h.id) === decodeURIComponent(m[1]));
+        else if (km) out = hist.filter(h => h.key === decodeURIComponent(km[1]));
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(out) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(server.rows.slice()) });
+    }
     if (method === "POST") {
       const rows = JSON.parse(opts.body);
       rows.forEach(r => {
@@ -2549,6 +2560,83 @@ function makeFetchStub(server) {
     q(e, "#btn-sync-now").click();
     await new Promise(r => setTimeout(r, 30));
     ok(server.rows.length >= before, "수동 동기화 수행");
+    e.Sync.stop();
+  });
+
+  /* ══════════ [SG] 대량 삭제 방어 · 변경 이력 복원 (v2.50) ══════════ */
+  await ta("SG01 로컬 배열이 통째로 비면 push 차단 + 직전 상태 복구", async () => {
+    const server = { rows: [], fail: false };
+    const e = makeEnv({ fetch: makeFetchStub(server) });
+    await e.Sync.init();
+    loginAs(e, "hq");
+    e.S.data.schedules = [
+      { id: "g1", title: "A", start: "2026-09-01", end: "2026-09-01" },
+      { id: "g2", title: "B", start: "2026-09-02", end: "2026-09-02" },
+      { id: "g3", title: "C", start: "2026-09-03", end: "2026-09-03" }
+    ];
+    e.S.save(); await e.Sync._flush();
+    eq(server.rows.find(r => r.key === "schedules").value.length, 3);
+    e.S.data.schedules = [];
+    e.S.save(); await e.Sync._flush();
+    eq(server.rows.find(r => r.key === "schedules").value.length, 3, "서버 데이터 보존");
+    eq(e.S.data.schedules.length, 3, "로컬 복구");
+    eq(e.Sync.guardEvents().length, 1, "가드 로그 기록");
+    eq(e.Sync.pendingKeys().indexOf("schedules"), -1, "pending 제외");
+    e.Sync.stop();
+  });
+
+  await ta("SG02 마지막 1건 삭제는 정상 허용 · confirmWipe로 전량 삭제 허용", async () => {
+    const server = { rows: [], fail: false };
+    const e = makeEnv({ fetch: makeFetchStub(server) });
+    await e.Sync.init();
+    loginAs(e, "hq");
+    eq(e.Sync.GUARD_MIN, 2);
+    e.S.data.schedules = [{ id: "one", title: "only", start: "2026-09-09", end: "2026-09-09" }];
+    e.S.save(); await e.Sync._flush();
+    e.S.data.schedules = [];
+    e.S.save(); await e.Sync._flush();
+    eq(server.rows.find(r => r.key === "schedules").value.length, 0, "1건뿐이면 정상 삭제");
+
+    e.S.data.schedules = [
+      { id: "h1", title: "A", start: "2026-09-01", end: "2026-09-01" },
+      { id: "h2", title: "B", start: "2026-09-02", end: "2026-09-02" }
+    ];
+    e.S.save(); await e.Sync._flush();
+    e.S.data.schedules = [];
+    e.Sync.confirmWipe("schedules");
+    e.S.save(); await e.Sync._flush();
+    eq(server.rows.find(r => r.key === "schedules").value.length, 0, "confirmWipe 후 반영");
+    e.Sync.stop();
+  });
+
+  await ta("SG03 변경 이력 조회 · 되돌리기(restoreHistory)", async () => {
+    const server = { rows: [], fail: false, history: [{ id: 11, key: "schedules",
+      old_len: 5, new_len: 0, changed_at: "2026-09-17T07:44:34Z", changed_by: "cabc123",
+      old_value: [{ id: "r1", title: "복구된 일정", start: "2026-09-10", end: "2026-09-10" }] }] };
+    const stub = makeFetchStub(server);
+    const e = makeEnv({ fetch: stub });
+    await e.Sync.init();
+    loginAs(e, "hq");
+    const rows = await e.Sync.history("schedules", 10);
+    eq(rows.length, 1); eq(rows[0].key, "schedules");
+    ok(stub.calls.some(c => c.url.indexOf("src=eq.semis_store") >= 0), "src 필터");
+    await e.Sync.restoreHistory(11);
+    eq(e.S.data.schedules[0].title, "복구된 일정");
+    eq(server.rows.find(r => r.key === "schedules").value[0].title, "복구된 일정");
+    e.Sync.stop();
+  });
+
+  await ta("SG04 데이터 관리 탭: 변경 이력 복원 카드 렌더", async () => {
+    const server = { rows: [], fail: false, history: [] };
+    const e = makeEnv({ fetch: makeFetchStub(server) });
+    await e.Sync.init();
+    loginAs(e, "admin");
+    go(e, "settings");
+    qa(e, ".tab").find(x => x.dataset.tab === "data").click();
+    ok(q(e, "#view").textContent.includes("변경 이력"), "카드 제목");
+    ok(q(e, "#hist-key"), "컬렉션 선택");
+    ok(q(e, "#hist-body"), "이력 본문");
+    ok(q(e, "#btn-hist-reload"), "불러오기 버튼");
     e.Sync.stop();
   });
 

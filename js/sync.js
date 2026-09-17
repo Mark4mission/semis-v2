@@ -20,6 +20,11 @@
   const SYNC_KEYS = ["menus", "notices", "schedules", "minutes", "minuteFolders", "levelHistory", "pwOverrides", "userOverrides", "customUsers", "gcal", "inspections", "contacts", "branches", "passes", "passOwners", "equipment", "equipMaint", "trainings", "contracts", "regulations", "policy", "certs", "certOpts", "billing", "vault", "kpis", "council", "cars", "carCfg", "supervisors", "stationOfficers", "chatRooms"];
   const LS_PENDING = "semis2:pendingSync";
   const LS_FORCE = "semis2:forcePush";
+  const LS_GUARD = "semis2:guardLog";
+  const HIST = SUPA_URL + "/rest/v1/semis_store_history";
+  /* 대량 삭제 방어 기준 — 직전 동기화 시점에 이 건수 이상이던 배열이
+     로컬에서 0건이 되면 비정상으로 보고 서버 push를 막는다. */
+  const GUARD_MIN = 2;
   const CLIENT_ID = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
   const DEBOUNCE_MS = 800;
@@ -88,11 +93,64 @@
     if (!res.ok) throw new Error("POST " + res.status);
   }
 
+  /* ─── 대량 삭제 방어 ───
+     2026-09-17 SeMIS Logistics 일정 전량 유실 사고 대응. 로컬 배열이 통째로 비었는데
+     직전 동기화본에는 GUARD_MIN건 이상 있었다면, 사용자의 명시적 삭제가 아니라
+     로컬 저장소 손상·버그로 보고 (1) push를 막고 (2) 로컬을 직전 상태로 되돌린다.
+     정상적인 전체 삭제는 confirmWipe(key)로 1회 허용한다. */
+  let wipeOK = {};                 // key → true (1회용 허용)
+  function confirmWipe(key) { if (SYNC_KEYS.includes(key)) wipeOK[key] = true; }
+  function snapLen(key) {
+    const c = snapshots[key];
+    if (typeof c !== "string" || c.charAt(0) !== "[") return -1;
+    try { const v = JSON.parse(c); return Array.isArray(v) ? v.length : -1; } catch (e) { return -1; }
+  }
+  function guardWipe(targets) {
+    const blocked = [];
+    targets.forEach(k => {
+      if (wipeOK[k]) return;
+      const cur = D()[k];
+      if (!Array.isArray(cur) || cur.length) return;
+      const was = snapLen(k);
+      if (was < GUARD_MIN) return;
+      blocked.push({ key: k, was });
+    });
+    return blocked;
+  }
+  function guardLog(entries) {
+    try {
+      const log = JSON.parse(localStorage.getItem(LS_GUARD)) || [];
+      entries.forEach(b => log.push({ at: new Date().toISOString(), key: b.key, was: b.was, client: CLIENT_ID }));
+      localStorage.setItem(LS_GUARD, JSON.stringify(log.slice(-50)));
+    } catch (e) {}
+  }
+  function guardEvents() {
+    try { return JSON.parse(localStorage.getItem(LS_GUARD)) || []; } catch (e) { return []; }
+  }
+
   /* ─── push: 로컬 변경분 → 서버 ─── */
-  async function push(keys) {
-    const targets = Array.from(new Set((keys || []).concat(dirtyKeys(), pendingKeys())))
+  async function push(keys, opts) {
+    let targets = Array.from(new Set((keys || []).concat(dirtyKeys(), pendingKeys())))
       .filter(k => SYNC_KEYS.includes(k));
     if (!targets.length) return;
+    if (!(opts && opts.allowWipe)) {
+      const blocked = guardWipe(targets);
+      if (blocked.length) {
+        const bk = blocked.map(b => b.key);
+        blocked.forEach(b => { try { D()[b.key] = JSON.parse(snapshots[b.key]); } catch (e) {} });
+        targets = targets.filter(k => bk.indexOf(k) < 0);
+        setPending(pendingKeys().filter(k => bk.indexOf(k) < 0));
+        guardLog(blocked);
+        try { SeMIS.saveSilent(); } catch (e) {}
+        rerender();
+        try {
+          SeMIS.toast("데이터가 비정상적으로 비워져 저장을 중단하고 직전 상태로 되돌렸습니다. ("
+            + bk.join(", ") + ")", true);
+        } catch (e) {}
+        if (!targets.length) { setStatus("online"); return; }
+      }
+    }
+    targets.forEach(k => { delete wipeOK[k]; });
     setStatus("syncing");
     const now = new Date().toISOString();
     const rows = targets.map(k => ({ key: k, value: D()[k], updated_at: now, updated_by: CLIENT_ID }));
@@ -145,7 +203,7 @@
       SeMIS.saveSilent();
       rerender();
     }
-    if (toPush.length) await push(toPush);
+    if (toPush.length) await push(toPush, { allowWipe: !!force });
     if (force) localStorage.removeItem(LS_FORCE);
     setStatus("online");
     return changed;
@@ -335,6 +393,35 @@
     return row ? row.value : null;
   }
 
+  /* ─── 서버 변경 이력 (semis_store_history — DB 트리거 자동 백업) ─── */
+  async function history(key, limit) {
+    if (typeof fetch === "undefined") throw new Error("offline");
+    let q = HIST + "?src=eq." + TABLE + "&select=id,key,old_len,new_len,changed_at,changed_by"
+          + "&order=id.desc&limit=" + (limit || 60);
+    if (key) q += "&key=eq." + encodeURIComponent(key);
+    const res = await fetch(q, { headers: HEADERS });
+    if (!res.ok) throw new Error("GET " + res.status);
+    return res.json();
+  }
+  async function historyValue(id) {
+    const res = await fetch(HIST + "?id=eq." + encodeURIComponent(id) + "&select=id,key,old_value",
+      { headers: HEADERS });
+    if (!res.ok) throw new Error("GET " + res.status);
+    const rows = await res.json();
+    return Array.isArray(rows) && rows[0] ? rows[0] : null;
+  }
+  /* 이력 한 건을 현재 데이터로 되돌린다 (사용자 확인을 거친 복구이므로 가드 우회) */
+  async function restoreHistory(id) {
+    const row = await historyValue(id);
+    if (!row || !SYNC_KEYS.includes(row.key)) throw new Error("not-found");
+    D()[row.key] = row.old_value;
+    confirmWipe(row.key);
+    SeMIS.saveSilent();
+    await push([row.key], { allowWipe: true });
+    rerender();
+    return row.key;
+  }
+
   /* ─── 수동 동기화 ─── */
   async function syncNow() {
     if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
@@ -373,6 +460,8 @@
     init, stop, syncNow, uploadFile, fetchKV,
     listFiles, listFolder, deleteFile, countRows, BUCKET, PUBLIC_PREFIX,
     push, pull, applyRemote,
+    history, historyValue, restoreHistory,
+    confirmWipe, guardEvents, guardWipe, GUARD_MIN,
     dirtyKeys, pendingKeys, snapAll,
     get status() { return status; },
     CLIENT_ID, SYNC_KEYS,
