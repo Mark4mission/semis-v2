@@ -52,7 +52,7 @@ const SemisSearch = (() => {
     if (p.minRank && rank < p.minRank) return false;
     if (p.module) {
       const mn = (D().menus || []).find(m => m && m.type === "module" && m.module === p.module);
-      if (mn) return S().canSee(mn);
+      if (mn) return S().navVisible ? S().navVisible(mn) : S().canSee(mn);   // 숨긴 메뉴는 검색 결과에서도 제외
       return rank >= 4; // 메뉴가 제거된 모듈은 관리자만 (보수적)
     }
     return true;
@@ -124,7 +124,8 @@ const SemisSearch = (() => {
         if (sc) menuHits.push(Object.assign({ group: "메뉴 · 링크", score: sc }, it));
       });
     } else S().sortedMenus().forEach(mn => {
-      if (!mn || mn.type === "group" || !S().canSee(mn)) return;
+      if (!mn || mn.type === "group") return;
+      if (!(S().navVisible ? S().navVisible(mn) : S().canSee(mn))) return;
       const it = mn.type === "module"
         ? { title: mn.label, sub: "메뉴로 이동", icon: mn.icon || "▪", route: mn.module }
         : { title: mn.label, sub: mn.open === "frame" ? "내부 화면으로 열기" : "새 탭으로 열기",

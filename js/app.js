@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.50.0";
+  const VERSION = "2.51.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -355,6 +355,10 @@ const SeMIS = (() => {
         if (mn && mn.parent === "grp-pass") mn.parent = "grp-equip";
       });
     }
+    // v2.51 숨김 플래그 정규화 — true 일 때만 보관(멱등). 대시보드·시스템 설정은 숨길 수 없다.
+    DATA.menus.forEach(m => {
+      if (m && m.hidden !== undefined && (m.hidden !== true || !canHide(m))) delete m.hidden;
+    });
     // 필드 보정 (구버전 데이터 마이그레이션 대비)
     DATA.notices = DATA.notices || [];
     DATA.pwOverrides = DATA.pwOverrides || {};
@@ -885,6 +889,25 @@ const SeMIS = (() => {
     if (vis === "hq") return roleRank() >= 3;
     return roleRank() >= 4;
   }
+  /* ─── v2.51 메뉴 숨김 (권한과 별개) ───
+     menu.hidden = true 이면 어떤 권한으로 접속해도 사이드바·통합검색·대시보드 카드에
+     나타나지 않는다. 기능 자체는 살아 있어 라우트(#/module)로는 그대로 동작한다.
+     그룹을 숨기면 하위 메뉴도 함께 숨겨진다. 대시보드·시스템 설정은 숨길 수 없다. */
+  const UNHIDABLE = ["dashboard", "settings"];
+  function canHide(menu) {
+    return !!menu && !(menu.type === "module" && UNHIDABLE.indexOf(menu.module) >= 0);
+  }
+  function menuHidden(menu) {
+    if (!menu) return false;
+    if (menu.hidden && canHide(menu)) return true;
+    if (menu.parent && DATA && Array.isArray(DATA.menus)) {
+      const p = DATA.menus.find(m => m && m.id === menu.parent);
+      if (p && p.hidden) return true;
+    }
+    return false;
+  }
+  /* 화면 노출 = 권한 통과 && 숨김 아님 */
+  function navVisible(menu) { return !!menu && canSee(menu) && !menuHidden(menu); }
 
   /* ─────────── 유틸 ─────────── */
   const $ = (sel, el) => (el || document).querySelector(sel);
@@ -1072,6 +1095,7 @@ const SeMIS = (() => {
       const acc = vendorAccess(currentUser);
       acc.routes.forEach(r => {
         const mn = menuForModule(r);
+        if (mn && menuHidden(mn)) return;
         const ov = VENDOR_NAV_LABEL[r] || {};
         const label = ov.label || (mn && mn.label) || r;
         const b = document.createElement("button");
@@ -1148,7 +1172,7 @@ const SeMIS = (() => {
 
     // v2.22: 사이드바 상단 툴바 — [모두 펼치기/접기] 토글 + [축소/확대] 토글
     const groupIds = menus.filter(g => g.type === "group" &&
-      menus.some(c => c.parent === g.id && canSee(c))).map(g => g.id);
+      menus.some(c => c.parent === g.id && navVisible(c))).map(g => g.id);
     const allCollapsed = groupIds.length > 0 && groupIds.every(id => collapsed[id]);
     const bar = document.createElement("div");
     bar.className = "nav-toolbar";
@@ -1175,7 +1199,8 @@ const SeMIS = (() => {
 
     menus.filter(mn => !mn.parent || mn.type === "group").forEach(mn => {
       if (mn.type === "group") {
-        const children = menus.filter(c => c.parent === mn.id && canSee(c));
+        if (menuHidden(mn)) return;
+        const children = menus.filter(c => c.parent === mn.id && navVisible(c));
         if (!children.length) return;
         const wrap = document.createElement("div");
         wrap.className = "nav-group" + (collapsed[mn.id] ? " collapsed" : "");
@@ -1196,7 +1221,7 @@ const SeMIS = (() => {
         wrap.appendChild(head);
         wrap.appendChild(inner);
         box.appendChild(wrap);
-      } else if (canSee(mn)) {
+      } else if (navVisible(mn)) {
         box.appendChild(itemEl(mn));
       }
     });
@@ -1321,7 +1346,7 @@ const SeMIS = (() => {
     get data() { return DATA; },
     save, load, onSave, saveSilent, normalizeData,
     get user() { return currentUser; },
-    allUsers, isAdmin, roleRank, canEdit, canDelete, canConfid, canSee,
+    allUsers, isAdmin, roleRank, canEdit, canDelete, canConfid, canSee, navVisible, menuHidden, canHide,
     VENDOR_ACCESS, vendorAccess, vendorHome,
     pwHash, sha256, signCodeFor, signMinuteFor, signCodeFromHash, signUrlFor,
     renderNav, renderHeader, renderSecBadge, renderView,

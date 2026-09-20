@@ -2429,3 +2429,8 @@ a.ct-tel:hover { color: var(--primary); }
   color: var(--text); background: #fff; border: 1px solid var(--border-strong, var(--border)); border-radius: var(--radius-sm); }
 .hist-sel:focus { border-color: var(--primary); outline: none; }
 #hist-body .tbl td { vertical-align: middle; }
+
+.menu-tree-item.is-hidden { background: repeating-linear-gradient(135deg, var(--surface), var(--surface) 7px, var(--bg) 7px, var(--bg) 14px); border-style: dashed; }
+.menu-tree-item.is-hidden .mt-label, .menu-tree-item.is-hidden .mt-url { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--text-3); }
+.menu-tree-item.is-hidden .mt-label .badge { text-decoration: none; }
+.mt-btn.on { background: var(--primary-soft, #eef2ff); color: var(--primary-dark, var(--primary)); }

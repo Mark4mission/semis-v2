@@ -478,6 +478,59 @@ function makeFetchStub(server) {
       ok(!q(e, '#menu-tree [data-del="settings"]'));
     });
 
+    /* ── v2.51 메뉴 숨기기 (권한과 별개) ── */
+    t("R59b 숨김 토글: 사이드바·검색에서 제외, 데이터·라우트는 유지", () => {
+      const target = e.S.data.menus.find(m => m.type === "module" && m.module === "schedule");
+      ok(target, "일정관리 메뉴");
+      e.S.renderNav();
+      ok(q(e, '#nav-menu [data-route="schedule"]'), "숨기기 전 노출");
+      q(e, `#menu-tree [data-hide="${target.id}"]`).click();
+      eq(e.S.data.menus.find(m => m.id === target.id).hidden, true, "hidden 플래그");
+      ok(!q(e, '#nav-menu [data-route="schedule"]'), "사이드바에서 제거");
+      ok(q(e, "#menu-tree").textContent.includes("숨김"), "숨김 배지");
+      eq(e.S.canSee(target), true, "권한 판정은 그대로");
+      eq(e.S.navVisible(target), false, "navVisible만 false");
+      const menuHit = () => (e.w.SemisSearch.search("일정") || [])
+        .some(h => h.group === "메뉴 · 링크" && h.route === "schedule");
+      eq(menuHit(), false, "검색 메뉴 결과 제외");
+      go(e, "schedule");
+      ok(q(e, "#view").textContent.length > 0, "주소로는 기능 유지");
+      go(e, "settings");
+      q(e, `#menu-tree [data-hide="${target.id}"]`).click();
+      eq(e.S.data.menus.find(m => m.id === target.id).hidden, undefined, "해제 시 플래그 제거");
+      e.S.renderNav();
+      ok(q(e, '#nav-menu [data-route="schedule"]'), "다시 노출");
+      eq(menuHit(), true, "검색에도 복귀");
+    });
+    t("R59c 그룹 숨김 → 하위 메뉴까지 숨김", () => {
+      const grp = e.S.data.menus.find(m => m.type === "group");
+      const child = e.S.data.menus.find(m => m.parent === grp.id);
+      ok(child, "하위 메뉴");
+      grp.hidden = true; e.S.saveSilent(); e.S.renderNav();
+      eq(e.S.menuHidden(child), true, "하위도 숨김 판정");
+      ok(!qa(e, "#nav-menu .nav-group-label").some(x => x.textContent.includes(grp.label)), "그룹 제거");
+      delete grp.hidden; e.S.saveSilent(); e.S.renderNav();
+    });
+    t("R59d 대시보드·시스템 설정은 숨길 수 없음", () => {
+      go(e, "settings");
+      ok(!q(e, '#menu-tree [data-hide="dashboard"]'));
+      ok(!q(e, '#menu-tree [data-hide="settings"]'));
+      const st = e.S.data.menus.find(m => m.module === "settings");
+      st.hidden = true; e.S.normalizeData();
+      eq(st.hidden, undefined, "정규화가 제거");
+      eq(e.S.canHide(st), false);
+    });
+    t("R59e normalizeData 멱등 — hidden:false 제거 · true 유지", () => {
+      const mn = e.S.data.menus.find(m => m.type === "module" && m.module === "minutes");
+      mn.hidden = false; e.S.normalizeData();
+      eq(mn.hidden, undefined);
+      mn.hidden = true;
+      eq(e.S.normalizeData(), false, "true는 변경 없음");
+      eq(mn.hidden, true);
+      delete mn.hidden; e.S.saveSilent(); e.S.renderNav();
+      go(e, "settings");
+    });
+
     // 사용자 탭
     qa(e, ".tab").find(x => x.dataset.tab === "users").click();
     t("R60 사용자 추가: 중복 ID 거부", () => {

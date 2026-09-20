@@ -122,7 +122,7 @@
       });
       upcoming.sort((a, b) => String(a.start).localeCompare(String(b.start)));
       upcoming.length = Math.min(upcoming.length, 5);
-      const quicks = SeMIS.sortedMenus().filter(m => (m.type === "link" || m.type === "module") && m.quick && SeMIS.canSee(m));
+      const quicks = SeMIS.sortedMenus().filter(m => (m.type === "link" || m.type === "module") && m.quick && SeMIS.navVisible(m));
 
       const cur = SeMIS.secCurrent();
       const nxt = SeMIS.secNext();
@@ -758,9 +758,10 @@
       : '<span class="badge badge-green mt-type">모듈</span>';
 
     const row = (m, isChild) => `
-      <div class="menu-tree-item ${isChild ? "is-child" : ""}" data-id="${esc(m.id)}">
+      <div class="menu-tree-item ${isChild ? "is-child" : ""}${m.hidden ? " is-hidden" : ""}" data-id="${esc(m.id)}">
         <span>${esc(m.icon || (m.type === "group" ? "📂" : "▪"))}</span>
         <span class="mt-label">${esc(m.label)}
+          ${m.hidden ? '<span class="badge badge-gray mt-type">숨김</span>' : ""}
           ${m.quick ? '<span class="badge badge-amber mt-type">바로가기</span>' : ""}</span>
         ${m.type === "link" && m.url
           ? `<span class="mt-url col-ext" title="${esc(m.url)}">${esc(m.url)}</span>`
@@ -772,6 +773,9 @@
         <span class="mt-actions">
           <button class="mt-btn" data-up="${esc(m.id)}" title="위로">▲</button>
           <button class="mt-btn" data-down="${esc(m.id)}" title="아래로">▼</button>
+          ${SeMIS.canHide(m)
+            ? `<button class="mt-btn${m.hidden ? " on" : ""}" data-hide="${esc(m.id)}" title="${m.hidden ? "다시 표시" : "화면에서 숨기기"}">${m.hidden ? "🙈" : "👁"}</button>`
+            : ""}
           <button class="mt-btn" data-edit="${esc(m.id)}" title="수정">✏️</button>
           ${m.module === "settings" || m.module === "dashboard" ? "" :
             `<button class="mt-btn danger" data-del="${esc(m.id)}" title="삭제">🗑</button>`}
@@ -782,7 +786,8 @@
       <div class="card">
         <div class="card-title">메뉴 구성 <span class="spacer"></span>
           <button class="btn btn-primary btn-sm" id="btn-add-menu">+ 메뉴 추가</button></div>
-        <p class="form-hint" style="margin-bottom:12px">외부 웹주소를 링크 메뉴로 등록하거나, 그룹을 만들어 메뉴를 분류할 수 있습니다. ▲▼로 순서 변경.</p>
+        <p class="form-hint" style="margin-bottom:12px">외부 웹주소를 링크 메뉴로 등록하거나, 그룹을 만들어 메뉴를 분류할 수 있습니다. ▲▼로 순서 변경.<br>
+          <b>👁 숨기기</b>는 권한과 별개로 <b>모든 사용자의 화면(사이드바 · 통합검색 · 대시보드 바로가기)</b>에서 해당 메뉴를 감춥니다. 기능은 그대로 남아 주소로는 접근할 수 있고, 그룹을 숨기면 하위 메뉴도 함께 숨겨집니다.</p>
         <div id="menu-tree">`;
     menus.filter(m => !m.parent || m.type === "group").forEach(m => {
       html += row(m, false);
@@ -795,6 +800,13 @@
     $$("#menu-tree [data-edit]").forEach(b => b.onclick = () => menuForm(b.dataset.edit));
     $$("#menu-tree [data-up]").forEach(b => b.onclick = () => moveMenu(b.dataset.up, -1));
     $$("#menu-tree [data-down]").forEach(b => b.onclick = () => moveMenu(b.dataset.down, 1));
+    $$("#menu-tree [data-hide]").forEach(b => b.onclick = () => {
+      const m = D().menus.find(x => x.id === b.dataset.hide);
+      if (!m || !SeMIS.canHide(m)) return;
+      if (m.hidden) delete m.hidden; else m.hidden = true;
+      SeMIS.save(); SeMIS.renderNav(); renderMenuTab($("#tab-body"));
+      toast(m.hidden ? `"${m.label}" 메뉴를 화면에서 숨겼습니다.` : `"${m.label}" 메뉴를 다시 표시합니다.`);
+    });
     $$("#menu-tree [data-del]").forEach(b => b.onclick = () => {
       const m = D().menus.find(x => x.id === b.dataset.del);
       const msg = m.type === "group"
@@ -864,6 +876,10 @@
       <div class="form-row" id="row-quick" ${type !== "link" && type !== "module" ? 'style="display:none"' : ""}>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="f-quick" style="width:auto" ${m && m.quick ? "checked" : ""}> 대시보드 바로가기에 표시</label></div>
+      <div class="form-row" id="row-hide" ${m && !SeMIS.canHide(m) ? 'style="display:none"' : ""}>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="f-hidden" style="width:auto" ${m && m.hidden ? "checked" : ""}> 화면에서 숨기기 (모든 권한 공통)</label>
+        <div class="form-hint">권한과 별개입니다. 사이드바·통합검색·대시보드 바로가기에서 사라지며, 기능과 데이터는 그대로 유지됩니다.</div></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="f-cancel">취소</button>
         <button class="btn btn-primary" id="f-save">저장</button>
@@ -879,6 +895,8 @@
       $("#row-quick").style.display = t === "link" ? "" : "none";
     };
     $("#f-cancel").onclick = closeModal;
+    const hiddenVal = () => !!($("#f-hidden") && $("#f-hidden").checked);
+    const applyHidden = (obj) => { if (hiddenVal() && SeMIS.canHide(obj)) obj.hidden = true; else delete obj.hidden; return obj; };
     $("#f-save").onclick = () => {
       const label = $("#f-label").value.trim();
       if (!label) { toast("이름을 입력하세요.", true); return; }
@@ -888,16 +906,16 @@
         const url = $("#f-url").value.trim();
         if (!/^https?:\/\/.+/.test(url)) { toast("올바른 웹주소(https://...)를 입력하세요.", true); return; }
         const open = $("#f-open").value === "frame" ? "frame" : "tab";
-        if (m) Object.assign(m, { label, icon, url, open, parent: $("#f-parent").value || null, vis: $("#f-vis").value, quick: $("#f-quick").checked });
-        else D().menus.push({ id: uid("mn"), seq: nextSeq(), type: "link", label, icon, url, open,
-          parent: $("#f-parent").value || null, vis: $("#f-vis").value, quick: $("#f-quick").checked });
+        if (m) applyHidden(Object.assign(m, { label, icon, url, open, parent: $("#f-parent").value || null, vis: $("#f-vis").value, quick: $("#f-quick").checked }));
+        else D().menus.push(applyHidden({ id: uid("mn"), seq: nextSeq(), type: "link", label, icon, url, open,
+          parent: $("#f-parent").value || null, vis: $("#f-vis").value, quick: $("#f-quick").checked }));
       } else if (t === "group") {
-        if (m) Object.assign(m, { label });
-        else D().menus.push({ id: uid("g"), seq: nextSeq(), type: "group", label });
+        if (m) applyHidden(Object.assign(m, { label }));
+        else D().menus.push(applyHidden({ id: uid("g"), seq: nextSeq(), type: "group", label }));
       } else if (isCore) {
-        // 내부 모듈: 이름/아이콘/권한/그룹/바로가기만 수정 가능
-        Object.assign(m, { label, icon, parent: $("#f-parent").value || null, vis: $("#f-vis").value,
-          quick: $("#f-quick") ? $("#f-quick").checked : !!m.quick });
+        // 내부 모듈: 이름/아이콘/권한/그룹/바로가기/숨김만 수정 가능
+        applyHidden(Object.assign(m, { label, icon, parent: $("#f-parent").value || null, vis: $("#f-vis").value,
+          quick: $("#f-quick") ? $("#f-quick").checked : !!m.quick }));
       }
       SeMIS.save(); closeModal(); SeMIS.renderNav(); renderMenuTab($("#tab-body")); toast("저장되었습니다.");
     };
