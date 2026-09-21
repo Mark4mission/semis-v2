@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.51.0";
+  const VERSION = "2.52.0";
   const LS_DATA = "semis2:data";
   const LS_UI   = "semis2:ui";
   const SS_SESSION = "semis2:session";
@@ -513,8 +513,11 @@ const SeMIS = (() => {
     });
     // v2.9: 암호 관리(vault) — 암호문 저장소 구조 보정 + 메뉴(최상위, 시스템 설정 위)
     if (!DATA.vault || typeof DATA.vault !== "object" || Array.isArray(DATA.vault))
-      DATA.vault = { v: 1, members: [], data: null, updated: "" };
+      DATA.vault = { v: 1, members: [], data: null, personal: {}, updated: "" };
     if (!Array.isArray(DATA.vault.members)) DATA.vault.members = [];
+    // v2.52 개인용 항목 암호문 { memberId: {iv, ct} } — 멤버 본인의 개인 키로만 해독
+    if (!DATA.vault.personal || typeof DATA.vault.personal !== "object" || Array.isArray(DATA.vault.personal))
+      DATA.vault.personal = {};
     if (!DATA.menus.some(m => m && m.type === "module" && m.module === "vault")) {
       const st = DATA.menus.find(m => m && m.id === "settings");
       const seq = st ? (st.seq || 0) - 0.5

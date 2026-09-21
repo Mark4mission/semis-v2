@@ -2434,3 +2434,21 @@ a.ct-tel:hover { color: var(--primary); }
 .menu-tree-item.is-hidden .mt-label, .menu-tree-item.is-hidden .mt-url { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--text-3); }
 .menu-tree-item.is-hidden .mt-label .badge { text-decoration: none; }
 .mt-btn.on { background: var(--primary-soft, #eef2ff); color: var(--primary-dark, var(--primary)); }
+
+/* v2.52 암호 관리 — 공용 / 개인용 */
+.v-seg { display: inline-flex; border: 1.5px solid var(--border-strong, var(--border)); border-radius: 10px; overflow: hidden; }
+.v-seg-opt { margin: 0; cursor: pointer; }
+.v-seg-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.v-seg-opt span { display: inline-block; padding: 8px 18px; font-size: .9rem; font-weight: 600; color: var(--text-2); }
+.v-seg-opt + .v-seg-opt span { border-left: 1.5px solid var(--border-strong, var(--border)); }
+.v-seg-opt input:checked + span { background: var(--primary-soft); color: var(--primary-dark); }
+.v-seg-opt input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: -2px; }
+.v-fchips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.v-fchip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1.5px solid var(--border-strong, var(--border));
+  background: var(--surface); border-radius: 999px; font-size: .84rem; font-weight: 600; color: var(--text-2); cursor: pointer; }
+.v-fchip:hover { border-color: var(--primary); }
+.v-fchip.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-dark); }
+.v-fn { font-size: .74rem; font-weight: 700; color: var(--text-3); }
+.v-fchip.on .v-fn { color: var(--primary-dark); }
+.v-tag-personal { background: #fff7ed; color: #9a3412; font-size: .72rem; vertical-align: 2px; }
+.v-row-personal td:first-child { box-shadow: inset 3px 0 0 #fdba74; }

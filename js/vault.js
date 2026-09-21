@@ -75,16 +75,22 @@
   }
 
   /* ─────── 해제 세션 (메모리 전용 — 어디에도 직렬화 금지) ─────── */
-  let rawKey = null;      // Uint8Array(32) vaultKey
-  let entries = null;     // 복호화된 항목 배열
+  let rawKey = null;      // Uint8Array(32) vaultKey — 공용 항목용
+  let pKey = null;        // Uint8Array(32) 개인 키 — 해제한 멤버의 개인용 항목 전용 (v2.52)
+  let entries = null;     // 복호화된 공용 항목
+  let mine = null;        // 복호화된 개인용 항목 (해제한 멤버 본인 것만)
   let unlockedBy = null;  // 해제한 멤버 이름
+  let myId = null;        // 해제한 멤버 id
   let lockTimer = null, tickTimer = null, expireAt = 0;
   let query = "";
+  let scopeFilter = "all";              // all | shared | personal
 
   const isUnlocked = () => !!rawKey;
   function lock() {
     if (rawKey) rawKey.fill(0);
-    rawKey = null; entries = null; unlockedBy = null; expireAt = 0; query = "";
+    if (pKey) pKey.fill(0);
+    rawKey = null; pKey = null; entries = null; mine = null; unlockedBy = null; myId = null;
+    expireAt = 0; query = ""; scopeFilter = "all";
     if (lockTimer) { clearTimeout(lockTimer); lockTimer = null; }
     if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
   }
@@ -114,20 +120,52 @@
     });
   }
 
-  /* ─────── 저장(암호화 후 동기화) ─────── */
+  /* ─────── 저장(암호화 후 동기화) ───────
+     공용 항목 → V().data (vaultKey, 멤버 전원 해독 가능)
+     개인용 항목 → V().personal[멤버id] (해당 멤버의 개인 키, 본인만 해독 가능) */
+  const P = () => { if (!V().personal || typeof V().personal !== "object") V().personal = {}; return V().personal; };
   async function persist() {
     const key = await importRaw(rawKey);
     V().data = await aesEnc(key, strBytes(JSON.stringify(entries)));
+    if (pKey && myId) {
+      const pk = await importRaw(pKey);
+      if (mine && mine.length) P()[myId] = await aesEnc(pk, strBytes(JSON.stringify(mine)));
+      else delete P()[myId];
+    }
     V().updated = new Date().toISOString();
     SeMIS.save();
   }
 
+  /* 개인 키 준비 — 멤버의 KEK로 래핑해 m.pwrap에 보관 (최초 1회 생성) */
+  async function openPersonal(m, kek) {
+    if (m.pwrap) {
+      pKey = await aesDec(kek, m.pwrap);
+      const box = P()[m.id];
+      mine = box ? JSON.parse(bytesStr(await aesDec(await importRaw(pKey), box))) : [];
+    } else {
+      pKey = crypto.getRandomValues(new Uint8Array(32));
+      m.pwrap = await aesEnc(kek, pKey);
+      mine = [];
+      SeMIS.save();
+    }
+  }
+
   /* ─────── 핵심 동작: 설정/해제/멤버 ─────── */
+  async function makeMember(name, pw) { // vaultKey 래핑까지 — KEK를 함께 돌려준다
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const kek = await deriveKEK(pw, salt, PBKDF2_ITER);
+    const wrap = await aesEnc(kek, rawKey);
+    const m = { id: uid("vm"), name: String(name).trim(), salt: b64(salt), iter: PBKDF2_ITER, wrap };
+    V().members.push(m);
+    return { m, kek };
+  }
   async function setup(name, pw) { // 최초 저장소 생성
     if (V().members.length) throw new Error("이미 설정된 저장소입니다.");
     rawKey = crypto.getRandomValues(new Uint8Array(32));
     entries = []; unlockedBy = name;
-    await addMember(name, pw);
+    const { m, kek } = await makeMember(name, pw);
+    myId = m.id;
+    await openPersonal(m, kek);
     await persist();
     startLockTimer();
   }
@@ -136,35 +174,51 @@
     if (!m) throw new Error("멤버를 선택하세요.");
     const kek = await deriveKEK(pw, unb64(m.salt), m.iter);
     const raw = await aesDec(kek, m.wrap);   // 잘못된 비밀번호 → 예외
-    rawKey = raw; unlockedBy = m.name;
+    rawKey = raw; unlockedBy = m.name; myId = m.id;
     if (V().data) {
       const key = await importRaw(rawKey);
       entries = JSON.parse(bytesStr(await aesDec(key, V().data)));
     } else entries = [];
+    await openPersonal(m, kek);
     startLockTimer();
   }
-  async function addMember(name, pw) { // 해제 상태에서만 (vaultKey 필요)
+  async function addMember(name, pw) { // 해제 상태에서만 (vaultKey 필요). 개인 키는 그 멤버의 첫 해제 때 생성
     if (!isUnlocked()) throw new Error("잠금 해제 후 가능합니다.");
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const kek = await deriveKEK(pw, salt, PBKDF2_ITER);
-    const wrap = await aesEnc(kek, rawKey);
-    V().members.push({ id: uid("vm"), name: String(name).trim(), salt: b64(salt), iter: PBKDF2_ITER, wrap });
+    await makeMember(name, pw);
     SeMIS.save();
   }
+  const hasPersonal = (memberId) => !!(V().personal && V().personal[memberId]);
   function removeMember(memberId) {
     if (!isUnlocked()) return;
     if (V().members.length <= 1) { toast("최소 1명의 멤버가 필요합니다.", true); return; }
     V().members = V().members.filter(m => m.id !== memberId);
+    delete P()[memberId];                   // 개인용 항목은 본인 외 해독 불가 → 함께 폐기
     SeMIS.save();
   }
   async function changeMemberPw(memberId, newPw) { // 해제 상태에서 재래핑
     if (!isUnlocked()) throw new Error("잠금 해제 후 가능합니다.");
     const m = V().members.find(x => x.id === memberId);
     if (!m) return;
+    const self = memberId === myId;
+    if (!self && hasPersonal(memberId))
+      throw new Error("개인용 항목이 있는 멤버는 본인만 비밀번호를 변경할 수 있습니다.");
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const kek = await deriveKEK(newPw, salt, PBKDF2_ITER);
     m.salt = b64(salt); m.iter = PBKDF2_ITER; m.wrap = await aesEnc(kek, rawKey);
+    if (self && pKey) m.pwrap = await aesEnc(kek, pKey);
+    else delete m.pwrap;                    // 개인용 항목이 없던 멤버 → 다음 해제 때 새 개인 키 생성
     SeMIS.save();
+  }
+
+  /* 항목 조회 (공용 + 본인 개인용) */
+  const allItems = () => (entries || []).map(en => ({ en, scope: "shared" }))
+    .concat((mine || []).map(en => ({ en, scope: "personal" })));
+  function locate(id) {
+    let i = (entries || []).findIndex(x => x.id === id);
+    if (i >= 0) return { list: entries, idx: i, en: entries[i], scope: "shared" };
+    i = (mine || []).findIndex(x => x.id === id);
+    if (i >= 0) return { list: mine, idx: i, en: mine[i], scope: "personal" };
+    return null;
   }
 
   /* ─────── 유틸 ─────── */
@@ -188,9 +242,17 @@
 
   /* ─────── 항목 편집 폼 ─────── */
   function entryForm(id) {
-    const x = id ? entries.find(en => en.id === id) : null;
+    const loc = id ? locate(id) : null;
+    const x = loc ? loc.en : null;
+    const curScope = loc ? loc.scope : "shared";
     openModal(`
       <h3>${x ? "항목 수정" : "항목 추가"} <span class="badge badge-gray">암호 관리</span></h3>
+      <div class="form-row"><label>구분</label>
+        <div class="v-seg" role="radiogroup" aria-label="구분">
+          <label class="v-seg-opt"><input type="radio" name="v-scope" value="shared" ${curScope === "shared" ? "checked" : ""}><span>👥 공용</span></label>
+          <label class="v-seg-opt"><input type="radio" name="v-scope" value="personal" ${curScope === "personal" ? "checked" : ""}><span>🔒 개인용</span></label>
+        </div>
+        <div class="form-hint" id="v-scope-hint">${curScope === "personal" ? "본인만 열람 · 다른 멤버에게 보이지 않습니다." : "멤버 전원이 열람합니다."}</div></div>
       <div class="form-grid">
         <div class="form-row"><label>분류</label>
           <select id="v-cat">${CATS.map(c => `<option ${(x ? x.category : CATS[0]) === c ? "selected" : ""}>${c}</option>`).join("")}</select></div>
@@ -216,10 +278,15 @@
       </div>`);
     $("#v-gen").onclick = () => { $("#v-pw").value = genPw(16); };
     $("#v-cancel").onclick = closeModal;
+    $$('#modal-box input[name="v-scope"]').forEach(r => r.onchange = () => {
+      $("#v-scope-hint").textContent = r.value === "personal"
+        ? "본인만 열람 · 다른 멤버에게 보이지 않습니다." : "멤버 전원이 열람합니다.";
+    });
     if (x) $("#v-del").onclick = () =>
       confirmModal(`항목 "${x.title}"을(를) 삭제하시겠습니까?`, async () => {
         if (!isUnlocked()) return;
-        entries = entries.filter(en => en.id !== x.id);
+        const l = locate(x.id);
+        if (l) l.list.splice(l.idx, 1);
         await persist(); closeModal(); SeMIS.renderView(); toast("삭제되었습니다.");
       });
     $("#v-save").onclick = async () => {
@@ -234,8 +301,18 @@
         note: $("#v-note").value.trim(),
         updated: new Date().toISOString().slice(0, 10)
       };
-      if (x) Object.assign(x, rec);
-      else entries.push(Object.assign({ id: uid("ve") }, rec));
+      const sel = $('#modal-box input[name="v-scope"]:checked');
+      const scope = sel && sel.value === "personal" ? "personal" : "shared";
+      if (scope === "personal" && !pKey) { toast("개인 키를 준비하지 못했습니다. 다시 잠금 해제해 주세요.", true); return; }
+      const target = scope === "personal" ? mine : entries;
+      if (x) {
+        Object.assign(x, rec);
+        if (curScope !== scope) {             // 공용 ↔ 개인용 이동
+          const l = locate(x.id);
+          if (l) l.list.splice(l.idx, 1);
+          target.push(x);
+        }
+      } else target.push(Object.assign({ id: uid("ve") }, rec));
       await persist(); closeModal(); SeMIS.renderView(); toast("저장되었습니다. (암호화 동기화)");
     };
   }
@@ -248,7 +325,7 @@
       <p class="form-hint">멤버는 각자의 개인 비밀번호로 저장소를 열 수 있습니다. (현재 ${V().members.length}명)</p>
       <div id="vm-list">${V().members.map(m => `
         <div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid var(--border);font-size:.88rem">
-          <b>${esc(m.name)}</b>${m.name === unlockedBy ? ' <span class="badge badge-blue">나</span>' : ""}
+          <b>${esc(m.name)}</b>${m.id === myId ? ' <span class="badge badge-blue">나</span>' : ""}
           <span class="spacer" style="flex:1"></span>
           <button class="btn btn-ghost btn-sm" data-vm-pw="${esc(m.id)}">비밀번호 변경</button>
           <button class="btn btn-danger btn-sm" data-vm-del="${esc(m.id)}">제거</button>
@@ -271,7 +348,8 @@
     };
     $$("#vm-list [data-vm-del]").forEach(b => b.onclick = () => {
       const m = V().members.find(x => x.id === b.dataset.vmDel);
-      confirmModal(`멤버 "${m ? m.name : ""}"을(를) 제거하시겠습니까? 해당 비밀번호로 더 이상 열 수 없습니다.`, () => {
+      const warn = m && hasPersonal(m.id) ? " 이 멤버의 개인용 항목도 함께 삭제되며 복구할 수 없습니다." : "";
+      confirmModal(`멤버 "${m ? m.name : ""}"을(를) 제거하시겠습니까? 해당 비밀번호로 더 이상 열 수 없습니다.${warn}`, () => {
         removeMember(b.dataset.vmDel); closeModal(); toast("제거되었습니다.");
       });
     });
@@ -290,7 +368,8 @@
       $("#vp-save").onclick = async () => {
         const pw = $("#vp-new").value;
         if (pw.length < 4) { toast("4자 이상 입력하세요.", true); return; }
-        await changeMemberPw(m.id, pw);
+        try { await changeMemberPw(m.id, pw); }
+        catch (err) { toast(err.message || "변경하지 못했습니다.", true); return; }
         closeModal(); toast("비밀번호가 변경되었습니다.");
       };
     });
@@ -328,32 +407,45 @@
       </div>`;
   }
 
-  function rowHTML(en, i) {
-    return `<tr>
+  function rowHTML(en, scope) {
+    const id = esc(en.id);
+    const tag = scope === "personal" ? ' <span class="badge v-tag-personal" title="본인만 열람">🔒 개인</span>' : "";
+    return `<tr${scope === "personal" ? ' class="v-row-personal"' : ""}>
       <td><span class="badge badge-gray" style="white-space:nowrap">${esc(en.category)}</span></td>
-      <td><b>${esc(en.title)}</b>${en.note ? `<div style="font-size:.74rem;color:var(--text-3)">${esc(en.note)}</div>` : ""}</td>
-      <td style="font-size:.84rem">${en.account ? `${esc(en.account)} <button class="ct-copy" data-vc-acc="${i}" title="계정 복사">📋</button>` : "-"}</td>
-      <td style="font-size:.84rem;white-space:nowrap">${en.pw ? `<span class="v-mask" data-vp-span="${i}">••••••••</span>
-        <button class="ct-copy" data-vp-eye="${i}" title="표시/숨김">👁</button>
-        <button class="ct-copy" data-vc-pw="${i}" title="비밀번호 복사">📋</button>` : "-"}</td>
+      <td><b>${esc(en.title)}</b>${tag}${en.note ? `<div style="font-size:.74rem;color:var(--text-3)">${esc(en.note)}</div>` : ""}</td>
+      <td style="font-size:.84rem">${en.account ? `${esc(en.account)} <button class="ct-copy" data-vc-acc="${id}" title="계정 복사">📋</button>` : "-"}</td>
+      <td style="font-size:.84rem;white-space:nowrap">${en.pw ? `<span class="v-mask" data-vp-span="${id}">••••••••</span>
+        <button class="ct-copy" data-vp-eye="${id}" title="표시/숨김">👁</button>
+        <button class="ct-copy" data-vc-pw="${id}" title="비밀번호 복사">📋</button>` : "-"}</td>
       <td>${en.url ? `<a href="${esc(en.url)}" target="_blank" rel="noopener">열기 ↗</a>` : "-"}</td>
       <td style="font-size:.7rem;color:var(--text-3);white-space:nowrap">${esc(en.updated || "")}</td>
-      <td><button class="btn btn-ghost btn-sm" data-ve-edit="${esc(en.id)}">✎</button></td>
+      <td><button class="btn btn-ghost btn-sm" data-ve-edit="${id}">✎</button></td>
     </tr>`;
   }
-
+  function scopeChipsHTML() {
+    const nS = (entries || []).length, nP = (mine || []).length;
+    const chip = (k, label, n) =>
+      `<button type="button" class="v-fchip${scopeFilter === k ? " on" : ""}" data-scope="${k}">${label}<span class="v-fn">${n}</span></button>`;
+    return `<div class="v-fchips no-print">${chip("all", "전체", nS + nP)}${chip("shared", "👥 공용", nS)}${chip("personal", "🔒 개인용", nP)}</div>`;
+  }
   function unlockedBody() {
     const q = query.toLowerCase();
-    const items = entries
-      .map((en, i) => ({ en, i }))
+    const items = allItems()
+      .filter(({ scope }) => scopeFilter === "all" || scopeFilter === scope)
       .filter(({ en }) => !q || [en.title, en.category, en.account, en.url, en.note]
         .some(v => String(v || "").toLowerCase().includes(q)))
       .sort((a, b) => String(a.en.category).localeCompare(b.en.category) || String(a.en.title).localeCompare(b.en.title));
-    if (!items.length) return '<div class="empty">등록된 항목이 없습니다. "+ 항목 추가"로 시트 내용을 옮겨오세요.</div>';
+    if (!items.length) {
+      const msg = q ? "검색 결과가 없습니다."
+        : scopeFilter === "personal" ? "등록된 개인용 항목이 없습니다."
+        : scopeFilter === "shared" ? "등록된 공용 항목이 없습니다."
+        : '등록된 항목이 없습니다. "+ 항목 추가"로 시트 내용을 옮겨오세요.';
+      return `<div class="empty">${msg}</div>`;
+    }
     return `<div class="table-wrap"><table class="tbl"><thead><tr>
         <th style="width:118px">분류</th><th>제목</th><th style="width:180px">계정</th><th style="width:150px">비밀번호</th>
         <th style="width:60px">URL</th><th style="width:86px">수정일</th><th style="width:44px"></th></tr></thead>
-      <tbody>${items.map(({ en, i }) => rowHTML(en, i)).join("")}</tbody></table></div>`;
+      <tbody>${items.map(({ en, scope }) => rowHTML(en, scope)).join("")}</tbody></table></div>`;
   }
 
   /* ─────── 모듈 렌더 ─────── */
@@ -405,34 +497,41 @@
           <button class="btn btn-ghost btn-sm" id="vault-members">👥 멤버</button>
           <button class="btn btn-ghost btn-sm" id="vault-lock">🔒 잠그기</button>
           <button class="btn btn-primary" id="vault-add">+ 항목 추가</button>
-          <div class="page-desc">${esc(unlockedBy)} 해제 중 · 5분 후 자동 잠금 · 항목 ${entries.length}건 ·
+          <div class="page-desc">${esc(unlockedBy)} 해제 중 · 5분 후 자동 잠금 · 공용 ${entries.length} · 개인용 ${(mine || []).length} ·
             <a href="${SHEET_URL}" target="_blank" rel="noopener">구버전 시트 ↗</a></div>
         </div>
         <div class="card">
           <div class="cal-toolbar">
             <input id="vault-search" class="ct-search" type="search" style="max-width:280px"
               placeholder="🔍 제목 · 계정 · 분류 검색" value="${esc(query)}" autocomplete="off">
+            <div id="vault-chips">${scopeChipsHTML()}</div>
           </div>
           <div id="vault-body">${unlockedBody()}</div>
         </div>`;
 
+      const redraw = () => {
+        $("#vault-chips").innerHTML = scopeChipsHTML();
+        $("#vault-body").innerHTML = unlockedBody();
+        wire();
+      };
       const wire = () => {
+        $$("#vault-chips [data-scope]").forEach(b => b.onclick = () => { scopeFilter = b.dataset.scope; redraw(); });
         $$("#vault-body [data-ve-edit]").forEach(b => b.onclick = () => entryForm(b.dataset.veEdit));
         $$("#vault-body [data-vc-acc]").forEach(b => b.onclick = () => {
-          const en = entries[Number(b.dataset.vcAcc)];
-          if (en) copyText(en.account, "계정");
+          const l = locate(b.dataset.vcAcc);
+          if (l) copyText(l.en.account, "계정");
         });
         $$("#vault-body [data-vc-pw]").forEach(b => b.onclick = () => {
-          const en = entries[Number(b.dataset.vcPw)];
-          if (en) copyText(en.pw, "비밀번호");
+          const l = locate(b.dataset.vcPw);
+          if (l) copyText(l.en.pw, "비밀번호");
         });
         $$("#vault-body [data-vp-eye]").forEach(b => b.onclick = () => {
-          const i = Number(b.dataset.vpEye);
-          const span = $(`[data-vp-span="${i}"]`);
-          const en = entries[i];
-          if (!span || !en) return;
+          const id = b.dataset.vpEye;
+          const span = Array.prototype.find.call(document.querySelectorAll("[data-vp-span]"), el => el.dataset.vpSpan === id);
+          const l = locate(id);
+          if (!span || !l) return;
           const shown = span.dataset.shown === "1";
-          span.textContent = shown ? "••••••••" : en.pw;
+          span.textContent = shown ? "••••••••" : l.en.pw;
           span.dataset.shown = shown ? "" : "1";
         });
       };
@@ -460,13 +559,18 @@
   window.SemisVault = {
     CATS, AUTO_LOCK_MS, PBKDF2_ITER,
     isUnlocked, lock, extend, setup, unlock, addMember, removeMember, changeMemberPw,
-    entryCount: () => (entries ? entries.length : null),
-    addEntryForTest: async (rec) => { // 테스트용: 해제 상태에서 항목 추가+암호화 저장
+    entryCount: () => (entries ? entries.length + (mine ? mine.length : 0) : null),
+    sharedCount: () => (entries ? entries.length : null),
+    personalCount: () => (mine ? mine.length : null),
+    hasPersonal,
+    addEntryForTest: async (rec, scope) => { // 테스트용: 해제 상태에서 항목 추가+암호화 저장
       if (!isUnlocked()) throw new Error("locked");
-      entries.push(Object.assign({ id: uid("ve") }, rec));
+      (scope === "personal" ? mine : entries).push(Object.assign({ id: uid("ve") }, rec));
       await persist();
     },
-    findEntry: (title) => (entries ? entries.find(e => e.title === title) || null : null),
+    findEntry: (title) => { const it = allItems().find(x => x.en.title === title); return it ? it.en : null; },
+    scopeOf: (title) => { const it = allItems().find(x => x.en.title === title); return it ? it.scope : null; },
+    setScopeFilter: (f) => { scopeFilter = f; },
     remainingMs: () => (expireAt ? expireAt - Date.now() : 0),
     _fireExpire: () => { if (lockTimer) { clearTimeout(lockTimer); lockTimer = null; } onExpire(); }
   };

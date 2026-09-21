@@ -3268,6 +3268,86 @@ function makeFetchStub(server) {
     e.w.SemisVault.lock();
   });
 
+  /* v2.52 공용 / 개인용 */
+  await ta("VT20 개인용 항목: 본인만 해독 · 다른 멤버에게 보이지 않음 · 서버엔 암호문만", async () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const VT = e.w.SemisVault;
+    await VT.setup("박철성", "pw-park");
+    await VT.addMember("최상일", "pw-choi");
+    await VT.addEntryForTest({ category: "시스템", title: "파트 공용", account: "a", pw: "SharedPw1!", url: "", note: "" }, "shared");
+    await VT.addEntryForTest({ category: "웹사이트", title: "박 개인메일", account: "me", pw: "MyOwnPw9!", url: "", note: "" }, "personal");
+    eq(VT.sharedCount(), 1); eq(VT.personalCount(), 1);
+    const parkId = e.S.data.vault.members.find(m => m.name === "박철성").id;
+    ok(e.S.data.vault.personal[parkId] && e.S.data.vault.personal[parkId].ct, "개인용 암호문 저장");
+    const raw = JSON.stringify(e.S.data.vault) + (e.w.localStorage.getItem("semis2:data") || "");
+    ok(!raw.includes("MyOwnPw9!") && !raw.includes("박 개인메일"), "개인용 평문 미노출");
+    VT.lock();
+    const choiId = e.S.data.vault.members.find(m => m.name === "최상일").id;
+    await VT.unlock(choiId, "pw-choi");
+    eq(VT.sharedCount(), 1, "공용은 보임");
+    eq(VT.personalCount(), 0, "타인의 개인용은 안 보임");
+    eq(VT.findEntry("박 개인메일"), null);
+    VT.lock();
+    await VT.unlock(parkId, "pw-park");
+    eq(VT.findEntry("박 개인메일").pw, "MyOwnPw9!", "본인은 복호화");
+    eq(VT.scopeOf("박 개인메일"), "personal");
+    VT.lock();
+  });
+
+  await ta("VT21 항목 폼: 공용/개인용 선택 · 저장 · 구분 전환 · 필터 칩", async () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const VT = e.w.SemisVault;
+    await VT.setup("박철성", "pw-park");
+    go(e, "vault");
+    q(e, "#vault-add").click();
+    eq(qa(e, '#modal-box input[name="v-scope"]').length, 2, "공용/개인용 2택");
+    ok(q(e, '#modal-box input[name="v-scope"][value="shared"]').checked, "기본값 공용");
+    q(e, '#modal-box input[name="v-scope"][value="personal"]').checked = true;
+    q(e, "#v-title").value = "개인 VPN"; q(e, "#v-pw").value = "vpn-pw";
+    q(e, "#v-save").click();
+    await new Promise(r => setTimeout(r, 400));
+    eq(VT.scopeOf("개인 VPN"), "personal", "개인용 저장");
+    ok(q(e, "#vault-body .v-tag-personal"), "개인 배지");
+    eq(qa(e, "#vault-chips [data-scope]").length, 3, "필터 칩 3종");
+    qa(e, "#vault-chips [data-scope]").find(b => b.dataset.scope === "shared").click();
+    ok(!q(e, "#vault-body").textContent.includes("개인 VPN"), "공용 필터에서 제외");
+    qa(e, "#vault-chips [data-scope]").find(b => b.dataset.scope === "all").click();
+    q(e, "#vault-body [data-ve-edit]").click();
+    q(e, '#modal-box input[name="v-scope"][value="shared"]').checked = true;
+    q(e, "#v-save").click();
+    await new Promise(r => setTimeout(r, 400));
+    eq(VT.scopeOf("개인 VPN"), "shared", "공용으로 이동");
+    VT.lock();
+  });
+
+  await ta("VT22 개인용 있는 타 멤버 비밀번호 변경 차단 · 본인 변경 시 개인용 유지 · 멤버 제거 시 폐기", async () => {
+    const e = makeEnv();
+    loginAs(e, "hq");
+    const VT = e.w.SemisVault;
+    await VT.setup("박철성", "pw-park");
+    await VT.addMember("최상일", "pw-choi");
+    VT.lock();
+    const parkId = e.S.data.vault.members.find(m => m.name === "박철성").id;
+    const choiId = e.S.data.vault.members.find(m => m.name === "최상일").id;
+    await VT.unlock(choiId, "pw-choi");
+    await VT.addEntryForTest({ category: "기타", title: "최 개인", account: "", pw: "c1", url: "", note: "" }, "personal");
+    VT.lock();
+    await VT.unlock(parkId, "pw-park");
+    let blocked = false;
+    try { await VT.changeMemberPw(choiId, "x-new"); } catch (err) { blocked = /본인만/.test(err.message); }
+    ok(blocked, "타인 비밀번호 변경 차단");
+    await VT.addEntryForTest({ category: "기타", title: "박 개인", account: "", pw: "p1", url: "", note: "" }, "personal");
+    await VT.changeMemberPw(parkId, "pw-park-2");
+    VT.lock();
+    await VT.unlock(parkId, "pw-park-2");
+    eq(VT.findEntry("박 개인").pw, "p1", "본인 변경 후 개인용 유지");
+    VT.removeMember(choiId);
+    ok(!VT.hasPersonal(choiId), "제거 시 개인용 폐기");
+    VT.lock();
+  });
+
   await ta("VT09 5분 연장 버튼: 타이머 재설정 + 만료 동작 유지", async () => {
     const e = makeEnv();
     loginAs(e, "hq");
