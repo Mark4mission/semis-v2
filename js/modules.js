@@ -27,7 +27,8 @@
     upcoming: "mgr",  // 📅 다가오는 일정
     kpi:      "hq",   // 📈 KPI 진행현황 (v2.20 — 항공보안HQ 이상)
     news:     "all",  // 🗞 보안 뉴스 (v2.19 — guest 경량 레이아웃 전용 표시)
-    insight:  "all"   // 📊 항공보안 인사이트 (v2.19 — guest 경량 레이아웃 전용 표시)
+    insight:  "all",  // 📊 항공보안 인사이트 (v2.19 — guest 경량 레이아웃 전용 표시)
+    flight:   "mgr"   // ✈️ 운항 현황 (v2.54 — 지도 + 인천 접근 중, 요약 띠 아래 전체 폭)
   };
   const cardVis = (id) => {
     const v = DASH_CARDS[id] || "all";
@@ -215,6 +216,10 @@
               <div id="insight-box"></div>
             </div>` : ""
       };
+      /* v2.54: 운항 현황 — 메뉴를 숨기면 대시보드 칸도 빠진다 */
+      const flightMenu = SeMIS.sortedMenus().find(m => m && m.type === "module" && m.module === "flight");
+      const flightCard = !guest && cardVis("flight") && window.SemisFlight && (!flightMenu || SeMIS.navVisible(flightMenu))
+        ? SemisFlight.dashHTML() : "";
       const colL = guest
         ? C.notice + C.news                                            // guest 좌측: 공지 → 뉴스
         : C.notice + C.cares + C.equip;                                // 좌측: 공지 → CARES 환경센서 → 고장신고
@@ -228,6 +233,7 @@
           <span class="ds-head-meta">${esc(fmtDate(new Date().toISOString()))}</span>
         </div>
         ${briefStrip(d, canWrite, upcoming, guest)}
+        ${flightCard}
         <div class="dash-grid">
           <div class="dash-col">${colL}</div>
           <div class="dash-col">${colR}</div>
@@ -235,6 +241,7 @@
 
       // 상단 요약 타일 → 해당 메뉴로 이동
       $$("[data-dash-go]", root).forEach(el => el.onclick = () => SeMIS.navigate(el.dataset.dashGo));
+      if (flightCard) { try { SemisFlight.mountDash(); } catch (e) { /* 지도 오류가 대시보드를 막지 않도록 */ } }
 
       // 보안등급 (5단계: 평시-관심-주의-경계-심각)
       if ($("#level-box")) {

@@ -1238,3 +1238,21 @@ begin
 end $$;
 /* ICS 피드는 Edge Function(서비스 권한)만 */
 revoke execute on function public.semis_v2_ics_feed(text) from anon;
+
+/* ═════════════ v2.54 운항 현황 — Logistics 기체 목록 읽기 전용 (마이그레이션 semis_v2_security_13_fleet) ═════════════
+   등록부호 · ICAO 주소 · 기종 · 형식만. 위치 자료는 Edge Function semis-logi-adsb(공용, anon 키)가 준다. */
+create or replace function public.semis_v2_fleet() returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not exists (select 1 from semis_v2_private.ctx() c where c.kind = 'user') then
+    return jsonb_build_object('ok', false, 'error', 'auth');
+  end if;
+  return jsonb_build_object('ok', true, 'fleet', coalesce((
+    select jsonb_agg(jsonb_build_object('reg', coalesce(f ->> 'reg', ''), 'hex', lower(f ->> 'hex'),
+                                        'type', coalesce(f ->> 'type', ''), 'model', coalesce(f ->> 'model', '')) order by t.ord)
+      from public.semis_logi_store s,
+           jsonb_array_elements(case when jsonb_typeof(s.value) = 'array' then s.value else '[]'::jsonb end) with ordinality t(f, ord)
+     where s.key = 'fleet' and coalesce(f ->> 'hex', '') ~ '^[0-9a-fA-F]{6}$'), '[]'::jsonb));
+end $$;
+revoke execute on function public.semis_v2_fleet() from public, authenticated;
+grant execute on function public.semis_v2_fleet() to anon, service_role;

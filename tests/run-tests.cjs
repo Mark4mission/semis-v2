@@ -39,6 +39,8 @@ const newsJS = read("js/news.js");
 const chatJS = read("js/chat.js");
 const searchJS = read("js/search.js");
 const kpiJS = read("js/kpi.js");
+const flcJS = read("js/flightcore.js");
+const fltJS = read("js/flight.js");
 const syncJS = read("js/sync.js");
 const powJS = read("js/pow.js");
 const faJS = read("js/fileauth.js");
@@ -91,7 +93,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + slJS + "\n;" + iosaJS + "\n;" + pdJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + qrJS + "\n;" + mnJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + chatJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + syncJS + "\n;" + powJS + "\n;" + faJS);
+  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + slJS + "\n;" + iosaJS + "\n;" + pdJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + qrJS + "\n;" + mnJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + chatJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + flcJS + "\n;" + fltJS + "\n;" + syncJS + "\n;" + powJS + "\n;" + faJS);
   const S = w.SeMIS;
   if (opts.boot !== false) { S.boot(); if (w.SemisSearch) w.SemisSearch.init(); }
   const env = { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -10119,6 +10121,104 @@ function makeFetchStub(server) {
     });
   }
 
+
+
+  /* ══════════ [FL] 운항 현황 (v2.54 — SeMIS · Logistics 이식) ══════════ */
+  {
+    const nowIso = () => new Date().toISOString();
+    const FLEET = [{ reg: "HL7421", hex: "71bc21", type: "B744", model: "747-400SF" },
+                   { reg: "HL7507", hex: "71bd07", type: "B763", model: "767-300F" },
+                   { reg: "HL8319", hex: "71c319", type: "B738", model: "737-800SF" }];
+    const ADSB = () => ({ now: nowIso(), fetched_at: nowIso(), err: null, src: "adsb.lol (ODbL)",
+      ac: [
+        { hex: "71bc21", reg: "HL7421", type: "B744", flight: "KJ271   ", lat: 36.5, lon: 127.5, alt: 12000, gnd: false, gs: 350, trk: 318, vr: -1200, sqk: "2301", emg: false, seen_at: nowIso(), pos_at: nowIso(), trail: [[1, 35.9, 128.0, 20000], [2, 36.2, 127.8, 16000]] },
+        { hex: "71bd07", reg: "HL7507", type: "B763", flight: null, lat: 37.4602, lon: 126.4407, alt: null, gnd: true, gs: 0, trk: 0, vr: 0, sqk: null, emg: false, seen_at: nowIso(), pos_at: nowIso(), gnd_since: new Date(Date.now() - 3600000).toISOString() }],
+      events: [{ hex: "71bd07", reg: "HL7507", flight: "KJ262", kind: "arr", apt: "ICN", at: new Date(Date.now() - 3600000).toISOString(), inferred: false },
+               { hex: "71bc21", reg: "HL7421", flight: "KJ271", kind: "dep", apt: "PVG", at: new Date(Date.now() - 2 * 3600000).toISOString(), inferred: true }] });
+    function flightFetch(log) {
+      const base = makeFetchStub({});
+      const f = (url, o) => {
+        const u = String(url);
+        (log || []).push(u);
+        if (u.indexOf("/functions/v1/semis-logi-adsb") >= 0)
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(ADSB()), headers: { get: () => null } });
+        if (u.indexOf("/rest/v1/rpc/semis_v2_fleet") >= 0) {
+          const tok = (o && o.headers && o.headers["x-semis-token"]) || "";
+          const body = TOKENS[tok] ? { ok: true, fleet: FLEET } : { ok: false, error: "auth" };
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body), headers: { get: () => null } });
+        }
+        return base(url, o);
+      };
+      return f;
+    }
+    t("FL01 메뉴 자동 삽입: 대시보드 다음 · 전체 열람 · 멱등 · 넓은 화면", () => {
+      const e = makeEnv();
+      const d = e.S.data;
+      const fm = d.menus.find(m => m.type === "module" && m.module === "flight");
+      ok(fm, "운항 현황 메뉴");
+      const db = d.menus.find(m => m.type === "module" && m.module === "dashboard");
+      eq(fm.seq, (db.seq || 0) + 0.5, "대시보드 다음");
+      eq(fm.vis, "all"); eq(fm.parent, null);
+      eq(e.S.normalizeData(), false, "멱등");
+      ok(/flight: "wide"/.test(appJS), "넓은 화면");
+      ok(e.w.SemisFlight && e.w.SemisFlightCore, "모듈 로드");
+    });
+    await ta("FL02 운항 현황 화면: 위치·기체 목록(서버) → 요약 · 인천 접근 · 지상 · 기록 · 인쇄 버튼", async () => {
+      const log = [];
+      const e = makeEnv({ fetch: flightFetch(log) });
+      loginAs(e, "manager");
+      go(e, "flight");
+      await until(() => q(e, "#fo-fleetbox tbody") && qa(e, "#fo-fleetbox tbody tr").length === 3);
+      eq(qa(e, "#fo-fleetbox tbody tr").length, 3, "서버 기체 목록(3대) 사용");
+      const txt = q(e, "#fo-page").textContent;
+      ok(/인천 접근 중/.test(txt) && txt.indexOf("KJ271") >= 0, "접근 중 표시");
+      ok(q(e, "#fo-boardbox").textContent.indexOf("HL7507") >= 0, "인천 지상");
+      ok(q(e, "#fo-logbox").textContent.indexOf("KJ262") >= 0 && q(e, "#fo-logbox").textContent.indexOf("시각 추정") >= 0, "입출항 기록");
+      ok(q(e, "#fo-print"), "인쇄 버튼");
+      ok(q(e, "#fo-map").textContent.indexOf("지도") >= 0, "지도 자리(Leaflet 없으면 안내)");
+      ok(log.some(u => /semis-logi-adsb\?trail=1&events=1/.test(u)), "경로·기록 포함 조회");
+      ok(!log.some(u => /\/rest\/v1\/semis_logi_store/.test(u)), "Logistics 공용 DB 직접 조회 없음");
+      const rep = e.w.SemisFlight.reportHTML();
+      ok(/운항 현황/.test(rep) && rep.indexOf("HL7421") >= 0 && rep.indexOf("adsb.lol") >= 0 && /@page \{ size: A4/.test(rep), "A4 보고서");
+      e.Sync.stop();
+    });
+    await ta("FL03 대시보드: 보안관리자 이상만 · 메뉴 숨기면 빠짐 · 일반 사용자 경량 화면 제외", async () => {
+      const e = makeEnv({ fetch: flightFetch() });
+      loginAs(e, "manager");
+      go(e, "dashboard");
+      ok(q(e, "#dash-flt"), "manager 대시보드 칸");
+      await until(() => /인천 접근 중/.test((q(e, "#dflt-appr") || { textContent: "" }).textContent) && q(e, "#dflt-appr .appr-row"));
+      eq(q(e, "#dflt-n").textContent, "1", "접근 중 1대");
+      e.S.data.menus.find(m => m.module === "flight").hidden = true;
+      go(e, "dashboard");
+      ok(!q(e, "#dash-flt"), "메뉴 숨김 → 칸 없음");
+      const eu = makeEnv({ fetch: flightFetch() });
+      loginAs(eu, "user");
+      go(eu, "dashboard");
+      ok(!q(eu, "#dash-flt"), "일반 사용자 대시보드 제외");
+      go(eu, "flight");
+      ok(q(eu, "#fo-page"), "일반 사용자도 메뉴로는 열람");
+      e.Sync.stop(); eu.Sync.stop();
+    });
+    t("FL04 협력업체 · 서명 세션은 운항 현황에 들어갈 수 없다", () => {
+      const e = makeEnv();
+      loginAs(e, "vendor", { vendor: "인씨스", id: "vfl" });
+      go(e, "flight");
+      ok(!q(e, "#fo-page"), "vendor 차단");
+      const e2 = makeEnv();
+      e2.S.data.minutes = [{ id: "fm1", folder: "mf-part", no: 1, date: "2026-09-01", title: "T", attendees: [], decisions: [] }];
+      signAs(e2, "minutes", "fm1");
+      go(e2, "flight");
+      ok(!q(e2, "#fo-page"), "서명 세션 차단");
+    });
+    t("FL05 기체 목록은 로그인 세션 RPC로만(Logistics 원본 · 읽기 전용) · 코드에 비밀 없음", () => {
+      ok(/create or replace function public\.semis_v2_fleet\(\)/.test(SEC_SQL), "SQL 참조");
+      ok(/semis_v2_private\.ctx\(\) c where c\.kind = 'user'/.test(SEC_SQL.slice(SEC_SQL.indexOf("semis_v2_fleet"))), "세션 확인");
+      ok(fltJS.indexOf('rpc("semis_v2_fleet"') > 0, "RPC 사용");
+      ok(fltJS.indexOf("SemisSync.ANON") > 0 && !/eyJ[\w-]+\.eyJ/.test(fltJS), "공개 키는 sync.js 것만 사용");
+      ok(!/SeMIS\.save\(\)|data\.fleet\s*=/.test(fltJS), "v2 는 기체 목록을 고치지 않음");
+    });
+  }
 
   /* ══════════ [SEC] 서버 보안 · 자동공격 방어 (v2.53) ══════════ */
   t("SEC01 코드에 비밀값 없음 — 옛 토큰·서비스 키·암호 해시", () => {

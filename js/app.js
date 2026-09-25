@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.53.0";
+  const VERSION = "2.54.0";
   /* v2.53: 데이터 사본은 이 탭의 sessionStorage 에만 둔다(탭을 닫거나 로그아웃하면 사라짐).
      화면 설정(LS_UI)만 localStorage. */
   const LS_DATA = "semis2:data";
@@ -587,6 +587,13 @@ const SeMIS = (() => {
       DATA.menus.push({ id: "kpi", seq, type: "module", label: "KPI 현황",
         icon: "📈", module: "kpi", vis: "hq", parent: null });
     }
+    // v2.54: 운항 현황 (SeMIS · Logistics 이식) — 메뉴 자동 삽입(대시보드 다음, 전체 열람)
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "flight")) {
+      const db = DATA.menus.find(m => m && m.type === "module" && m.module === "dashboard");
+      const seq = db ? (db.seq || 0) + 0.5 : 0.5;
+      DATA.menus.push({ id: "flight", seq, type: "module", label: "운항 현황",
+        icon: "✈️", module: "flight", vis: "all", parent: null });
+    }
     // v2.46.5: KPI C6-1 "관리증진 종합시스템 구축" 보완 항목 제거 — 연초 회사 제출 KPI
     //  원본에 없는 임의 추가분(added)이므로 삭제. 공용 DB의 기존 데이터도 normalize
     //  경유(변경 반환 → 자동 push)로 정리된다. (idempotent)
@@ -1078,7 +1085,7 @@ const SeMIS = (() => {
      mid(1560px)  = 목록/표 중간 밀도
      (미지정 = 기본 1180px) — 폭 조정은 이 표만 수정하면 됩니다. */
   const VIEW_WIDTH = {
-    schedule: "wide", inspection: "wide", carcap: "wide",
+    schedule: "wide", inspection: "wide", carcap: "wide", flight: "wide",
     kpi: "wide", policy: "wide", dashboard: "wide",
     passes: "mid", branches: "mid", "contracts-mgmt": "mid", training: "mid",
     supervisors: "mid", "stn-officers": "mid",
