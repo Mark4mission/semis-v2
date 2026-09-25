@@ -14,7 +14,7 @@ interface Ev {
 
 function icsEscape(s: string): string {
   return String(s || "")
-    .replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,")
+    .replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,")
     .replace(/\r?\n/g, "\\n");
 }
 const d8 = (iso: string) => iso.replace(/-/g, "");
