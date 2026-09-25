@@ -11,7 +11,9 @@
   const { $, $$, esc } = SeMIS;
 
   /* ─────────── 보안 뉴스 ─────────── */
-  const FN_URL = "https://mzyuzrxkdcpzxojenwat.supabase.co/functions/v1/semis-news?t=azs-news-7d3f9a2c";
+  /* v2.53: 고정 토큰 대신 로그인 세션(x-semis-token)으로 확인 */
+  const FN_URL = "https://mzyuzrxkdcpzxojenwat.supabase.co/functions/v1/semis-news";
+  const sessToken = () => { const A = window.SemisSync && window.SemisSync.auth; return (A && A.token && A.token()) || ""; };
   const CACHE_KEY = "semis2:news";
   const TTL = 30 * 60 * 1000;        // 캐시 유효 30분
   const REFRESH_MS = 60 * 60 * 1000; // 화면 열려 있는 동안 60분마다 자동 갱신
@@ -28,7 +30,7 @@
   async function fetchNews() {
     const c = loadCache();
     if (c && Date.now() - c.ts < TTL) return c.items;
-    const r = await fetch(FN_URL);
+    const r = await fetch(FN_URL, { headers: { "x-semis-token": sessToken() } });
     if (!r.ok) throw new Error("news http " + r.status);
     const j = await r.json();
     const items = (Array.isArray(j.items) ? j.items : []).slice(0, 24);

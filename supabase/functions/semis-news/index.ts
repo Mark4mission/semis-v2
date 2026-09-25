@@ -4,14 +4,37 @@
 //   2) 제목 검색 "항공"/"공항"(→항공), "화물"(→화물) — EUC-KR 하드코딩 쿼리
 //   ※ Google News RSS는 Supabase Edge IP 차단(503)으로 사용 불가 확인 (2026-07)
 // 분류(cat): cargo(화물) > aviation(항공) > cyber(사이버) 우선순위
-// 인증: 브라우저 직접 호출 → 비공개 토큰(?t=...)으로 제한 (공개 뉴스 데이터, 저민감)
-const TOKEN = "azs-news-7d3f9a2c";
-
-const CORS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "content-type"
-};
+// 인증(v2.53): 요청 헤더 x-semis-token(로그인 세션) → semis_v2_file_auth 로 확인 (고정 토큰 폐지)
+// 배포: Supabase MCP deploy_edge_function (verify_jwt false — 세션 확인으로 대신). 이 파일이 원본.
+const SUPA = Deno.env.get("SUPABASE_URL") ?? "";
+const ANON = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const ORIGINS = ["https://semis.pe.kr", "https://www.semis.pe.kr", "https://mark4mission.github.io"];
+const LOCAL_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+const okOrigin = (o: string) => ORIGINS.includes(o) || LOCAL_RE.test(o);
+function corsFor(origin: string): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": okOrigin(origin) ? origin : ORIGINS[0],
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "content-type, x-semis-token",
+    "Access-Control-Max-Age": "3600",
+    "Vary": "Origin"
+  };
+}
+async function sessionOk(tok: string): Promise<boolean> {
+  if (!/^[0-9a-f]{64}$/.test(tok)) return false;
+  try {
+    const r = await fetch(SUPA + "/rest/v1/rpc/semis_v2_file_auth", {
+      method: "POST",
+      headers: { apikey: ANON, Authorization: "Bearer " + ANON, "Content-Type": "application/json", "x-semis-token": tok },
+      body: "{}"
+    });
+    if (!r.ok) return false;
+    const d = await r.json();
+    return !!(d && d.ok && d.kind === "user");
+  } catch (_e) {
+    return false;
+  }
+}
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const BASE = "https://www.boannews.com";
 
@@ -88,9 +111,11 @@ function parseSearch(html: string, cat: Cat): Item[] {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
-  const url = new URL(req.url);
-  if (url.searchParams.get("t") !== TOKEN)
+  const origin = req.headers.get("origin") || "";
+  const CORS = corsFor(origin);
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+  if (origin && !okOrigin(origin)) return new Response("Forbidden", { status: 403, headers: CORS });
+  if (!(await sessionOk(req.headers.get("x-semis-token") || "")))
     return new Response("Unauthorized", { status: 401, headers: CORS });
 
   const jobs: Promise<Item[]>[] = [
@@ -121,6 +146,6 @@ Deno.serve(async (req: Request) => {
     updated: new Date().toISOString(),
     items: [...pick("aviation", 8), ...pick("cargo", 8), ...pick("cyber", 8)]
   }), {
-    headers: { ...CORS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=900" }
+    headers: { ...CORS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "private, max-age=900" }
   });
 });

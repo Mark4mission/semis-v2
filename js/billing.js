@@ -384,7 +384,7 @@
             ${gp ? `<span class="badge badge-gray bl-item-tag">${esc(gp)}</span>` : ""}
             ${kd ? `<span class="badge ${KIND_BADGE[kd] || "badge-gray"} bl-item-tag" title="${esc(KIND_LABEL[kd] || kd)}">${esc(kd)}</span>` : ""}
             <span class="bl-item-title">${esc(r.title)}${r.note ? `<span class="bl-item-note"> · ${esc(r.note)}</span>` : ""}</span>
-            ${fl.map((f, i) => `<a class="nb-file" href="${esc(f.url)}" target="_blank" rel="noopener" title="${esc(f.name)}" onclick="event.stopPropagation()">📎${fl.length > 1 ? i + 1 : ""}</a>`).join("")}
+            ${fl.map((f, i) => `<a class="nb-file" href="${esc(f.url)}" target="_blank" rel="noopener" title="${esc(f.name)}">📎${fl.length > 1 ? i + 1 : ""}</a>`).join("")}
             <b class="bl-item-amt">${fmtWon(r.amount)}원</b>
           </div>`; }).join("") + `
 `

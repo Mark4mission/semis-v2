@@ -645,7 +645,7 @@
   </div>
 </body></html>`;
 
-    try {
+    const write = (html) => { try {
       toast("인쇄 문서 준비 중…");
       const fr = document.createElement("iframe");
       fr.style.cssText = "position:fixed;right:0;bottom:0;width:2px;height:2px;border:0;visibility:hidden";
@@ -659,7 +659,9 @@
       setTimeout(() => { try { fr.remove(); } catch (e) { /* 무시 */ } }, 60000);
     } catch (e) {
       toast("인쇄 대화상자를 열 수 없습니다.", true);
-    }
+    } };
+    /* 별도 문서라 화면 자동 변환이 닿지 않는다 — 비공개 파일 주소는 서명해서 넣는다 */
+    if (window.SemisFileAuth) SemisFileAuth.withSigned(html, write); else write(html);
   }
 
   /* ─────────── 대시보드 위젯 ─────────── */

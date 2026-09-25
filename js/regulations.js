@@ -273,14 +273,14 @@
         const titleCell = r.fileUrl
           ? `<button class="tbl-open" data-rg-pdf="${esc(r.id)}" title="원문 PDF 열람">📄 ${esc(r.title)}</button>`
           : (r.linkUrl
-            ? `<a class="tbl-open" href="${esc(r.linkUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="원문 링크 열기">🔗 ${esc(r.title)}</a>`
+            ? `<a class="tbl-open" href="${esc(r.linkUrl)}" target="_blank" rel="noopener" title="원문 링크 열기">🔗 ${esc(r.title)}</a>`
             : `<b>${esc(r.title)}</b>`);
         return `
       <tr data-rg-row="${esc(r.id)}"${canWrite ? ' style="cursor:pointer" title="행 클릭 → 수정 / 제목 클릭 → 열람"' : ""}>
         <td>${titleCell}${sub}</td>
         <td style="white-space:nowrap">
           ${r.fileUrl ? `<button class="btn btn-ghost btn-sm" data-rg-pdf="${esc(r.id)}">📄 PDF</button>` : ""}
-          ${r.linkUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(r.linkUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">링크 ↗</a>` : ""}
+          ${r.linkUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(r.linkUrl)}" target="_blank" rel="noopener">링크 ↗</a>` : ""}
           ${!r.linkUrl && !r.fileUrl ? "-" : ""}</td>
         ${own ? `<td>${r.diffUrl ? `<button class="btn btn-ghost btn-sm" data-rg-diff="${esc(r.id)}">📑 보기</button>` : "-"}</td>` : ""}
         <td>${r.rev ? `<span class="badge badge-blue" style="white-space:nowrap">${esc(r.rev)}</span>` : "-"}</td>

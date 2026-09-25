@@ -156,9 +156,9 @@
       ${items.map(x => { const st = stateOf(x); return `
       <tr data-cn-row="${esc(x.id)}" style="cursor:pointer" title="${canWrite ? "행 클릭 → 수정 / 계약명 클릭 → 계약서 열기" : ""}" class="${st !== "유효" ? "insp-cancel" : ""}">
         <td>${x.fileUrl
-            ? `<a class="tbl-open" href="${esc(x.fileUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="계약서 파일 열기">📎 ${esc(x.name)}</a>`
+            ? `<a class="tbl-open" href="${esc(x.fileUrl)}" target="_blank" rel="noopener" title="계약서 파일 열기">📎 ${esc(x.name)}</a>`
             : `<b>${esc(x.name)}</b>`}${x.party ? `<div style="font-size:.76rem;color:var(--text-3)">${esc(x.party)}${x.autoRenew ? " · 🔄 자동갱신" : ""}</div>` : ""}</td>
-        <td style="white-space:nowrap">${x.fileUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(x.fileUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="계약서 파일 열기" style="white-space:nowrap">열기 ↗</a>` : "-"}</td>
+        <td style="white-space:nowrap">${x.fileUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(x.fileUrl)}" target="_blank" rel="noopener" title="계약서 파일 열기" style="white-space:nowrap">열기 ↗</a>` : "-"}</td>
         <td><span class="badge ${CAT_BADGE[x.category] || "badge-gray"}" style="white-space:nowrap">${esc(x.category)}</span></td>
         <td style="font-size:.82rem;white-space:nowrap">${esc(x.start || "?")} ~ ${esc(x.end || "기한없음")}</td>
         <td>${ddayBadge(x)}</td>

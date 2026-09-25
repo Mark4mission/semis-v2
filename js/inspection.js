@@ -249,7 +249,7 @@
         <td class="il-date">${x.start ? esc(x.start) + (x.end && x.end !== x.start ? "<br>~ " + esc(x.end) : "") : '<span style="color:var(--text-3)">미정</span>'}${x.linkCal && x.start ? ' <span title="일정관리 연동">📅</span>' : ""}</td>
         <td class="il-people">${(x.inspectors || []).map(n => esc(n)).join(" · ") || '<span style="color:var(--text-3)">미정</span>'}</td>
         <td><span class="badge ${ST_BADGE[x.status] || "badge-gray"}">${esc(x.status)}</span></td>
-        <td class="il-result">${fdSummary(x) || (x.resultUrl ? `<a href="${esc(x.resultUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">보기 ↗</a>` : "-")}</td>
+        <td class="il-result">${fdSummary(x) || (x.resultUrl ? `<a href="${esc(x.resultUrl)}" target="_blank" rel="noopener">보기 ↗</a>` : "-")}</td>
       </tr>`).join("")}</tbody></table></div>`;
   }
 
@@ -452,7 +452,8 @@
         ev.stopPropagation();
         canWrite ? inspForm(el.dataset.insp) : inspDetail(el.dataset.insp);
       });
-      $$("[data-insp-row]", root).forEach(el => el.onclick = () => {
+      $$("[data-insp-row]", root).forEach(el => el.onclick = (ev) => {
+        if (ev && ev.target && ev.target.closest && ev.target.closest("a")) return;   // 결과 링크는 열기만
         canWrite ? inspForm(el.dataset.inspRow) : inspDetail(el.dataset.inspRow);
       });
       if (canWrite) $$(".insp-cell", root).forEach(cell => cell.onclick = (ev) => {

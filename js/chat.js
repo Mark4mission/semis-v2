@@ -21,8 +21,13 @@
   const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im16eXV6cnhrZGNwenhvamVud2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMTQ1MTYsImV4cCI6MjA5OTY5MDUxNn0.YqcCnEY8Bn-Bc2cbUHWl4m9GLMIifZbH5KqrbamU0YI";
   const CHAT_REST = SUPA_URL + "/rest/v1/chat_messages";
   const EDGE_URL = SUPA_URL + "/functions/v1/semi-chat";
-  const EDGE_TOKEN = "azs-semi-9f2c47b1e6d3";
-  const HEADERS = { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json" };
+  /* v2.53: 모든 요청에 로그인 세션(x-semis-token). 서버가 방 권한·보낸 사람을 확인한다 */
+  const hdrs = (extra) => {
+    const A = window.SemisSync && window.SemisSync.auth;
+    if (A && A.headers) return A.headers(extra);
+    return Object.assign({ apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json" }, extra || {});
+  };
+  const sessToken = () => { const A = window.SemisSync && window.SemisSync.auth; return (A && A.token && A.token()) || ""; };
 
   const LS_TAB = "semis2:chatTab";           // 마지막 사용 탭
   const LS_READ = "semis2:chatRead:";        // + uid:room → 마지막 읽은 created_at
@@ -227,7 +232,7 @@
     if (old) old.remove();
     window.removeEventListener("keydown", onEsc, true);
     stopPoll();
-    try { if (rtClient) rtClient.removeAllChannels(); } catch (e) {}
+    try { if (rtClient) rtClient.getChannels().filter((c) => /semis-chat-sync/.test(c.topic)).forEach((c) => rtClient.removeChannel(c)); } catch (e) {}
     rtClient = null; rtOn = false;
     built = false; open = false;
   }
@@ -322,6 +327,10 @@
   function roomManager(editId) {
     const Sm = S();
     if (!canManageRooms() || !Sm || !Sm.openModal) return;
+    if (Sm.loadDirectory && !roomManager._loaded) {       // 계정 명단은 서버에서 받는다(v2.53)
+      Sm.loadDirectory().then(() => { roomManager._loaded = true; roomManager(editId); roomManager._loaded = false; });
+      return;
+    }
     const d = Sm.data;
     if (!Array.isArray(d.chatRooms)) d.chatRooms = [];
     const x = editId ? d.chatRooms.find((r) => r && r.id === editId) : null;
@@ -395,7 +404,7 @@
     const rq = room;
     try {
       const res = await fetch(CHAT_REST + "?select=*&room=eq." + encodeURIComponent(rq) +
-        "&order=created_at.desc&limit=" + MAX_LOAD, { headers: HEADERS });
+        "&order=created_at.desc&limit=" + MAX_LOAD, { headers: hdrs() });
       if (!res.ok) throw new Error("GET " + res.status);
       const rows = await res.json();
       if (rq !== room) return; // 응답 대기 중 방을 바꿨으면 무시
@@ -417,7 +426,7 @@
     try {
       const res = await fetch(CHAT_REST, {
         method: "POST",
-        headers: Object.assign({}, HEADERS, { Prefer: "return=representation" }),
+        headers: hdrs({ Prefer: "return=representation" }),
         body: JSON.stringify(body)
       });
       if (!res.ok) throw new Error("POST " + res.status);
@@ -431,8 +440,10 @@
   async function deleteTeam(id) {
     if (typeof fetch === "undefined") return;
     try {
-      const res = await fetch(CHAT_REST + "?id=eq." + encodeURIComponent(id), { method: "DELETE", headers: HEADERS });
+      const res = await fetch(CHAT_REST + "?id=eq." + encodeURIComponent(id), { method: "DELETE", headers: hdrs({ Prefer: "return=representation" }) });
       if (!res.ok) throw new Error("DEL " + res.status);
+      const gone = await res.json().catch(() => null);
+      if (Array.isArray(gone) && !gone.length) throw new Error("DEL 0");   // 권한 없음(남의 글)
       removeMsg(id);
     } catch (e) { toastSafe("삭제에 실패했어요.", true); }
   }
@@ -504,17 +515,32 @@
     scrollBottom("team-msgs");
   }
 
-  /* ─── Realtime 구독 (실패 시 폴링 폴백) ─── */
+  /* ─── 실시간 알림 (실패 시 폴링 폴백) ───
+     v2.53: DB 트리거가 방 id·메시지 id만 알린다(내용은 싣지 않음) → 볼 수 있는 방이면 다시 읽는다 */
+  let reloadTimer = null;
+  function onChatSignal(msg) {
+    const p = (msg && msg.payload) || {};
+    const r = String(p.room || TEAM_ROOM);
+    if (!visibleRooms().some((x) => x.id === r)) return;
+    if (p.op === "delete" && p.id) { if (r === room) removeMsg(String(p.id)); return; }
+    if (r !== room) {                                   // 다른 방 — 미확인 수만
+      memUnread[r] = (memUnread[r] || 0) + 1;
+      paintBadge();
+      return;
+    }
+    if (p.id && teamMsgs.some((m) => m && m.id === p.id)) return;   // 이미 받은 글(내가 보낸 것 등)
+    if (reloadTimer) return;
+    reloadTimer = setTimeout(() => { reloadTimer = null; loadTeam(); }, 250);
+  }
   function subscribe() {
     if (rtOn) return;
-    if (typeof window === "undefined" || !window.supabase || !window.supabase.createClient) { startPoll(); return; }
+    const Sy = window.SemisSync;
+    const cl = Sy && Sy.rtClient ? Sy.rtClient() : null;
+    if (!cl) { startPoll(); return; }
     try {
-      rtClient = window.supabase.createClient(SUPA_URL, SUPA_KEY);
-      rtClient.channel("semis-chat")
-        .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" },
-          (p) => { if (p && p.new) addIncoming(p.new); })
-        .on("postgres_changes", { event: "DELETE", schema: "public", table: "chat_messages" },
-          (p) => { const id = p && p.old && p.old.id; if (id) removeMsg(id); })
+      rtClient = cl;
+      rtClient.channel("semis-chat-sync")
+        .on("broadcast", { event: "change" }, onChatSignal)
         .subscribe((st) => {
           if (st === "SUBSCRIBED") { rtOn = true; stopPoll(); }
           else if (st === "CHANNEL_ERROR" || st === "TIMED_OUT" || st === "CLOSED") { rtOn = false; startPoll(); }
@@ -622,22 +648,13 @@
     let reply = "";
     try {
       if (typeof fetch === "undefined") throw new Error("offline");
+      /* v2.53: 사용자·권한은 서버가 로그인 세션으로 확인한다(화면이 보낸 권한은 쓰지 않는다) */
       const res = await fetch(EDGE_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          t: EDGE_TOKEN,
-          user: {
-            name: u.name, role: u.role, uid: u.origId || u.id,
-            // v2.46: vendor — 업체명·허용 라우트를 전달해 서버가 조회·쓰기 범위를 제한
-            vendor: u.role === "vendor" ? String(u.vendor || "") : undefined,
-            routes: u.role === "vendor" && S().vendorAccess ? S().vendorAccess(u).routes : undefined,
-            // v2.48: confid 없는 업체(제조사 등)는 서버가 유지보수 계약·비용(equipMaint)을 제외
-            confid: u.role === "vendor" && S().vendorAccess ? S().vendorAccess(u).confid : undefined
-          },
-          messages: convLoad().slice(-MAX_CONV)
-        })
+        headers: { "Content-Type": "application/json", "x-semis-token": sessToken() },
+        body: JSON.stringify({ messages: convLoad().slice(-MAX_CONV) })
       });
+      if (res.status === 401 && window.SemisSync && SemisSync.auth) SemisSync.auth.check();
       const data = await res.json().catch(() => ({}));
       reply = (data && data.reply) ||
         "응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.";
@@ -681,7 +698,7 @@
     get teamMsgs() { return teamMsgs; },
     get tab() { return tab; },
     get isOpen() { return open; },
-    EDGE_URL, EDGE_TOKEN,
+    EDGE_URL, onChatSignal,
     _destroy: destroy
   };
 })();

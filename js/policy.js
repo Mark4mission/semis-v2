@@ -42,6 +42,9 @@
     try { localStorage.setItem(LS_UI, JSON.stringify({ mode, zoom })); } catch (e) {}
   }
 
+  /* 비공개 파일 — 화면 밖 fetch·PDF.js 는 서명 URL을 직접 받는다 (js/fileauth.js) */
+  const signed = (url) => (window.SemisFileAuth ? SemisFileAuth.resolve(url) : Promise.resolve(url));
+
   /* ─────── PDF.js 지연 로드 ─────── */
   let pdfjsPromise = null;
   function loadPdfjs() {
@@ -73,7 +76,7 @@
     body.innerHTML = '<div class="pol-loading">📄 문서를 불러오는 중…</div>';
     try {
       const lib = await loadPdfjs();
-      if (!docCache[url]) docCache[url] = lib.getDocument({ url }).promise;
+      if (!docCache[url]) docCache[url] = signed(url).then(src => lib.getDocument({ url: src }).promise);
       const doc = await docCache[url];
       if (renderToken[lang] !== token || !body.isConnected) return;
       const p1 = await doc.getPage(1);
@@ -115,7 +118,7 @@
   async function printPdf(url) {
     try {
       toast("인쇄 준비 중…");
-      const res = await fetch(url);
+      const res = await fetch(await signed(url));
       if (!res.ok) throw new Error("fetch " + res.status);
       const burl = URL.createObjectURL(await res.blob());
       const fr = document.createElement("iframe");
@@ -135,7 +138,7 @@
   async function downloadPdf(url, name) {
     try {
       toast("다운로드 준비 중…");
-      const res = await fetch(url);
+      const res = await fetch(await signed(url));
       if (!res.ok) throw new Error("fetch " + res.status);
       const burl = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");

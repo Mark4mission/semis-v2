@@ -397,11 +397,19 @@
   function stopReminders() { if (remTimer) { clearInterval(remTimer); remTimer = null; } }
 
   /* ─────── 구글캘린더 연동 (Google → SeMIS 표시) ─────── */
-  const ICS_URL = "https://mzyuzrxkdcpzxojenwat.supabase.co/functions/v1/semis-ics?t=azs-e8f4c1d97b2a4f60b3519c";
+  /* v2.53: ICS 구독 토큰은 서버에만 둔다 — 항공보안HQ 이상이 RPC semis_v2_ics_token 으로 확인,
+     시스템관리자는 새 주소 발급(옛 주소 무효). '나에게만 보이기' 일정은 피드에서 빠진다 */
+  const ICS_BASE = "https://mzyuzrxkdcpzxojenwat.supabase.co/functions/v1/semis-ics?t=";
+  async function icsUrl(rotate) {
+    const S = window.SemisSync;
+    if (!S || !S.rpc) return "";
+    const d = await S.rpc("semis_v2_ics_token", { p_rotate: !!rotate });
+    return d && d.ok && d.token ? ICS_BASE + d.token : "";
+  }
   const GCOLOR = { "1": "indigo", "2": "green", "3": "purple", "4": "pink", "5": "yellow",
                    "6": "orange", "7": "sky", "8": "gray", "9": "blue", "10": "teal", "11": "red" };
   let gcalEvents = (() => {
-    try { const c = JSON.parse(localStorage.getItem("semis2:gcalCache")); return (c && c.items) || []; }
+    try { const c = JSON.parse(sessionStorage.getItem("semis2:gcalCache")); return (c && c.items) || []; }
     catch (e) { return []; }
   })();
   let gcalAt = 0, gcalLoading = false;
@@ -442,7 +450,7 @@
       .then(j => {
         gcalEvents = (j.items || []).map(mapGcalItem).filter(Boolean);
         gcalAt = Date.now(); gcalLoading = false;
-        try { localStorage.setItem("semis2:gcalCache", JSON.stringify({ at: gcalAt, items: gcalEvents })); } catch (e) {}
+        try { sessionStorage.setItem("semis2:gcalCache", JSON.stringify({ at: gcalAt, items: gcalEvents })); } catch (e) {}
         if (String(location.hash).indexOf("schedule") >= 0) SeMIS.renderView();
         return true;
       })
@@ -1209,14 +1217,22 @@
         → Google Calendar API 사용 설정. 캘린더가 <b>공개</b> 상태여야 조회됩니다.</div></div>
       <div class="form-row"><label>SeMIS → Google (구독 주소)</label>
         <div style="display:flex;gap:6px">
-          <input id="g-ics" value="${esc(ICS_URL)}" readonly style="font-size:.78rem">
-          <button type="button" class="btn btn-ghost btn-sm" id="g-copy">복사</button></div>
+          <input id="g-ics" value="" placeholder="불러오는 중…" readonly style="font-size:.78rem">
+          <button type="button" class="btn btn-ghost btn-sm" id="g-copy">복사</button>
+          ${SeMIS.isAdmin && SeMIS.isAdmin() ? '<button type="button" class="btn btn-ghost btn-sm" id="g-rotate" title="새 주소를 만들고 옛 주소는 막습니다">새 주소</button>' : ""}</div>
         <div class="form-hint">Google 캘린더 → 설정 → 캘린더 추가 → <b>URL로 추가</b>에 붙여넣으면
-        SeMIS 일정이 구글캘린더에 표시됩니다. (갱신 주기는 Google이 결정, 수 시간 간격)</div></div>
+        SeMIS 일정이 구글캘린더에 표시됩니다. (갱신 주기는 Google이 결정, 수 시간 간격 · '나에게만 보이기' 일정은 제외)</div></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="g-cancel">취소</button>
         <button class="btn btn-primary" id="g-save">저장</button>
       </div>`);
+    icsUrl(false).then(u => { const i = $("#g-ics"); if (i) { i.value = u; i.placeholder = u ? "" : "주소를 불러오지 못했습니다"; } })
+      .catch(() => { const i = $("#g-ics"); if (i) i.placeholder = "주소를 불러오지 못했습니다"; });
+    const rot = $("#g-rotate");
+    if (rot) rot.onclick = () => confirmModal("새 구독 주소를 만들면 지금 주소는 더 이상 동작하지 않습니다. 구글 캘린더에 새 주소로 다시 추가해야 합니다. 계속하시겠습니까?", () => {
+      icsUrl(true).then(u => { if (!u) throw new Error("rotate"); toast("새 구독 주소를 만들었습니다."); gcalForm(); })
+        .catch(() => toast("새 주소를 만들지 못했습니다.", true));
+    });
     $("#g-copy").onclick = () => {
       const inp = $("#g-ics");
       inp.select();
@@ -1360,7 +1376,7 @@
     COLORS, VIEWS, TEAM, tagOf,
     REMINDER_DEFS, eventStartMs, eventStartMsFor, dueReminders, checkReminders, startReminders, stopReminders,
     REPEAT_DEFS, isRepeat, occursOn, nextOccurrence, repeatLabel,
-    mapGcalItem, fetchGcal, ICS_URL,
+    mapGcalItem, fetchGcal, icsUrl, ICS_BASE,
     _setGcalEvents(list) { gcalEvents = list || []; }
   };
 })();

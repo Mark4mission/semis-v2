@@ -2452,3 +2452,7 @@ a.ct-tel:hover { color: var(--primary); }
 .v-fchip.on .v-fn { color: var(--primary-dark); }
 .v-tag-personal { background: #fff7ed; color: #9a3412; font-size: .72rem; vertical-align: 2px; }
 .v-row-personal td:first-child { box-shadow: inset 3px 0 0 #fdba74; }
+
+/* v2.53 서버 보안 — 서명 세션은 등급 자료를 받지 않아 배지를 숨긴다 · 로그인 확인 중 */
+.sec-badge[hidden] { display: none !important; }
+#login-form.is-busy button[type="submit"] { opacity: .6; cursor: progress; }

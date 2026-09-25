@@ -1,22 +1,24 @@
 /* ═══════════════════════════════════════════════════════
-   SeMIS v2.37 — 세미(Semi) AI 도우미 Edge Function (v3.5)
+   SeMIS v2.53 — 세미(Semi) AI 도우미 Edge Function (v4.0)
    Claude API 프록시 + semis_store 조회 도구 + 쓰기 도구(rank3+)
    쓰기: 공지·일정·점검계획 등록 + 점검 결과·협의회 회의록 추가(append 전용)
 
-   - 인증: verify_jwt off + 고정 토큰(body.t) — semis-news 패턴
+   - v4.0 인증: 요청 헤더 x-semis-token(로그인 세션) → semis_v2_file_auth · semis_v2_whoami 로 사용자·권한 확인.
+     데이터 읽기·쓰기는 그 사용자 세션으로 RPC semis_v2_pull / semis_v2_push 를 부른다 —
+     권한 밖 컬렉션·개인 일정·타 업체 자료는 서버가 걸러 주고, 쓰기 권한도 서버가 확인한다.
+     (화면이 보내는 사용자 정보·권한은 쓰지 않는다. 고정 토큰 방식은 폐지)
+   - verify_jwt off (위의 세션 확인으로 대신). 배포: Supabase MCP deploy_edge_function. 이 파일이 원본.
    - 비밀키: ANTHROPIC_API_KEY (Supabase 대시보드 → Edge Functions → Secrets)
    - 모델: SEMI_MODEL 환경변수로 교체 가능(기본 claude-sonnet-5,
      미지원 시 claude-sonnet-4-5 자동 폴백)
    - 데이터 접근: 사용자 역할(rank)별 허용 키만 도구에 노출 + 서버 이중 검증
      (vault·pwOverrides·userOverrides·customUsers·gcal은 어떤 등급에도 미노출)
-   - v3.3: 일정 "나에게만 보이기"(priv/owner)는 소유 계정에게만 노출(stripPrivate)
+   - v3.3: 일정 "나에게만 보이기"(priv/owner)는 소유 계정에게만 노출 — v4.0부터 서버(semis_v2_pull)가 처리
    - v3.5: confid 없는 업체(제조사·기술지원)는 equipMaint(계약·비용) 도구 제외
-   - v3.4: 협력업체(vendor) 지원 — 허용 라우트(user.routes)를 데이터 키로 매핑해
-     조회 범위 제한 + 대외비(청구·유지보수비)는 자기 업체분만 필터(scopeVendor).
+   - v3.4: 협력업체(vendor) 지원 — v4.0부터 조회 범위·자기 업체 필터는 서버 권한표(vendor_acl)가 처리.
      쓰기는 허용 메뉴 내에서만: 협의회(update_council). 신규 업체 계정 자동 적용.
    ═══════════════════════════════════════════════════════ */
 
-const TOKEN = "azs-semi-9f2c47b1e6d3";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODELS = ["claude-sonnet-5", "claude-sonnet-4-5"]; // 앞에서부터 시도
 const MAX_TOOL_ROUNDS = 5;
@@ -24,56 +26,27 @@ const MAX_RESULT_CHARS = 42000;   // 도구 결과 1건 최대 길이(≈ 15k �
 const MAX_MSGS = 24;              // 대화 이력 상한
 const MAX_MSG_CHARS = 4000;
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "content-type",
-};
+const SUPA = Deno.env.get("SUPABASE_URL") ?? "";
+const ANON = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const ORIGINS = ["https://semis.pe.kr", "https://www.semis.pe.kr", "https://mark4mission.github.io"];
+const LOCAL_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+const okOrigin = (o: string) => ORIGINS.includes(o) || LOCAL_RE.test(o);
+function corsFor(origin: string): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": okOrigin(origin) ? origin : ORIGINS[0],
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "content-type, x-semis-token, apikey, authorization, x-client-info",
+    "Access-Control-Max-Age": "3600",
+    "Vary": "Origin",
+  };
+}
+
 
 const ROLE_RANK: Record<string, number> = { admin: 4, hq: 3, manager: 2, user: 1 };
 const ROLE_LABEL: Record<string, string> = {
   admin: "시스템관리자", hq: "항공보안HQ", manager: "보안관리자", user: "일반사용자",
   vendor: "협력업체",
 };
-
-/* v3.4: vendor 허용 라우트 → 데이터 키 매핑 (SeMIS VENDOR_ACCESS.routes 기준) */
-const ROUTE_KEYS: Record<string, string[]> = {
-  "regs-intl": ["regulations"],
-  "regs-own": ["regulations"],
-  "equipment": ["equipment", "equipMaint"],
-  "council": ["council"],
-  "billing": ["billing"],
-};
-function vendorKeys(routes: string[]): string[] {
-  const set = new Set<string>();
-  routes.forEach((r) => (ROUTE_KEYS[r] || []).forEach((k) => set.add(k)));
-  return Object.keys(CATALOG).filter((k) => set.has(k)); // CATALOG 순서 유지
-}
-/* v3.4: vendor 자기 업체 격리 — 업체명 정규화 후 포함 관계 판정(표기 편차 흡수) */
-const normVendor = (s: unknown) => String(s || "").replace(/[\s㈜()]/g, "").toLowerCase();
-function sameVendorName(a: unknown, b: unknown): boolean {
-  const x = normVendor(a), y = normVendor(b);
-  return !!(x && y && (x.includes(y) || y.includes(x)));
-}
-function scopeVendor(key: string, val: unknown, vendorName: string, routes: string[]): unknown {
-  if (!vendorName) return val;
-  if (key === "billing" && Array.isArray(val)) {
-    return (val as Record<string, unknown>[]).filter((r) => r && sameVendorName(r.vendor, vendorName));
-  }
-  if (key === "equipMaint" && val && typeof val === "object" && !Array.isArray(val)) {
-    const m = val as { contracts?: unknown[]; costs?: unknown[] };
-    const own = (arr: unknown[] | undefined) => (Array.isArray(arr) ? arr : [])
-      .filter((r) => r && sameVendorName((r as Record<string, unknown>).vendor, vendorName));
-    return { contracts: own(m.contracts), costs: own(m.costs) };
-  }
-  if (key === "regulations" && Array.isArray(val)) {
-    const scopes = new Set<string>();
-    if (routes.includes("regs-intl")) scopes.add("intl");
-    if (routes.includes("regs-own")) scopes.add("own");
-    return (val as Record<string, unknown>[]).filter((r) => r && scopes.has(String(r.scope)));
-  }
-  return val;
-}
 
 /* 조회 가능 컬렉션 카탈로그 — rank: 최소 등급 */
 const CATALOG: Record<string, { desc: string; rank: number }> = {
@@ -102,46 +75,47 @@ const CATALOG: Record<string, { desc: string; rank: number }> = {
   carCfg:          { desc: "CAR 프로세스 설정(기한·위험매트릭스)", rank: 3 },
 };
 
-function allowedKeys(rank: number): string[] {
-  return Object.keys(CATALOG).filter((k) => CATALOG[k].rank <= rank);
+/* v4.0: 조회 가능 키 = 서버가 준 권한 요약(access)에서 읽기(r·p)가 있는 컬렉션 */
+function allowedFrom(access: Record<string, string>): string[] {
+  return Object.keys(CATALOG).filter((k) => /[rp]/.test(String(access[k] || "")));
 }
 
-/* ─── semis_store 조회/저장 ─── */
-async function fetchStore(key: string): Promise<unknown> {
-  const url = Deno.env.get("SUPABASE_URL") ?? "";
-  const anon = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-  const res = await fetch(
-    url + "/rest/v1/semis_store?key=eq." + encodeURIComponent(key) + "&select=key,value",
-    { headers: { apikey: anon, Authorization: "Bearer " + anon } },
-  );
-  if (!res.ok) throw new Error("store " + res.status);
-  const rows = await res.json();
-  const row = Array.isArray(rows) ? rows.find((r) => r && r.key === key) : null;
+/* ─── semis_store 조회/저장 — 사용자 세션으로(권한·가림·병합은 서버가) ─── */
+/* 요청마다 그 사용자 세션 토큰으로 부른다(동시 요청이 섞이지 않게 전역 변수에 두지 않는다) */
+type Db = { get: (key: string) => Promise<unknown>; put: (key: string, value: unknown) => Promise<void> };
+async function rpcAs(tok: string, name: string, args: unknown): Promise<Record<string, unknown>> {
+  const res = await fetch(SUPA + "/rest/v1/rpc/" + name, {
+    method: "POST",
+    headers: { apikey: ANON, Authorization: "Bearer " + ANON, "Content-Type": "application/json", "x-semis-token": tok },
+    body: JSON.stringify(args ?? {}),
+  });
+  if (!res.ok) throw new Error(name + " " + res.status);
+  return await res.json();
+}
+async function fetchStore(tok: string, key: string): Promise<unknown> {
+  const d = await rpcAs(tok, "semis_v2_pull", { p_keys: [key] });
+  if (!d || d.ok !== true) throw new Error("pull " + String(d && d.error));
+  const rows = Array.isArray(d.rows) ? d.rows as { key?: string; value?: unknown }[] : [];
+  const row = rows.find((r) => r && r.key === key);
   return row ? row.value : null;
 }
-async function upsertStore(key: string, value: unknown): Promise<void> {
-  const url = Deno.env.get("SUPABASE_URL") ?? "";
-  const anon = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-  const res = await fetch(url + "/rest/v1/semis_store?on_conflict=key", {
-    method: "POST",
-    headers: {
-      apikey: anon, Authorization: "Bearer " + anon, "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates,return=minimal",
-    },
-    body: JSON.stringify([{ key, value, updated_at: new Date().toISOString(), updated_by: "semi-chat" }]),
-  });
-  if (!res.ok) throw new Error("upsert " + res.status);
+async function upsertStore(tok: string, key: string, value: unknown): Promise<void> {
+  const d = await rpcAs(tok, "semis_v2_push", { p_rows: [{ key, value, by: "semi" }] });
+  if (!d || d.ok !== true) throw new Error("push " + String(d && d.error));
+}
+function makeDb(tok: string): Db {
+  return { get: (key) => fetchStore(tok, key), put: (key, value) => upsertStore(tok, key, value) };
 }
 
 /* ─── 쓰기 도구(rank 3+ 전용): 공지 등록 · 일정 등록 ───
    삭제·수정은 의도적으로 미제공(안전) — UI에서만 가능. */
 const D_RE = /^\d{4}-\d{2}-\d{2}$/;
 const T_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-async function toolAddNotice(inp: Record<string, unknown>, userName: string) {
+async function toolAddNotice(db: Db, inp: Record<string, unknown>, userName: string) {
   const title = String(inp.title || "").trim().slice(0, 200);
   const body = String(inp.body || "").trim().slice(0, 8000);
   if (!title || !body) return { error: "title(제목)과 body(내용)가 모두 필요합니다." };
-  const cur = await fetchStore("notices");
+  const cur = await db.get("notices");
   const list = Array.isArray(cur) ? (cur as unknown[]) : [];
   const notice = {
     id: "n" + Date.now(), title, body,
@@ -149,10 +123,10 @@ async function toolAddNotice(inp: Record<string, unknown>, userName: string) {
     created: new Date().toISOString(),
   };
   list.unshift(notice);
-  await upsertStore("notices", list);
+  await db.put("notices", list);
   return { ok: true, id: notice.id, title, message: "공지사항에 등록되었습니다(모든 사용자 화면에 실시간 반영)." };
 }
-async function toolAddSchedule(inp: Record<string, unknown>, userName: string) {
+async function toolAddSchedule(db: Db, inp: Record<string, unknown>, userName: string) {
   const title = String(inp.title || "").trim().slice(0, 200);
   const start = String(inp.start || "").trim();
   if (!title) return { error: "title(일정 제목)이 필요합니다." };
@@ -170,10 +144,10 @@ async function toolAddSchedule(inp: Record<string, unknown>, userName: string) {
     assignee: String(inp.assignee || "").slice(0, 40), vehicle: false, room: false,
     reminders: [], repeat: { freq: "none", until: "" }, doneFrom: "", doneDates: [], undoneDates: [],
   };
-  const cur = await fetchStore("schedules");
+  const cur = await db.get("schedules");
   const list = Array.isArray(cur) ? (cur as unknown[]) : [];
   list.push(ev);
-  await upsertStore("schedules", list);
+  await db.put("schedules", list);
   return { ok: true, id: ev.id, title, start, end, time, message: "일정관리에 등록되었습니다." };
 }
 
@@ -186,7 +160,7 @@ function escHtml(s: string): string {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
-async function toolAddInspection(inp: Record<string, unknown>) {
+async function toolAddInspection(db: Db, inp: Record<string, unknown>) {
   const target = String(inp.target || "").trim().slice(0, 100);
   const category = String(inp.category || "").trim();
   const month = Number(inp.month);
@@ -206,16 +180,16 @@ async function toolAddInspection(inp: Record<string, unknown>) {
     start, end: end || start, status: "계획",
     note: String(inp.note || "").slice(0, 1000), resultUrl: "", linkCal: false, findings: [],
   };
-  const cur = await fetchStore("inspections");
+  const cur = await db.get("inspections");
   const list = Array.isArray(cur) ? (cur as unknown[]) : [];
   list.push(rec);
-  await upsertStore("inspections", list);
+  await db.put("inspections", list);
   return { ok: true, id: rec.id, message: year + "년 " + month + "월 「" + target + "」 " + category + " 점검 계획이 추가되었습니다." };
 }
-async function toolUpdateInspection(inp: Record<string, unknown>) {
+async function toolUpdateInspection(db: Db, inp: Record<string, unknown>) {
   const id = String(inp.id || "").trim();
   if (!id) return { error: "id가 필요합니다. semis_data(inspections)로 대상 점검의 정확한 id를 먼저 확인하세요." };
-  const cur = await fetchStore("inspections");
+  const cur = await db.get("inspections");
   const list = Array.isArray(cur) ? (cur as Record<string, unknown>[]) : [];
   const rec = list.find((x) => x && x.id === id);
   if (!rec) return { error: "해당 id의 점검 기록을 찾지 못했습니다: " + id };
@@ -255,13 +229,13 @@ async function toolUpdateInspection(inp: Record<string, unknown>) {
     rec.findings = fd; changed.push("지적사항 " + (inp.findings_add as unknown[]).length + "건 추가");
   }
   if (!changed.length) return { error: "변경할 내용이 없습니다." };
-  await upsertStore("inspections", list);
+  await db.put("inspections", list);
   return { ok: true, id, target: rec.target, changes: changed, message: "점검 기록이 갱신되었습니다: " + changed.join(", ") };
 }
-async function toolUpdateCouncil(inp: Record<string, unknown>) {
+async function toolUpdateCouncil(db: Db, inp: Record<string, unknown>) {
   const id = String(inp.id || "").trim();
   if (!id) return { error: "id가 필요합니다. semis_data(council)로 대상 회의의 정확한 id를 먼저 확인하세요." };
-  const cur = await fetchStore("council");
+  const cur = await db.get("council");
   const list = Array.isArray(cur) ? (cur as Record<string, unknown>[]) : [];
   const m = list.find((x) => x && x.id === id);
   if (!m) return { error: "해당 id의 회의록을 찾지 못했습니다: " + id };
@@ -308,15 +282,8 @@ async function toolUpdateCouncil(inp: Record<string, unknown>) {
   }
   if (!changed.length) return { error: "변경할 내용이 없습니다." };
   m.updated = new Date().toISOString();
-  await upsertStore("council", list);
+  await db.put("council", list);
   return { ok: true, id, round: m.round, changes: changed, message: "협의회 회의록에 반영되었습니다: " + changed.join(", ") };
-}
-
-/* v2.37: "나에게만 보이기"(priv) 일정은 소유 계정(owner)에게만 노출 */
-function stripPrivate(key: string, val: unknown, uid: string): unknown {
-  if (key !== "schedules" || !Array.isArray(val)) return val;
-  return (val as Record<string, unknown>[]).filter((it) =>
-    !it || !it.priv || !it.owner || String(it.owner) === uid);
 }
 
 /* ─── 도구 결과 가공: 날짜 범위 / 키워드 필터 + 용량 제한 ─── */
@@ -364,7 +331,7 @@ function serializeCapped(val: unknown): string {
 
 /* ─── 세미 페르소나 시스템 프롬프트 ───
    v3.4: vend(협력업체) 모드 — 조회 키·쓰기 범위·안내 문구를 업체 기준으로 구성 */
-function buildSystem(name: string, role: string, rank: number,
+function buildSystem(name: string, role: string, rank: number, keysAll: string[],
   vend?: { vendorName: string; keys: string[]; councilWrite: boolean }): string {
   const now = new Date(Date.now() + 9 * 3600 * 1000); // KST
   const today = now.toISOString().slice(0, 10);
@@ -397,7 +364,7 @@ ${vKeys}
 [사이트 개요]
 SeMIS v2는 에어제타 항공보안팀의 통합 시스템이에요. 협력업체 계정은 허용된 메뉴(보안규정·보안장비·협의회·대금 청구 등)만 사용합니다. 장비 실시간 관제는 별도 CARES 시스템이 담당해요.`;
   }
-  const keys = allowedKeys(rank).map((k) => "- " + k + ": " + CATALOG[k].desc).join("\n");
+  const keys = keysAll.map((k) => "- " + k + ": " + CATALOG[k].desc).join("\n");
   return `당신은 "세미(Semi)"입니다. 에어제타 항공보안팀 보안종합정보시스템 SeMIS(semis.pe.kr)의 AI 도우미이자 마스코트예요.
 
 [성격·말투]
@@ -451,45 +418,50 @@ async function callClaude(apiKey: string, model: string, system: string, tools: 
   return { status: res.status, data };
 }
 
-function json(body: unknown, status = 200): Response {
+function jsonWith(cors: Record<string, string>, body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json; charset=utf-8", ...CORS },
+    headers: { "Content-Type": "application/json; charset=utf-8", ...cors },
   });
 }
 
+async function whoAmI(tok: string): Promise<Record<string, unknown> | null> {
+  if (!/^[0-9a-f]{64}$/.test(tok)) return null;
+  try {
+    const a = await rpcAs(tok, "semis_v2_file_auth", {});
+    if (!a || a.ok !== true || a.kind !== "user") return null;
+    const w = await rpcAs(tok, "semis_v2_whoami", { p_touch: false });
+    if (!w || w.ok !== true) return null;
+    return { ...a, access: (w.access || {}) as Record<string, string> };
+  } catch (_e) {
+    return null;
+  }
+}
+
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
+  const origin = req.headers.get("origin") || "";
+  const CORS = corsFor(origin);
+  const json = (b: unknown, st = 200) => jsonWith(CORS, b, st);
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (req.method !== "POST") return json({ error: "method" }, 405);
+  if (origin && !okOrigin(origin)) return json({ error: "origin" }, 403);
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
-  if (body.t !== TOKEN) return json({ error: "forbidden" }, 403);
+  const tok = req.headers.get("x-semis-token") || "";
+  const me = await whoAmI(tok);
+  if (!me) return json({ error: "auth", reply: "접속이 만료되었어요. 다시 로그인한 뒤 물어봐 주세요." }, 401);
 
-  // 진단(토큰 필요, 읽기 전용): env·DB 연결 확인 — {"t":TOKEN,"dbg":"store"}
-  if (body.dbg === "store") {
-    try {
-      const v = await fetchStore("levelHistory");
-      return json({ ok: true, rows: Array.isArray(v) ? v.length : (v ? 1 : 0), ver: "3.5" });
-    } catch (e) {
-      return json({ ok: false, error: String(e).slice(0, 200) });
-    }
-  }
-
-  const user = (body.user || {}) as {
-    name?: string; role?: string; uid?: string; vendor?: string; routes?: unknown; confid?: unknown;
-  };
-  const uid = String(user.uid || "").slice(0, 60);   // v2.37: 개인 일정 소유 판정용 계정 id
-  const role = String(user.role || "");
-  const rank = ROLE_RANK[role] || 0;
-  /* v3.4: vendor — 업체명 + 허용 라우트 기반 접근 (그 외 rank 0은 차단) */
+  const access = (me.access || {}) as Record<string, string>;
+  const uid = String(me.origId || "").slice(0, 60);
+  const role = String(me.role || "");
+  const rank = Number(me.rank) || 0;
   const isVend = role === "vendor";
-  const vendorName = isVend ? String(user.vendor || "").slice(0, 40) : "";
-  const vendorRoutes = isVend && Array.isArray(user.routes)
-    ? (user.routes as unknown[]).map((r) => String(r)).slice(0, 20) : [];
-  if (rank < 1 && !isVend) return json({ error: "forbidden_role" }, 403);
-  if (isVend && !vendorName) return json({ error: "forbidden_role" }, 403);
-  const name = String(user.name || "사용자").slice(0, 40);
+  const vendorName = isVend ? String(me.vendor || "").slice(0, 40) : "";
+  const name = String(me.name || me.id || "사용자").slice(0, 40);
+  const canW = (k: string) => String(access[k] || "").indexOf("w") >= 0;
+  const db = makeDb(tok);
+  void uid;
 
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY") || "";
   if (!apiKey) {
@@ -511,15 +483,12 @@ Deno.serve(async (req: Request) => {
   }
   if (!msgs.length || msgs[msgs.length - 1].role !== "user") return json({ error: "no_message" }, 400);
 
-  /* v3.5: confid 없는 협력업체(제조사·기술지원, SeMIS VENDOR_ACCESS.confid=false)는
-     대외비인 유지보수 계약·비용(equipMaint)을 도구 목록에서 제외 */
-  const vendConfid = isVend && user.confid !== false;
-  const allowed = (isVend ? vendorKeys(vendorRoutes) : allowedKeys(rank))
-    .filter((k) => !(isVend && !vendConfid && k === "equipMaint"));
+  /* v4.0: 조회 범위는 서버 권한 요약 그대로(협력업체 분류 · 대외비 포함) */
+  const allowed = allowedFrom(access);
   if (isVend && !allowed.length) {
     return json({ reply: "지금 계정에 조회 가능한 메뉴가 없어요. 관리자에게 접근 범위 확인을 부탁드려 주세요 🙏" });
   }
-  const councilWrite = isVend && vendorRoutes.includes("council");
+  const councilWrite = isVend && canW("council");
   const tools: unknown[] = [{
     name: "semis_data",
     description: "SeMIS 공용 데이터베이스에서 컬렉션을 조회합니다(읽기 전용). 필요하면 from/to(YYYY-MM-DD, 항목 내 날짜 교차 검사)와 query(공백 구분 AND 키워드)로 결과를 좁힐 수 있습니다.",
@@ -534,7 +503,8 @@ Deno.serve(async (req: Request) => {
       required: ["key"],
     },
   }];
-  if (rank >= 3) {
+  const hq = !isVend && rank >= 3;
+  if (hq) {
     tools.push({
       name: "add_notice",
       description: "SeMIS 공지사항에 새 공지를 등록합니다. 반드시 사용자에게 제목·내용 초안을 보여주고 명시적으로 확정받은 뒤에만 호출하세요.",
@@ -614,7 +584,7 @@ Deno.serve(async (req: Request) => {
     });
   }
   /* update_council — 내부 rank3+ 또는 협의회 메뉴가 허용된 협력업체(v3.4) */
-  if (rank >= 3 || councilWrite) {
+  if ((hq && canW("council")) || councilWrite) {
     tools.push({
       name: "update_council",
       description: "기존 보안장비 협의회 회의록에 내용을 추가합니다(추가만 — 기존 내용 삭제·덮어쓰기 불가). 반드시 먼저 semis_data(council)로 대상 회의의 정확한 id를 확인하고, 추가할 내용 초안을 사용자에게 확정받은 뒤 호출하세요.",
@@ -658,7 +628,7 @@ Deno.serve(async (req: Request) => {
       },
     });
   }
-  const system = buildSystem(name, role, rank,
+  const system = buildSystem(name, role, rank, allowed,
     isVend ? { vendorName, keys: allowed, councilWrite } : undefined);
 
   const envModel = Deno.env.get("SEMI_MODEL");
@@ -701,21 +671,20 @@ Deno.serve(async (req: Request) => {
               if (!allowed.includes(key)) {
                 out = JSON.stringify({ error: "이 사용자 권한으로 조회할 수 없는 키입니다." });
               } else {
-                let val = stripPrivate(key, await fetchStore(key), uid);
-                if (isVend) val = scopeVendor(key, val, vendorName, vendorRoutes); // v3.4: 자기 업체분만
+                const val = await db.get(key);   // 서버가 권한·개인 일정·업체 범위를 적용한 값
                 out = val === null ? JSON.stringify({ error: "데이터 없음" })
                   : serializeCapped(filterItems(key, val, inp));
               }
-            } else if (blk.name === "add_notice" && rank >= 3) {
-              out = JSON.stringify(await toolAddNotice(inp, name));
-            } else if (blk.name === "add_schedule" && rank >= 3) {
-              out = JSON.stringify(await toolAddSchedule(inp, name));
-            } else if (blk.name === "add_inspection" && rank >= 3) {
-              out = JSON.stringify(await toolAddInspection(inp));
-            } else if (blk.name === "update_inspection" && rank >= 3) {
-              out = JSON.stringify(await toolUpdateInspection(inp));
-            } else if (blk.name === "update_council" && (rank >= 3 || councilWrite)) {
-              out = JSON.stringify(await toolUpdateCouncil(inp));
+            } else if (blk.name === "add_notice" && hq) {
+              out = JSON.stringify(await toolAddNotice(db, inp, name));
+            } else if (blk.name === "add_schedule" && hq) {
+              out = JSON.stringify(await toolAddSchedule(db, inp, name));
+            } else if (blk.name === "add_inspection" && hq) {
+              out = JSON.stringify(await toolAddInspection(db, inp));
+            } else if (blk.name === "update_inspection" && hq) {
+              out = JSON.stringify(await toolUpdateInspection(db, inp));
+            } else if (blk.name === "update_council" && ((hq && canW("council")) || councilWrite)) {
+              out = JSON.stringify(await toolUpdateCouncil(db, inp));
             } else {
               out = JSON.stringify({ error: "사용할 수 없는 도구입니다(권한 부족 또는 미지원)." });
             }
