@@ -41,6 +41,10 @@ const searchJS = read("js/search.js");
 const kpiJS = read("js/kpi.js");
 const flcJS = read("js/flightcore.js");
 const fltJS = read("js/flight.js");
+const pltJS = read("js/pledge-text.js");
+const plgJS = read("js/pledges.js");
+const pfJS = read("js/pledge-form.js");
+const PLEDGE_SQL = read("tools/sql/semis-v2-pledges.sql");
 const syncJS = read("js/sync.js");
 const powJS = read("js/pow.js");
 const faJS = read("js/fileauth.js");
@@ -94,7 +98,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(lgJS + "\n;" + appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + slJS + "\n;" + iosaJS + "\n;" + pdJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + qrJS + "\n;" + mnJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + chatJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + flcJS + "\n;" + fltJS + "\n;" + syncJS + "\n;" + powJS + "\n;" + faJS);
+  w.eval(lgJS + "\n;" + appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + slJS + "\n;" + iosaJS + "\n;" + pdJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + qrJS + "\n;" + mnJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + chatJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + flcJS + "\n;" + fltJS + "\n;" + pltJS + "\n;" + plgJS + "\n;" + syncJS + "\n;" + powJS + "\n;" + faJS);
   const S = w.SeMIS;
   if (opts.boot !== false) { S.boot(); if (w.SemisSearch) w.SemisSearch.init(); }
   const env = { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -10218,6 +10222,292 @@ function makeFetchStub(server) {
       ok(fltJS.indexOf('rpc("semis_v2_fleet"') > 0, "RPC 사용");
       ok(fltJS.indexOf("SemisSync.ANON") > 0 && !/eyJ[\w-]+\.eyJ/.test(fltJS), "공개 키는 sync.js 것만 사용");
       ok(!/SeMIS\.save\(\)|data\.fleet\s*=/.test(fltJS), "v2 는 기체 목록을 고치지 않음");
+    });
+  }
+
+  /* ══════════ [PL] 비밀 취급 / SSI · 보안서약서 (v2.55) ══════════ */
+  {
+    const SIGN = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const mkP = (id, name, emp, at, o) => Object.assign({ id, submitId: "0000" + id + "-aaaa-bbbb-cccc-dddddddddddd", at, name, dept: "안전보안실", position: "프로",
+      empId: emp, lang: "ko", agreed: true, ip: "10.0.0.1", ua: "", src: "web", state: "valid", stateAt: null, stateNote: "", note: "",
+      files: [], orig: null, hasSign: true }, o || {});
+    const seedP = () => [
+      mkP("p1", "가나다", "100001", "2025-09-15T13:30:19Z", { src: "sheet" }),
+      mkP("p2", "가나다", "KJ100001", "2026-03-09T08:00:00Z"),                         // 재서약 (KJ 접두 = 같은 사람)
+      mkP("p3", "라마바", "1974-07-27", "2025-11-17T01:13:59Z", { dept: "종합통제실", position: "팀장", src: "sheet" }),
+      mkP("p4", "사아자", "200002", "2026-01-12T04:07:09Z", { state: "left", stateAt: "2026-06-30", stateNote: "퇴직" }),
+      mkP("p5", "차카타", "300003", "2026-05-02T00:00:00Z", { src: "paper", hasSign: false, dept: "프로에스콤" })
+    ];
+    function pledgeFetch(srv, log) {
+      srv.pledges = srv.pledges || seedP();
+      const who = (o) => { const h = (o && o.headers) || {}; return TOKENS[h["x-semis-token"]] || null; };
+      const hq = (o) => { const u = who(o); return !!(u && u.kind === "user" && (u.role === "admin" || u.role === "hq")); };
+      const base = makeFetchStub({});
+      const reply = (b) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b), headers: { get: () => null } });
+      return (url, o) => {
+        const u = String(url);
+        const m = /\/rest\/v1\/rpc\/(semis_v2_pledge[a-z_]*)/.exec(u);
+        if (!m) return base(url, o);
+        const b = o && o.body ? JSON.parse(o.body) : {};
+        if (log) log.push({ fn: m[1], b });
+        if (!hq(o) && !(m[1] === "semis_v2_pledge_delete")) return reply({ ok: false, error: "forbidden" });
+        if (m[1] === "semis_v2_pledges") return reply({ ok: true, rows: clone(srv.pledges) });
+        if (m[1] === "semis_v2_pledge_signs") { const sg = {}; (b.p_ids || []).forEach(id => { const r = srv.pledges.find(x => x.id === id); if (r && r.hasSign) sg[id] = SIGN; }); return reply({ ok: true, signs: sg }); }
+        if (m[1] === "semis_v2_pledge_save") {
+          const p = b.p || {};
+          if (!p.name) return reply({ ok: false, error: "required" });
+          let r = p.id ? srv.pledges.find(x => x.id === p.id) : null;
+          if (!r) { r = mkP("n" + srv.pledges.length, p.name, p.empId, p.at, { src: "paper", hasSign: false }); srv.pledges.unshift(r); }
+          Object.assign(r, { name: p.name, dept: p.dept, position: p.position, empId: p.empId, state: p.state, stateAt: p.stateAt || null, stateNote: p.stateNote || "", note: p.note || "", files: p.files || [] });
+          if (p.at) r.at = new Date(p.at).toISOString();
+          return reply({ ok: true, row: clone(r) });
+        }
+        if (m[1] === "semis_v2_pledge_delete") {
+          const us = who(o);
+          if (!us || us.role !== "admin") return reply({ ok: false, error: "forbidden" });
+          srv.pledges = srv.pledges.filter(x => x.id !== b.p_id);
+          return reply({ ok: true });
+        }
+        return reply({ ok: false, error: "invalid" });
+      };
+    }
+
+    t("PL01 메뉴: 구 링크 자리에 모듈(항공보안HQ 이상) · 구 링크는 (구버전) · 보안 서약서 바로가기 새 주소 · 멱등", () => {
+      const legacy = [
+        { id: "grp-rule", seq: 5, type: "group", label: "규정 / 인허가" },
+        { id: "rule-ssi", seq: 12, type: "link", label: "비밀 취급 / SSI", icon: "㊙️", url: "https://sites.google.com/view/kjsemis/x", vis: "mgr", parent: "grp-rule" },
+        { id: "grp-ref", seq: 40, type: "group", label: "참고 / 링크" },
+        { id: "ref-agreement", seq: 41, type: "link", label: "보안 서약서", icon: "✍️", url: "https://mark4mission.github.io/airzeta-security-agreement/", vis: "all", parent: "grp-ref" }
+      ];
+      const e = makeEnv({ preData: { version: 1, menus: legacy } });
+      const d = e.S.data;
+      const mod = d.menus.find(m => m.type === "module" && m.module === "ssi");
+      ok(mod, "모듈 메뉴");
+      eq(mod.vis, "hq"); eq(mod.parent, "grp-rule"); ok(mod.seq < 12, "구 링크 바로 위");
+      eq(d.menus.find(m => m.id === "rule-ssi").label, "비밀 취급 / SSI (구버전)");
+      eq(d.menus.find(m => m.id === "ref-agreement").url, "https://semis.pe.kr/pledge.html");
+      eq(e.S.normalizeData(), false, "멱등");
+      const fresh = makeEnv();
+      ok(fresh.S.data.menus.some(m => m.id === "ssi" && m.module === "ssi" && m.vis === "hq"), "기본 메뉴");
+      eq(fresh.S.data.menus.find(m => m.id === "ref-agreement").url, "https://semis.pe.kr/pledge.html");
+      ok(e.w.SemisPledges && e.w.SemisPledgeText, "모듈 로드");
+    });
+
+    t("PL02 사람 키 — 서버 규칙과 같게(영문·숫자 · KJ 접두 제외) · 사람별 최신 유효 서약", () => {
+      const e = makeEnv();
+      const P = e.w.SemisPledges;
+      eq(P.empKey("KJ100418"), "100418"); eq(P.empKey("1974-07-27"), "19740727"); eq(P.empKey("100295/851219"), "100295851219");
+      ok(/regexp_replace\(lower\(regexp_replace\(coalesce\(p, ''\), '\[\^0-9A-Za-z\]', '', 'g'\)\), '\^kj\(\?=\[0-9\]\)', ''\)/.test(PLEDGE_SQL), "SQL 같은 규칙");
+      const ppl = P.people(seedP());
+      eq(ppl.length, 4, "5건 → 4명");
+      const g = ppl.find(x => x.lead.name === "가나다");
+      eq(g.n, 2); eq(g.lead.id, "p2", "최신 서약이 대표");
+      const rows = seedP(); rows[1].state = "void";
+      eq(P.people(rows).find(x => x.lead.name === "가나다").lead.id, "p1", "무효는 대표에서 밀림");
+    });
+
+    await ta("PL03 화면: HQ 명단(사람별 · 전체 기록 · 필터 · 검색) · 요약 · QR 카드 · 인쇄 버튼", async () => {
+      const log = [];
+      const e = makeEnv({ fetch: pledgeFetch({}, log) });
+      loginAs(e, "hq");
+      go(e, "ssi");
+      await until(() => qa(e, "#pl-list tr[data-pl-id]").length > 0);
+      eq(qa(e, "#pl-list tr[data-pl-id]").length, 3, "기본 = 유효한 사람 3명");
+      ok(/재서약 1/.test(q(e, "#pl-list").textContent), "재서약 표시");
+      ok(q(e, ".pl-stats") && /유효 서약자/.test(q(e, ".pl-stats").textContent), "요약");
+      ok(q(e, ".pl-qrsvg") && qa(e, ".pl-qrsvg rect").length > 100, "QR 카드");
+      ok(q(e, ".pl-url").textContent.indexOf("pledge.html") >= 0, "작성 주소");
+      ok(q(e, "#pl-print") && q(e, "#pl-qrprint") && q(e, "#pl-png"), "인쇄 · 저장 버튼");
+      const sel = q(e, "#pl-state"); sel.value = ""; sel.dispatchEvent(new e.w.Event("change"));
+      eq(qa(e, "#pl-list tr[data-pl-id]").length, 4, "상태 전체 = 4명");
+      q(e, '[data-pl-view="records"]').click();
+      eq(qa(e, "#pl-list tr[data-pl-id]").length, 5, "전체 제출 기록 5건");
+      ok(/이전/.test(q(e, "#pl-list").textContent), "이전 서약 표시");
+      const inp = q(e, "#pl-q"); inp.value = "종합통제"; inp.dispatchEvent(new e.w.Event("input"));
+      eq(qa(e, "#pl-list tr[data-pl-id]").length, 1, "소속 검색");
+      ok(q(e, "#pl-q") === inp, "검색 입력칸은 다시 만들지 않음");
+      inp.value = "ㄱ"; inp.dispatchEvent(new e.w.Event("input"));
+      eq(e.w.SemisPledges.state.q, "", "조합 중 자모 제외");
+      ok(log.some(x => x.fn === "semis_v2_pledges"), "RPC 로 명단");
+      ok(!("pledges" in e.S.data), "공용 DB 사본에 싣지 않음");
+    });
+
+    t("PL04 권한: 보안관리자 · 협력업체는 메뉴 없음 · 서명 세션 차단", () => {
+      const e = makeEnv();
+      loginAs(e, "manager");
+      ok(!e.S.canSee(e.S.data.menus.find(m => m.module === "ssi")), "manager 불가");
+      go(e, "ssi");
+      ok(!q(e, "#pl-page"), "manager 화면 없음");
+      const ev = makeEnv();
+      loginAs(ev, "vendor", { vendor: "인씨스", id: "vpl" });
+      go(ev, "ssi");
+      ok(!q(ev, "#pl-page"), "vendor 차단");
+      ok(/c\.role in \('admin', 'hq'\)/.test(PLEDGE_SQL), "서버도 HQ 이상 내부 계정만");
+    });
+
+    await ta("PL05 A4 명단(국토부 제출용): 사번/생년월일 · 서명 포함 · 종이 서약 표시 · 정렬 · 제목", async () => {
+      const e = makeEnv({ fetch: pledgeFetch({}) });
+      loginAs(e, "hq");
+      go(e, "ssi");
+      await until(() => qa(e, "#pl-list tr[data-pl-id]").length > 0);
+      const P = e.w.SemisPledges;
+      const sel = q(e, "#pl-state"); sel.value = ""; sel.dispatchEvent(new e.w.Event("change"));
+      await e.w.eval("SemisPledges.state.signs = {}; null");
+      const items = P.listed();
+      await until(() => true);
+      P.state.signs.p2 = SIGN;
+      const html = P.listPrintHTML(items.slice().sort((a, b) => String(a.r.at).localeCompare(String(b.r.at))), { title: "보안서약서 작성자 명단", sign: true, scope: "테스트" });
+      ok(/@page \{ size: A4 portrait/.test(html), "A4");
+      ok(html.indexOf("KJ100001") >= 0 && html.indexOf("1974-07-27") >= 0, "사번 · 생년월일 그대로(가리지 않음)");
+      ok(html.indexOf(SIGN) >= 0, "서명 이미지");
+      ok(/종이 서약서/.test(html), "종이 서약 표시");
+      ok(/총 4명/.test(html) && /thead \{ display: table-header-group/.test(html), "인원 · 머리글 반복");
+      const noSign = P.listPrintHTML(items, { title: "T", sign: false, scope: "" });
+      ok(noSign.indexOf(SIGN) < 0 && noSign.indexOf("<th>서명</th>") < 0, "서명 제외 선택");
+      q(e, "#pl-print").click();
+      ok(q(e, "#plp-title") && q(e, "#plp-sign").checked, "인쇄 선택 창");
+    });
+
+    await ta("PL06 상세 · 수정 · 종이 서약 등록 · 삭제는 시스템관리자만", async () => {
+      const log = [];
+      const srv = {};
+      const e = makeEnv({ fetch: pledgeFetch(srv, log) });
+      loginAs(e, "hq");
+      go(e, "ssi");
+      await until(() => qa(e, "#pl-list tr[data-pl-id]").length > 0);
+      e.w.SemisPledges.openDetail("p2");
+      await until(() => q(e, "#pl-dt-sign img"));
+      ok(q(e, "#pl-dt-sign img"), "서명 표시");
+      ok(/서약 이력 2건/.test(q(e, "#modal-box").textContent), "이력");
+      ok(!q(e, "#pl-del"), "HQ 는 삭제 없음");
+      q(e, "#pl-dt-edit").click();
+      q(e, "#pe-dept").value = "항공보안팀";
+      q(e, "#pe-state").value = "left"; q(e, "#pe-state").dispatchEvent(new e.w.Event("change"));
+      ok(!q(e, "#pe-stbox").classList.contains("hidden"), "상태 일자 · 사유");
+      q(e, "#pe-save").click();
+      await until(() => log.some(x => x.fn === "semis_v2_pledge_save"));
+      const sv = log.find(x => x.fn === "semis_v2_pledge_save").b.p;
+      eq(sv.id, "p2"); eq(sv.dept, "항공보안팀"); eq(sv.state, "left"); ok(!("at" in sv), "일시를 안 바꾸면 보내지 않음");
+      await until(() => q(e, "#pl-dt-edit"));
+      // 종이 서약 등록
+      q(e, "#pl-add").click();
+      q(e, "#pe-name").value = "타파하"; q(e, "#pe-emp").value = "400004"; q(e, "#pe-date").value = "2026-09-01";
+      q(e, "#pe-save").click();
+      await until(() => log.filter(x => x.fn === "semis_v2_pledge_save").length === 2);
+      const nv = log.filter(x => x.fn === "semis_v2_pledge_save")[1].b.p;
+      eq(nv.id, ""); eq(nv.at, "2026-09-01T09:00:00+09:00", "서약일(한국 시각)");
+      await until(() => e.w.SemisPledges.state.rows.some(r => r.name === "타파하"));
+      const ea = makeEnv({ fetch: pledgeFetch(srv, log) });
+      loginAs(ea, "admin");
+      go(ea, "ssi");
+      await until(() => qa(ea, "#pl-list tr[data-pl-id]").length > 0);
+      ea.w.SemisPledges.openDetail("p3");
+      ok(q(ea, "#pl-del"), "관리자 삭제 버튼");
+      e.Sync.stop(); ea.Sync.stop();
+    });
+
+    t("PL07 새 제출 알림(key 'pledges') → 화면 이벤트만, 공용 DB 다시 읽기 없음", () => {
+      const e = makeEnv();
+      loginAs(e, "hq");
+      let got = 0;
+      e.w.addEventListener("semis-remote", (ev) => { if (ev.detail.key === "pledges") got++; });
+      e.Sync.onBroadcast({ payload: { key: "pledges", by: "anon" } });
+      eq(got, 1, "이벤트");
+      ok(/pledge_notify[\s\S]*'key', 'pledges'/.test(PLEDGE_SQL), "서버 알림은 이름만");
+    });
+
+    t("PL08 서버 SQL: 비공개 표 · RPC 실행 권한 · 작업증명 · 시도 제한 · 중복(같은 날) · 파일 참조", () => {
+      ok(/create table if not exists semis_v2_private\.pledges/.test(PLEDGE_SQL), "비공개 스키마");
+      ok(/revoke all on semis_v2_private\.pledges, semis_v2_private\.pledge_hits from public, anon, authenticated/.test(PLEDGE_SQL), "표 직접 접근 불가");
+      ok(/grant execute on function public\.semis_v2_pledge_submit\(jsonb, jsonb\)[\s\S]*to anon, service_role;/.test(PLEDGE_SQL), "RPC 는 anon · service_role");
+      ok(/revoke execute on function public\.semis_v2_pledge_submit[\s\S]*from public, authenticated;/.test(PLEDGE_SQL), "authenticated 차단");
+      const sub = PLEDGE_SQL.slice(PLEDGE_SQL.indexOf("function public.semis_v2_pledge_submit"), PLEDGE_SQL.indexOf("function public.semis_v2_pledges()"));
+      ok(/pow_check\(p_pow\)/.test(sub) && /pledge_hits/.test(sub) && /'limit'/.test(sub), "작업증명 · 시도 제한");
+      ok(/png_ok\(v_sign\)/.test(sub) && /'agree'/.test(sub), "서명 · 동의 검증");
+      ok(/at time zone 'Asia\/Seoul'\)::date = \(v_now at time zone 'Asia\/Seoul'\)::date/.test(sub) && /'dup'/.test(sub), "같은 날만 중복");
+      ok(/union all select x\.files::text from semis_v2_private\.pledges/.test(PLEDGE_SQL), "첨부도 저장소 정리에서 참조로");
+      const lg = PLEDGE_SQL.slice(PLEDGE_SQL.indexOf("function public.semis_logi_pledges"));
+      ok(/semis_logi_private\.rank_now\(\) < 2/.test(lg), "Logistics manager 이상");
+      ok(!/emp_id|'empId'|sign|'ip'/.test(lg.slice(lg.indexOf("jsonb_build_object('name'"), lg.indexOf("order by z.at desc"))), "Logistics 에 사번 · 서명 · IP 없음");
+      ok(/delete from semis_v2_private\.pledges[\s\S]{0,200}admin_ctx|admin_ctx\(\);[\s\S]{0,200}delete from semis_v2_private\.pledges/.test(PLEDGE_SQL), "삭제는 시스템관리자");
+    });
+
+    t("PL09 작성 화면(pledge.html): CSP · 인라인 스크립트 없음 · 문구 공용 파일 · 공개 키만", () => {
+      const html = read("pledge.html");
+      ok(/Content-Security-Policy" content="default-src 'self'; script-src 'self';/.test(html), "CSP");
+      ok(/connect-src https:\/\/mzyuzrxkdcpzxojenwat\.supabase\.co/.test(html), "연결 대상 제한");
+      ok(!/<script>(?!\s*<\/script>)|<script(?![^>]*src=)[^>]*>/.test(html) && !/\son[a-z]+=/.test(html), "인라인 스크립트 · 이벤트 속성 없음");
+      ok(/js\/pledge-text\.js\?v=/.test(html) && /js\/pow\.js\?v=/.test(html) && /js\/pledge-form\.js\?v=/.test(html), "스크립트 · 캐시 스탬프");
+      ok(/src="js\/pledge-text\.js[^"]*" defer/.test(html), "defer");
+      (pfJS.match(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g) || []).forEach(jwt => {
+        eq(JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString("utf8")).role, "anon", "공개 키");
+      });
+      ok(pfJS.indexOf('"semis_v2_pledge_submit"') > 0 && pfJS.indexOf('"semis_v2_challenge"') > 0, "제출 RPC · 작업증명");
+      ok(/국가항공보안계획 1\.2\.13/.test(pltJS) && /National Civil Aviation Security Plan 1\.2\.13/.test(pltJS), "국문 · 영문 문구");
+    });
+
+    await ta("PL10 작성 화면 동작: 동의 · 입력 · 서명 확인 → 작업증명 → 제출 · 결과 · 중복 안내 · 영문 전환", async () => {
+      const { JSDOM } = require("jsdom");
+      const html = read("pledge.html").replace(/<script[\s\S]*?<\/script>/g, "");
+      const dom = new JSDOM(html, { url: "https://semis.pe.kr/pledge.html?lang=ko", runScripts: "outside-only", pretendToBeVisual: true });
+      const w = dom.window;
+      const calls = [];
+      let dupNext = false;
+      w.fetch = (url, o) => {
+        const name = String(url).split("/rpc/")[1];
+        const b = JSON.parse(o.body || "{}");
+        calls.push({ name, b, h: o.headers });
+        const body = name === "semis_v2_challenge" ? { ok: true, c: "0".repeat(32) + ".9999999999.1.x", d: 1 }
+          : dupNext ? { ok: false, error: "dup", at: "2026-09-27 10:00" } : { ok: true, receipt: "AB12CD34", at: "2026-09-27 10:01" };
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+      };
+      w.HTMLCanvasElement.prototype.getContext = function () {
+        const noop = () => {};
+        return { setTransform: noop, clearRect: noop, beginPath: noop, moveTo: noop, lineTo: noop, quadraticCurveTo: noop, stroke: noop, arc: noop, fill: noop };
+      };
+      w.HTMLCanvasElement.prototype.toDataURL = () => "data:image/png;base64,iVBORw0KGgoAAAA";
+      w.Element.prototype.scrollIntoView = function () {};
+      w.scrollTo = () => {};
+      w.Worker = undefined;
+      w.eval(pltJS + "\n;" + powJS + "\n;" + pfJS);
+      await until(() => w.document.querySelectorAll("#pf-clauses input").length > 0);
+      const d = w.document, $ = (s) => d.querySelector(s);
+      const F = w.SemisPledgeForm;
+      eq(d.querySelectorAll("#pf-clauses input").length, 4, "조항 4개");
+      $("#pf-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+      ok(/동의/.test($("#pf-err").textContent), "동의 먼저");
+      $("#pf-all").checked = true; $("#pf-all").dispatchEvent(new w.Event("change"));
+      ok(Array.from(d.querySelectorAll("#pf-clauses input")).every(c => c.checked), "전체 동의 → 각 조항");
+      $("#pf-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+      ok(/입력하지 않은/.test($("#pf-err").textContent) && $("#pf-dept").getAttribute("aria-invalid") === "true", "빈 칸 표시");
+      $("#pf-dept").value = "영업운송본부 인천화물팀"; $("#pf-position").value = "프로"; $("#pf-emp").value = "100046"; $("#pf-name").value = "홍길동";
+      $("#pf-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+      ok(/서명/.test($("#pf-err").textContent), "서명 필요");
+      F.pad.w = 600; F.pad.h = 210;
+      F.pad.strokes.push([{ x: 10, y: 10 }, { x: 60, y: 40 }, { x: 120, y: 20 }]);
+      ok(F.signed(), "서명 인식");
+      eq(calls.length, 0, "검증 전에는 서버 호출 없음");
+      await F.submit();
+      const sub = calls.find(c => c.name === "semis_v2_pledge_submit");
+      ok(calls[0].name === "semis_v2_challenge" && sub, "작업증명 후 제출");
+      eq(sub.b.p.name, "홍길동"); eq(sub.b.p.empId, "100046"); eq(sub.b.p.lang, "ko"); eq(sub.b.p.agreed, true);
+      ok(/^data:image\/png;base64,/.test(sub.b.p.sign), "서명 PNG");
+      ok(sub.b.p_pow && sub.b.p_pow.c && sub.b.p_pow.x !== undefined, "작업증명 해답");
+      ok(!sub.h["x-semis-token"], "로그인 토큰 없음");
+      ok(!$("#pf-done").classList.contains("hidden") && $("#pf-r-no").textContent === "AB12CD34", "접수 결과");
+      $("#pf-again").click();
+      ok($("#pf-done").classList.contains("hidden") && F.pad.strokes.length === 0 && $("#pf-name").value === "", "다른 사람 작성");
+      d.querySelector('[data-lang="en"]').click();
+      eq($("#pf-title").textContent, "Security Pledge Agreement", "영문 전환");
+      ok(/Clause 1/.test($("#pf-clauses").textContent), "영문 조항");
+      $("#pf-all").checked = true; $("#pf-all").dispatchEvent(new w.Event("change"));
+      $("#pf-dept").value = "Ops"; $("#pf-position").value = "Mgr"; $("#pf-emp").value = "700100"; $("#pf-name").value = "Kim";
+      F.pad.strokes.push([{ x: 10, y: 10 }, { x: 80, y: 60 }]);
+      dupNext = true;
+      await F.submit();
+      ok(/already submitted today \(2026-09-27 10:00\)/.test($("#pf-err").textContent), "중복 안내(영문)");
+      eq(calls.filter(c => c.name === "semis_v2_pledge_submit").pop().b.p.lang, "en", "영문 서약");
+      w.close();
     });
   }
 

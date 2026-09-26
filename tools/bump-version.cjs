@@ -21,12 +21,16 @@ if (!/const VERSION = "\d+\.\d+\.\d+";/.test(app)) {
 app = app.replace(/const VERSION = "\d+\.\d+\.\d+";/, `const VERSION = "${ver}";`); // 같은 버전 재실행도 허용(멱등)
 fs.writeFileSync(appPath, app);
 
-const htmlPath = path.join(ROOT, "index.html");
-let html = fs.readFileSync(htmlPath, "utf8");
 let n = 0;
-html = html.replace(/(href|src)="((?:css|js)\/[\w.-]+\.(?:css|js))(?:\?v=[\d.]+)?"/g, (m, attr, file) => {
-  n++;
-  return `${attr}="${file}?v=${ver}"`;
+/* index.html · pledge.html(보안서약서 작성 화면, v2.55) */
+["index.html", "pledge.html"].forEach(f => {
+  const htmlPath = path.join(ROOT, f);
+  if (!fs.existsSync(htmlPath)) return;
+  let html = fs.readFileSync(htmlPath, "utf8");
+  html = html.replace(/(href|src)="((?:css|js)\/[\w.-]+\.(?:css|js))(?:\?v=[\d.]+)?"/g, (m, attr, file) => {
+    n++;
+    return `${attr}="${file}?v=${ver}"`;
+  });
+  fs.writeFileSync(htmlPath, html);
 });
-fs.writeFileSync(htmlPath, html);
-console.log(`v${ver} — app.js VERSION 갱신, index.html 캐시 스탬프 ${n}건 적용`);
+console.log(`v${ver} — app.js VERSION 갱신, index.html · pledge.html 캐시 스탬프 ${n}건 적용`);

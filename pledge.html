@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0b2545">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; connect-src https://mzyuzrxkdcpzxojenwat.supabase.co; img-src 'self' data:; style-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<title>보안서약서 · Security Pledge Agreement</title>
+<link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+<link rel="stylesheet" href="css/pledge.css?v=2.55.0">
+</head>
+<body>
+<main class="pf" id="pf">
+  <header class="pf-card pf-top">
+    <div class="pf-brand">
+      <svg class="pf-mark" viewBox="0 0 100 100" aria-hidden="true"><polygon points="84.6,15.1 61.3,15.1 10.9,55.1 37.2,55.1 37.2,38.9 65,38.9" fill="#df4552"/><polygon points="86.1,41.8 67.3,41.8 67.3,63.2 39.5,63.2 12.6,87.9 52.4,87.9" fill="#1b3088"/></svg>
+      <div>
+        <h1 id="pf-title">보안서약서</h1>
+        <p id="pf-sub">Security Pledge Agreement</p>
+      </div>
+    </div>
+    <div class="pf-lang" role="group" aria-label="Language">
+      <button type="button" data-lang="ko" aria-pressed="true">한국어</button>
+      <button type="button" data-lang="en" aria-pressed="false">English</button>
+    </div>
+  </header>
+
+  <form id="pf-form" novalidate>
+    <section class="pf-card" aria-labelledby="pf-h-pledge">
+      <h2 id="pf-h-pledge" data-i18n="hPledge">서약 내용</h2>
+      <p class="pf-lead" id="pf-lead"></p>
+      <ol class="pf-clauses" id="pf-clauses"></ol>
+      <label class="pf-all">
+        <input type="checkbox" id="pf-all">
+        <span id="pf-all-t">모든 조항에 동의합니다</span>
+      </label>
+    </section>
+
+    <section class="pf-card" aria-labelledby="pf-h-info">
+      <h2 id="pf-h-info" data-i18n="hInfo">정보 입력</h2>
+      <div class="pf-grid">
+        <div class="pf-field pf-date">
+          <span class="pf-lbl" data-i18n="date">서약일</span>
+          <output id="pf-date"></output>
+        </div>
+        <label class="pf-field">
+          <span class="pf-lbl" data-i18n="dept">소속</span>
+          <input id="pf-dept" name="dept" maxlength="80" autocomplete="organization" required>
+        </label>
+        <label class="pf-field">
+          <span class="pf-lbl" data-i18n="position">직위</span>
+          <input id="pf-position" name="position" maxlength="60" autocomplete="organization-title" required>
+        </label>
+        <label class="pf-field">
+          <span class="pf-lbl" data-i18n="empId">사번 (직원이 아니면 생년월일)</span>
+          <input id="pf-emp" name="empId" maxlength="40" autocomplete="off" inputmode="text" required>
+        </label>
+        <label class="pf-field">
+          <span class="pf-lbl" data-i18n="name">성명</span>
+          <input id="pf-name" name="name" maxlength="60" autocomplete="name" required>
+        </label>
+      </div>
+    </section>
+
+    <section class="pf-card" aria-labelledby="pf-h-sign">
+      <div class="pf-sign-hd">
+        <h2 id="pf-h-sign" data-i18n="hSign">서명</h2>
+        <button type="button" class="pf-btn-ghost" id="pf-clear" data-i18n="clear">지우기</button>
+      </div>
+      <div class="pf-pad" id="pf-pad">
+        <canvas id="pf-canvas" aria-label="서명 입력"></canvas>
+        <span class="pf-pad-hint" id="pf-pad-hint" data-i18n="signHint">이 칸에 손가락이나 마우스로 서명하세요</span>
+      </div>
+    </section>
+
+    <p class="pf-err" id="pf-err" role="alert" aria-live="assertive"></p>
+    <div class="pf-actions">
+      <button type="submit" class="pf-btn" id="pf-submit" data-i18n="submit">제출하기</button>
+    </div>
+    <p class="pf-to" id="pf-to">에어제타㈜ 대표 귀하</p>
+  </form>
+
+  <section class="pf-card pf-done hidden" id="pf-done" aria-live="polite">
+    <svg class="pf-done-ico" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22" fill="#e8f5ee"/><path d="M14 24.5l7 7 13-14" fill="none" stroke="#16803c" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <h2 id="pf-done-t">제출되었습니다</h2>
+    <dl class="pf-receipt">
+      <dt data-i18n="rName">성명</dt><dd id="pf-r-name"></dd>
+      <dt data-i18n="rAt">제출 시각</dt><dd id="pf-r-at"></dd>
+      <dt data-i18n="rNo">접수 번호</dt><dd id="pf-r-no"></dd>
+    </dl>
+    <p class="pf-done-m" id="pf-done-m">이 화면을 닫아도 됩니다.</p>
+  </section>
+</main>
+
+<div class="pf-busy hidden" id="pf-busy" role="status" aria-live="polite">
+  <div class="pf-busy-box"><span class="pf-spin" aria-hidden="true"></span><span id="pf-busy-t">등록 중입니다</span></div>
+</div>
+
+<script src="js/pledge-text.js?v=2.55.0" defer></script>
+<script src="js/pow.js?v=2.55.0" defer></script>
+<script src="js/pledge-form.js?v=2.55.0" defer></script>
+</body>
+</html>

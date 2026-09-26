@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.54.1";
+  const VERSION = "2.55.0";
   /* v2.53: 데이터 사본은 이 탭의 sessionStorage 에만 둔다(탭을 닫거나 로그아웃하면 사라짐).
      화면 설정(LS_UI)만 localStorage. */
   const LS_DATA = "semis2:data";
@@ -180,7 +180,8 @@ const SeMIS = (() => {
       lk("rule-intl", "국제/국가 보안규정 (구버전)", "🌐", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EA%B5%AD%EC%A0%9C%EA%B5%AD%EA%B0%80-%EB%B3%B4%EC%95%88%EA%B7%9C%EC%A0%95", "grp-rule"),
       lk("rule-own", "자체 보안규정 (구버전)", "📘", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EC%9E%90%EC%B2%B4-%EB%B3%B4%EC%95%88%EA%B7%9C%EC%A0%95", "grp-rule"),
       lk("rule-iosa", "IOSA 자료실 (구버전)", "🏅", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/iosa%EA%B5%AD%EC%A0%9C-%EC%9D%B8%ED%97%88%EA%B0%80", "grp-rule", { vis: "mgr" }),
-      lk("rule-ssi", "비밀 취급 / SSI", "㊙️", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EB%B9%84%EB%B0%80-%EC%B7%A8%EA%B8%89ssi", "grp-rule", { vis: "mgr" }),
+      m("ssi", "비밀 취급 / SSI", "㊙️", "ssi", "hq", "grp-rule"),
+      lk("rule-ssi", "비밀 취급 / SSI (구버전)", "㊙️", "https://sites.google.com/view/kjsemis/%EA%B7%9C%EC%A0%95%EC%9D%B8%ED%97%88%EA%B0%80/%EB%B9%84%EB%B0%80-%EC%B7%A8%EA%B8%89ssi", "grp-rule", { vis: "mgr" }),
 
       g("grp-branch", "지점 / 협력업체"),
       m("branches", "지점 관리", "🌍", "branches", "mgr", "grp-branch"),
@@ -224,7 +225,7 @@ const SeMIS = (() => {
       g("grp-ref", "참고 / 링크"),
       m("policy", "에어제타 보안정책", "🛡️", "policy", "all", "grp-ref"),
       lk("ref-policy", "에어제타 보안정책 (구버전)", "🛡️", "https://drive.google.com/file/d/15V_aIYU9gB6nCp9AYQPE3kxePisQ2vJV/view?usp=sharing", "grp-ref"),
-      lk("ref-agreement", "보안 서약서", "✍️", "https://mark4mission.github.io/airzeta-security-agreement/", "grp-ref"),
+      lk("ref-agreement", "보안 서약서", "✍️", "https://semis.pe.kr/pledge.html", "grp-ref"),
       lk("ref-drive", "SeMIS Drive", "🗂️", "https://drive.google.com/drive/folders/1KSKO1ioqb8I0s-kysIkkP4yb2SwURXTW?usp=drive_link", "grp-ref", { vis: "mgr" }),
       lk("ref-legacy", "구버전 (kjsemis)", "🕰️", "https://sites.google.com/view/kjsemis/", "grp-ref"),
       lk("ref-boannews", "보안뉴스", "📰", "https://www.boannews.com/", "grp-ref"),
@@ -586,6 +587,21 @@ const SeMIS = (() => {
         : DATA.menus.reduce((mx, m) => Math.max(mx, (m && m.seq) || 0), 0) + 1;
       DATA.menus.push({ id: "kpi", seq, type: "module", label: "KPI 현황",
         icon: "📈", module: "kpi", vis: "hq", parent: null });
+    }
+    // v2.55: 비밀 취급 / SSI (보안서약서 관리) — 구 링크 자리에 모듈(항공보안HQ 이상), 구 링크는 (구버전),
+    //  '보안 서약서' 바로가기는 새 작성 화면으로 (관리자가 주소를 바꿨으면 그대로 둔다)
+    if (!DATA.menus.some(m => m && m.type === "module" && m.module === "ssi")) {
+      const old = DATA.menus.find(m => m && m.id === "rule-ssi");
+      const grpR = DATA.menus.find(m => m && m.id === "grp-rule" && m.type === "group");
+      if (old) DATA.menus.push({ id: "ssi", seq: (old.seq || 0) - 0.05, type: "module", label: "비밀 취급 / SSI",
+        icon: "㊙️", module: "ssi", vis: "hq", parent: old.parent || (grpR ? "grp-rule" : null) });
+      else ensureModuleMenu("ssi", "grp-rule", "비밀 취급 / SSI", "㊙️", "ssi", "hq");
+    }
+    {
+      const o = DATA.menus.find(m => m && m.id === "rule-ssi" && m.type === "link");
+      if (o && o.label === "비밀 취급 / SSI") o.label = "비밀 취급 / SSI (구버전)";
+      const a = DATA.menus.find(m => m && m.id === "ref-agreement" && m.type === "link");
+      if (a && /airzeta-security-agreement/.test(String(a.url || ""))) a.url = "https://semis.pe.kr/pledge.html";
     }
     // v2.54: 운항 현황 (SeMIS · Logistics 이식) — 메뉴 자동 삽입(대시보드 다음, 전체 열람)
     if (!DATA.menus.some(m => m && m.type === "module" && m.module === "flight")) {
@@ -1088,7 +1104,7 @@ const SeMIS = (() => {
     schedule: "wide", inspection: "wide", carcap: "wide", flight: "wide",
     kpi: "wide", policy: "wide", dashboard: "wide",
     passes: "mid", branches: "mid", "contracts-mgmt": "mid", training: "mid",
-    supervisors: "mid", "stn-officers": "mid",
+    supervisors: "mid", "stn-officers": "mid", ssi: "mid",
     certs: "mid", contacts: "mid", council: "mid", billing: "mid", minutes: "mid",
     equipment: "mid", settings: "mid", "regs-intl": "mid", "regs-own": "mid", vault: "mid"
   };

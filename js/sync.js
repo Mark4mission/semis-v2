@@ -425,6 +425,8 @@
   function onBroadcast(msg) {
     const p = (msg && msg.payload) || {};
     const key = String(p.key || "");
+    /* 공용 DB 밖 자료(보안서약서 — 비공개 표)는 그 화면이 알아서 다시 읽는다 */
+    if (key === "pledges") { try { window.dispatchEvent(new CustomEvent("semis-remote", { detail: { key } })); } catch (e) {} return; }
     if (!key || !canRead(key)) return;
     if (String(p.by || "").replace(/^.*\//, "") === CLIENT_ID) return;   // 내가 보낸 변경
     queueRemote(key);

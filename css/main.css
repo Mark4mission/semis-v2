@@ -2616,3 +2616,78 @@ table.fo-tbl { font-size: .86rem; }
   .fo-log td:nth-child(6) { grid-column: 3; justify-self: end; }
   .ds-head .fo-upd { display: none; }
 }
+
+/* ═══════ 비밀 취급 / SSI · 보안서약서 (v2.55) ═══════ */
+.pl-top { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 16px; align-items: stretch; margin-bottom: 16px; }
+.pl-top > * { min-width: 0; }
+.pl-top .ds-panel + .ds-panel { margin-top: 0; }
+.pl-qrcard { background: #fff; border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); padding: 8px; }
+.pl-qrsvg { display: block; width: 100%; height: auto; }
+.pl-url { margin-top: 9px; font-size: .82rem; font-weight: 600; overflow-wrap: anywhere; }
+.pl-qrbtns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+.pl-mini { margin-top: 8px; font-size: .78rem; color: var(--text-3); }
+.pl-sum { display: flex; flex-direction: column; }
+.pl-stats { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
+.pl-basis { margin-top: auto; padding-top: 14px; font-size: .8rem; color: var(--text-3); }
+.pl-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.pl-tools select, .pl-q { height: 36px; border: 1px solid var(--border-strong); border-radius: 8px; padding: 0 10px; background: #fff; font-size: .88rem; }
+.pl-q { flex: 1 1 220px; min-width: 0; }
+.pl-seg { display: inline-flex; border: 1px solid var(--ds-line); border-radius: 9px; padding: 3px; background: var(--ds-blue-50); }
+.pl-seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: 7px; font-size: .84rem; font-weight: 700; color: var(--text-2); white-space: nowrap; }
+.pl-seg button[aria-pressed="true"] { background: var(--ds-navy-800); color: #fff; }
+.pl-check { display: inline-flex; align-items: center; gap: 6px; font-size: .86rem; font-weight: 600; color: var(--text-2); white-space: nowrap; cursor: pointer; }
+.pl-count { font-size: .82rem; font-weight: 700; color: var(--text-3); margin-bottom: 6px; }
+.pl-tbl tbody tr { cursor: pointer; }
+.pl-tbl tbody tr:focus-visible td { background: var(--ds-blue-50); outline: none; }
+.pl-tbl td, .pl-tbl th { white-space: nowrap; }
+.pl-tbl .pl-no { width: 44px; text-align: center; color: var(--text-3); }
+.pl-tbl .pl-date, .pl-tbl .pl-emp { font-variant-numeric: tabular-nums; }
+.pl-tbl td:nth-child(4), .pl-tbl td:nth-child(5) { white-space: normal; min-width: 90px; }
+.pl-sgc img { height: 34px; width: auto; max-width: 120px; display: block; }
+.pl-dim { color: var(--text-3); font-size: .8rem; }
+.pl-msub { display: none; }
+.pl-recent { margin-top: 14px; }
+.pl-recent-t { font-size: .8rem; font-weight: 800; color: var(--ds-navy-800); margin-bottom: 6px; }
+.pl-recent ul { list-style: none; display: grid; gap: 4px; }
+.pl-recent button { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: baseline; text-align: left;
+  border: 1px solid var(--ds-line); background: #fff; border-radius: 9px; padding: 7px 11px; font-size: .86rem; }
+.pl-recent button:hover { border-color: var(--ds-blue-200); }
+.pl-recent button span { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-recent time { color: var(--text-3); font-size: .8rem; font-variant-numeric: tabular-nums; }
+.pl-dt-hd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.pl-dt-hd h3 { margin: 0 6px 0 0; }
+.pl-dt-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); gap: 16px; align-items: start; }
+.pl-dl { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 7px 12px; font-size: .9rem; }
+.pl-dl dt { color: var(--text-3); font-weight: 600; }
+.pl-dl dd { overflow-wrap: anywhere; }
+.pl-meta { font-size: .82rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.pl-pre { white-space: pre-wrap; }
+.pl-dt-sign { border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); min-height: 120px; display: flex; align-items: center; justify-content: center; padding: 10px; background: #fff; }
+.pl-dt-sign img { max-width: 100%; max-height: 150px; }
+.pl-orig, .pl-files, .pl-hist { margin-top: 14px; font-size: .86rem; }
+.pl-orig { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 11px; }
+.pl-hist ul { list-style: none; margin-top: 6px; display: grid; gap: 4px; }
+.pl-hist li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pl-hist li button { border: 0; background: none; color: var(--primary); font-weight: 700; font-variant-numeric: tabular-nums; padding: 0; }
+.pl-hist li.on button { color: var(--ds-navy-900); text-decoration: underline; }
+.pl-fbox { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pl-fchip { display: inline-flex; align-items: center; gap: 2px; }
+.pl-fchip button { border: 0; background: none; color: var(--text-3); font-size: 1.05rem; padding: 0 4px; }
+.pl-up { cursor: pointer; }
+@media (max-width: 980px) { .pl-top { grid-template-columns: 1fr; } .pl-qrpanel .pl-qrcard { max-width: 420px; } }
+@media (max-width: 640px) {
+  .pl-dt-grid { grid-template-columns: 1fr; }
+  .pl-dl { grid-template-columns: 100px minmax(0, 1fr); }
+  .pl-tbl thead { display: none; }
+  .pl-tbl, .pl-tbl tbody { display: block; }
+  .pl-tbl tr { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 6px; align-items: center; padding: 11px 4px; border-bottom: 1px solid var(--border); }
+  .pl-tbl td { display: none; padding: 0; border: 0; white-space: normal; background: none !important; }
+  .pl-tbl td.pl-name { display: block; grid-column: 1; grid-row: 1 / span 2; font-size: .98rem; }
+  .pl-tbl td.pl-date { display: block; grid-column: 2 / span 2; grid-row: 1; text-align: right; color: var(--text-3); font-size: .82rem; }
+  .pl-tbl td[data-l="구분"] { display: block; grid-column: 2; grid-row: 2; }
+  .pl-tbl td[data-l="상태"] { display: block; grid-column: 3; grid-row: 2; }
+  .pl-tbl td.pl-sgc { display: block; grid-column: 1 / -1; grid-row: 3; }
+  .pl-msub { display: block; margin-top: 3px; font-size: .84rem; font-weight: 500; color: var(--text-2); }
+  .pl-tools select { flex: 1 1 30%; }
+}
+@media print { .pl-qrbtns, .pl-tools, #pl-refresh, #pl-add { display: none !important; } }
