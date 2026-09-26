@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.54.0";
+  const VERSION = "2.54.1";
   /* v2.53: 데이터 사본은 이 탭의 sessionStorage 에만 둔다(탭을 닫거나 로그아웃하면 사라짐).
      화면 설정(LS_UI)만 localStorage. */
   const LS_DATA = "semis2:data";
@@ -1415,6 +1415,14 @@ const SeMIS = (() => {
     $("#login-pw").value = "";
     $("#login-pw").focus();
   }
+  /* 앱이 준비되기 전에 누른 로그인(js/loginguard.js 가 붙잡아 둔 것)을 이어서 처리한다 */
+  function flushQueuedLogin() {
+    if (typeof window === "undefined" || !window.__semisLoginQueued) return;
+    window.__semisLoginQueued = false;
+    const pw = $("#login-pw");
+    if (pw && pw.value) onLoginSubmit({ preventDefault() {} });
+    else setLoginBusy(false, "");
+  }
   /* QR 접속(#/sign/코드) — 암호 입력 없이 서명 화면 */
   function signFromQr(code) {
     const pwEl = $("#login-pw"), errEl = $("#login-error");
@@ -1442,8 +1450,9 @@ const SeMIS = (() => {
     cleanupLegacy();
     load();
 
-    // 로그인 폼
+    // 로그인 폼 — 여기서부터는 앱이 직접 처리(그 전의 제출은 js/loginguard.js 가 붙잡아 둔다)
     $("#login-form").addEventListener("submit", onLoginSubmit);
+    if (typeof window !== "undefined") window.__semisReady = true;
     $("#pw-toggle").addEventListener("click", () => {
       const i = $("#login-pw");
       i.type = i.type === "password" ? "text" : "password";
@@ -1472,15 +1481,17 @@ const SeMIS = (() => {
       setLoginBusy(true, "접속 확인 중…");
       return restoreSession().then(ok => {
         setLoginBusy(false, "");
-        if (ok) { afterLogin(false); return; }
-        if (qrCode) { signFromQr(qrCode); return; }
+        if (ok) { window.__semisLoginQueued = false; afterLogin(false); return; }
+        if (qrCode) { window.__semisLoginQueued = false; signFromQr(qrCode); return; }
         if (A.prepare) A.prepare();
         setTimeout(() => $("#login-pw") && $("#login-pw").focus(), 100);
+        flushQueuedLogin();
       });
     }
-    if (qrCode) { signFromQr(qrCode); return; }
+    if (qrCode) { if (typeof window !== "undefined") window.__semisLoginQueued = false; signFromQr(qrCode); return; }
     if (A && A.prepare) A.prepare();                 // 암호를 입력하는 동안 접속 확인 문제를 미리 푼다
     setTimeout(() => $("#login-pw") && $("#login-pw").focus(), 100);
+    flushQueuedLogin();
   }
 
   /* ─────────── 공개 API ─────────── */

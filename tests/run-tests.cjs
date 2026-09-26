@@ -44,6 +44,7 @@ const fltJS = read("js/flight.js");
 const syncJS = read("js/sync.js");
 const powJS = read("js/pow.js");
 const faJS = read("js/fileauth.js");
+const lgJS = read("js/loginguard.js");
 const HTML = read("index.html").replace(/<script[\s\S]*?<\/script>/g, "");
 
 let passed = 0, failed = 0;
@@ -93,7 +94,7 @@ function makeEnv(opts = {}) {
     if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, "crypto", { value: wc, configurable: true });
   } catch (e) { /* 구버전 Node 등 — vault 테스트만 영향 */ }
   // 개별 eval 간에는 최상위 const 바인딩이 공유되지 않으므로 한 번에 평가
-  w.eval(appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + slJS + "\n;" + iosaJS + "\n;" + pdJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + qrJS + "\n;" + mnJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + chatJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + flcJS + "\n;" + fltJS + "\n;" + syncJS + "\n;" + powJS + "\n;" + faJS);
+  w.eval(lgJS + "\n;" + appJS + "\n;" + modJS + "\n;" + calJS + "\n;" + inspJS + "\n;" + carcapJS + "\n;" + ctJS + "\n;" + brJS + "\n;" + psJS + "\n;" + eqJS + "\n;" + trJS + "\n;" + cnJS + "\n;" + rgJS + "\n;" + ofJS + "\n;" + slJS + "\n;" + iosaJS + "\n;" + pdJS + "\n;" + plJS + "\n;" + ctcJS + "\n;" + blJS + "\n;" + cnclJS + "\n;" + qrJS + "\n;" + mnJS + "\n;" + vtJS + "\n;" + caresJS + "\n;" + newsJS + "\n;" + chatJS + "\n;" + searchJS + "\n;" + kpiJS + "\n;" + flcJS + "\n;" + fltJS + "\n;" + syncJS + "\n;" + powJS + "\n;" + faJS);
   const S = w.SeMIS;
   if (opts.boot !== false) { S.boot(); if (w.SemisSearch) w.SemisSearch.init(); }
   const env = { dom, w, S, Sync: w.SemisSync, Cal: w.SemisCalendar };
@@ -7321,7 +7322,7 @@ function makeFetchStub(server) {
 
   t("O16 신규 모듈 자원 등록 — index.html · 동기화 키 · 화면 폭", () => {
     const html = read("index.html");
-    ok(/<script src="js\/officers\.js\?v=[\d.]+"><\/script>/.test(html), "officers.js 스크립트 등록");
+    ok(/<script src="js\/officers\.js\?v=[\d.]+"( defer)?><\/script>/.test(html), "officers.js 스크립트 등록");
     ok(/"supervisors", "stationOfficers"/.test(read("js/sync.js")), "SYNC_KEYS 등록");
     ok(/supervisors: "mid", "stn-officers": "mid"/.test(appJS), "VIEW_WIDTH 등록");
   });
@@ -7531,7 +7532,7 @@ function makeFetchStub(server) {
 
     t("CH08 자원 등록 — index.html 스크립트 · enterApp 연동 · CSS · 인쇄 숨김", () => {
       const html = read("index.html");
-      ok(/<script src="js\/chat\.js\?v=[\d.]+"><\/script>/.test(html), "chat.js 스크립트 등록");
+      ok(/<script src="js\/chat\.js\?v=[\d.]+"( defer)?><\/script>/.test(html), "chat.js 스크립트 등록");
       ok(/window\.SemisChat\.onLogin\(\)/.test(read("js/app.js")), "enterApp 연동");
       const css = read("css/main.css");
       ok(/\.chat-fab\s*\{/.test(css) && /\.chat-panel\s*\{/.test(css), "CSS 등록");
@@ -7714,7 +7715,7 @@ function makeFetchStub(server) {
   t("GD10 자원 등록 — 스크립트/CSS/데이터 격리", () => {
     const html = read("index.html");
     ["seclevel", "iosa", "passdocs"].forEach(f =>
-      ok(new RegExp('<script src="js/' + f + '\\.js\\?v=[\\d.]+"><\\/script>').test(html), f + ".js 등록"));
+      ok(new RegExp('<script src="js/' + f + '\\.js\\?v=[\\d.]+"( defer)?><\\/script>').test(html), f + ".js 등록"));
     const css = read("css/main.css");
     [".gd-hero", ".gd-lvl", ".gd-step", ".gd-chk", ".gd-cmp"].forEach(c =>
       ok(new RegExp("\\" + c + "\\s*[,{ ]").test(css), c + " CSS"));
@@ -10420,6 +10421,49 @@ function makeFetchStub(server) {
     eq(e.w.sessionStorage.getItem("semis2:session"), null, "옛 세션 삭제");
     ok(e.w.localStorage.getItem("semis2:ui"), "화면 설정은 유지");
     ok(!e.S.user, "옛 세션으로 자동 로그인 안 됨");
+  });
+
+  t("LG01 로그인 창 보호 — loginguard.js 는 <head> 에서 먼저(즉시 실행), 나머지 스크립트는 defer · 순서 유지", () => {
+    const raw = read("index.html");
+    const head = raw.slice(0, raw.indexOf("</head>")), body = raw.slice(raw.indexOf("<body>"));
+    ok(/<script src="js\/loginguard\.js\?v=[\d.]+"><\/script>/.test(head), "head 에 즉시 실행");
+    eq((head.match(/<script\b/g) || []).length, 1, "head 스크립트는 보호 파일 하나");
+    const tags = body.match(/<script\b[^>]*>/g) || [];
+    ok(tags.length > 30 && tags.every(t => / defer>$/.test(t)), "본문 스크립트 모두 defer");
+    const srcs = tags.map(t => /src="([^"?]+)/.exec(t)[1]);
+    ok(srcs.indexOf("js/app.js") < srcs.indexOf("js/sync.js") && srcs[srcs.length - 1] === "js/main.js", "순서 유지 · main.js 마지막");
+    ok(/__semisReady = true/.test(appJS.slice(appJS.indexOf("function boot()"))), "boot 에서 준비 표시");
+  });
+
+  await ta("LG02 앱 준비 전에 누른 로그인 — 새로고침 없이 붙잡아 두었다가 준비되면 그대로 로그인", async () => {
+    const stub = makeFetchStub({ accounts: [{ id: "lg1", name: "보호", role: "manager", pw: "guard-pw-01" }] });
+    const e = makeEnv({ fetch: stub, boot: false });
+    q(e, "#login-pw").value = "guard-pw-01";
+    const ev = new e.w.Event("submit", { bubbles: true, cancelable: true });
+    q(e, "#login-form").dispatchEvent(ev);
+    ok(ev.defaultPrevented, "브라우저 기본 제출(새로고침) 막음");
+    ok(e.w.__semisLoginQueued === true, "대기");
+    eq(q(e, "#login-error").textContent, "확인 중…");
+    eq(stub.calls.filter(c => /semis_v2_login/.test(c.url)).length, 0, "준비 전 서버 호출 없음");
+    e.S.boot();
+    await until(() => e.S.user);
+    ok(e.S.user && e.S.user.origId === "lg1", "준비되자 로그인");
+    eq(stub.calls.filter(c => /semis_v2_login/.test(c.url)).length, 1, "한 번만");
+    ok(!e.w.__semisLoginQueued, "대기 해제");
+  });
+
+  await ta("LG03 빈 암호로 누른 제출은 대기하지 않음 · 준비 뒤에는 보호 파일이 관여하지 않음", async () => {
+    const stub = makeFetchStub({ accounts: [{ id: "lg2", name: "보호2", role: "manager", pw: "guard-pw-02" }] });
+    const e = makeEnv({ fetch: stub, boot: false });
+    const ev = new e.w.Event("submit", { bubbles: true, cancelable: true });
+    q(e, "#login-form").dispatchEvent(ev);
+    ok(ev.defaultPrevented && !e.w.__semisLoginQueued, "빈 암호 — 막기만");
+    e.S.boot();
+    await tick(20);
+    eq(stub.calls.filter(c => /semis_v2_login/.test(c.url)).length, 0);
+    submitLogin(e, "guard-pw-02");
+    await until(() => e.S.user);
+    ok(e.S.user && e.S.user.origId === "lg2", "준비 뒤 일반 로그인");
   });
 
   await ta("SEC12 새로고침 — 탭 토큰으로 서버 확인 후 복귀 · 서버가 거절하면 로그인 창", async () => {
