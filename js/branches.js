@@ -383,23 +383,12 @@
     if (map) { try { map.remove(); } catch (e) { /* 이미 해제된 경우 무시 */ } map = null; }
     try {
       map = L.map(el, { worldCopyJump: true, minZoom: 2, maxZoom: 12, zoomControl: true });
-      const carto = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-        subdomains: "abcd", maxZoom: 12
+      // CARTO 무료 타일은 API 키 필수로 바뀌어(정상 응답 + "API KEY REQUIRED" 워터마크) 사용 중단 —
+      // 운항 현황과 같은 OSM 표준 타일 + 회색조 필터(.fo-tiles)로 연한 지도 톤 유지 (v2.55.1)
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 12, className: "fo-tiles",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
       }).addTo(map);
-      // CARTO 타일 차단 환경 → OSM 표준 타일로 1회 폴백
-      let tileErr = 0, fellBack = false;
-      carto.on("tileerror", () => {
-        tileErr++;
-        if (fellBack || tileErr < 4) return;
-        fellBack = true;
-        try {
-          map.removeLayer(carto);
-          L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom: 12
-          }).addTo(map);
-        } catch (e) { /* 무시 */ }
-      });
 
       const pts = [];
       items.forEach(b => {
