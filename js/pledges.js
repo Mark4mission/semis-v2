@@ -1,10 +1,11 @@
 /* ═══════════════════════════════════════════════════════
-   SeMIS v2 — 비밀 취급 / SSI · 보안서약서 관리 (v2.55)
+   SeMIS v2 — 비밀 취급 / SSI · 보안서약서 관리 (v2.55 · 만료 v2.56)
    민감보안정보 취급자 보안서약서(국가항공보안계획 1.2.13 — 신원조사 대체)의 제출 기록 관리.
      · 작성: QR · 링크 → pledge.html (로그인 없이) → RPC semis_v2_pledge_submit
      · 명단: 사람별 최신 서약(재서약은 이력) / 전체 제출 기록 · 검색 · 연도 · 상태 · 구분 필터
      · 상세: 서명 · 처음 제출 값 · 이력 · 개별 서약서 A4 인쇄
-     · 수정 · 종이 서약 등록(스캔 첨부) · 상태(유효 / 퇴직·전출 / 무효) · 삭제(시스템관리자)
+     · 수정 · 종이 서약 등록(스캔 첨부) · 상태(유효 / 퇴사·전출 / 무효) · 삭제(시스템관리자)
+     · 퇴사·전출(v2.56): 일자를 넣으면 다음 날부터 90일째까지 유효, 그다음 날 자동 만료 (서약서 인쇄물에는 표시하지 않음)
      · A4 명단 인쇄(국토부 제출용 — 사번/생년월일 · 서명 포함)
    데이터: 비공개 표 semis_v2_private.pledges — 공용 DB 컬렉션이 아니다(동기화 사본에 싣지 않음).
           RPC semis_v2_pledges · semis_v2_pledge_signs · semis_v2_pledge_save · semis_v2_pledge_delete
@@ -18,7 +19,12 @@
   const TITLE = "비밀 취급 / SSI";
   const PROD_URL = "https://semis.pe.kr/pledge.html";
   const STALE_MS = 60000;
-  const STATE = { valid: ["유효", "green"], left: ["퇴직 · 전출", "gray"], void: ["무효", "red"] };
+  /* 저장 상태(state) — 유효 / 퇴사·전출(일자 state_at) / 무효 */
+  const STATE = { valid: ["유효", "green"], left: ["퇴사 · 전출", "amber"], void: ["무효", "red"] };
+  /* 표시 상태 — 퇴사·전출은 일자에 따라 '만료 예정'(아직 유효) 또는 '만료' (서버 semis_v2_private.pledge_eff_state 와 같은 규칙) */
+  const EFF = { valid: ["유효", "green"], leaving: ["만료 예정", "amber"], expired: ["만료", "gray"], void: ["무효", "red"] };
+  const FILTER = { valid: "유효", leaving: "만료 예정 (퇴사 · 전출 90일 이내)", expired: "만료", void: "무효" };
+  const KEEP_DAYS = 90;
   const SRC = { web: ["웹 제출", "blue"], sheet: ["시트 이관", "indigo"], paper: ["종이", "amber"] };
   const NAVY = "#1b3088";
 
@@ -30,6 +36,24 @@
   const kDate = (iso) => kst(iso).slice(0, 10);
   const kTime = (iso) => kst(iso).slice(11, 16);
   const todayK = () => kDate(new Date().toISOString());
+  /* 날짜 더하기 (YYYY-MM-DD) */
+  function addDays(ymd, n) {
+    const t = Date.parse(String(ymd || "").slice(0, 10) + "T00:00:00Z");
+    return isNaN(t) ? "" : new Date(t + n * 86400e3).toISOString().slice(0, 10);
+  }
+  /* 퇴사·전출 서약의 마지막 유효일 = 일자 + 90일 (10/1 퇴사 → 12/30까지 유효, 12/31 만료) */
+  function lastValidDay(r) {
+    return r && r.state === "left" && /^\d{4}-\d{2}-\d{2}/.test(String(r.stateAt || "")) ? addDays(r.stateAt, KEEP_DAYS) : "";
+  }
+  /* 표시 상태: valid · leaving · expired · void (일자 없는 퇴사·전출은 바로 만료로 본다) */
+  function effState(r, today) {
+    if (!r || r.state === "void") return "void";
+    if (r.state !== "left") return "valid";
+    const last = lastValidDay(r);
+    return last && (today || todayK()) <= last ? "leaving" : "expired";
+  }
+  const isValid = (r, today) => { const s = effState(r, today); return s === "valid" || s === "leaving"; };
+  const sDot = (ymd) => String(ymd || "").slice(5).replace("-", ".");
   const nf = (n) => Number(n || 0).toLocaleString("ko-KR");
 
   /* ─────────── 데이터 ─────────── */
@@ -62,7 +86,8 @@
     return String(v || "").toLowerCase().replace(/[^0-9a-z]/g, "").replace(/^kj(?=[0-9])/, "");
   }
   function pkey(r) { const k = empKey(r.empId); return k || "n:" + String(r.name || "").toLowerCase().replace(/\s/g, ""); }
-  /* 사람별 묶음 — 대표는 유효한 서약 중 최신(없으면 최신) */
+  /* 사람별 묶음 — 대표는 무효가 아닌 서약 중 최신(없으면 최신).
+     퇴사·전출로 만료된 최신 서약을 그보다 오래된 서약이 덮지 않게(v2.56). 재입사 후 새 서약은 그대로 대표 */
   function people(rows) {
     const map = new Map();
     (rows || []).forEach(r => {
@@ -73,7 +98,7 @@
     const out = [];
     map.forEach((list, k) => {
       list.sort((a, b) => String(b.at).localeCompare(String(a.at)));
-      const lead = list.find(x => x.state === "valid") || list[0];
+      const lead = list.find(x => x.state !== "void") || list[0];
       out.push({ key: k, lead, all: list, n: list.length });
     });
     return out.sort((a, b) => String(b.lead.at).localeCompare(String(a.lead.at)));
@@ -82,7 +107,7 @@
   const hay = (r) => [r.name, r.dept, r.position, r.empId].join(" ").toLowerCase();
   function match(r) {
     if (st.year && kDate(r.at).slice(0, 4) !== st.year) return false;
-    if (st.state && r.state !== st.state) return false;
+    if (st.state && (st.state === "valid" ? !isValid(r) : effState(r) !== st.state)) return false;
     if (st.src && r.src !== st.src) return false;
     const q = st.q.trim().toLowerCase();
     if (q && q.split(/\s+/).some(w => hay(r).indexOf(w) < 0)) return false;
@@ -100,11 +125,12 @@
     const y = todayK().slice(0, 4);
     const since = Date.now() - 30 * 86400e3;
     return {
-      valid: ppl.filter(p => p.lead.state === "valid").length,
+      valid: ppl.filter(p => isValid(p.lead)).length,
+      leaving: ppl.filter(p => effState(p.lead) === "leaving").length,
       year: rows.filter(r => kDate(r.at).slice(0, 4) === y).length,
       recent: rows.filter(r => Date.parse(r.at) >= since).length,
       again: ppl.filter(p => p.n > 1).length,
-      off: ppl.filter(p => p.lead.state !== "valid").length,
+      off: ppl.filter(p => !isValid(p.lead)).length,
       total: rows.length, people: ppl.length
     };
   }
@@ -268,7 +294,7 @@
   }
   function scopeText() {
     const bits = [st.view === "records" ? "전체 제출 기록" : "사람별 최신 서약"];
-    if (st.state) bits.push(STATE[st.state][0]);
+    if (st.state) bits.push(FILTER[st.state]);
     if (st.year) bits.push(st.year + "년");
     if (st.src) bits.push(SRC[st.src][0]);
     if (st.q.trim()) bits.push("검색 '" + st.q.trim() + "'");
@@ -314,14 +340,21 @@
 
   /* ─────────── 화면 ─────────── */
   const badge = (pair) => pair ? `<span class="badge badge-${esc(pair[1])}">${esc(pair[0])}</span>` : "";
+  /* 상태 배지 — 만료 예정은 마지막 유효일을 함께 */
+  function stBadge(r) {
+    const s = effState(r), last = lastValidDay(r);
+    if (s === "leaving") return `<span class="badge badge-amber" title="퇴사 · 전출 ${esc(r.stateAt)} — ${esc(last)}까지 유효">유효 ~${esc(sDot(last))}</span>`;
+    if (s === "expired") return `<span class="badge badge-gray"${last ? ` title="${esc(addDays(last, 1))} 만료"` : ""}>만료</span>`;
+    return badge(EFF[s]);
+  }
   function statsHTML() {
     const s = stats();
     return `<div class="ds-stats pl-stats">
-      <div class="ds-stat tone-green"><b>${nf(s.valid)}<em>명</em></b><span>유효 서약자</span></div>
+      <div class="ds-stat tone-green"><b>${nf(s.valid)}<em>명</em></b><span>유효 서약자${s.leaving ? ` · 만료 예정 ${nf(s.leaving)}` : ""}</span></div>
       <div class="ds-stat tone-blue"><b>${nf(s.year)}<em>건</em></b><span>${todayK().slice(0, 4)}년 제출</span></div>
       <div class="ds-stat"><b>${nf(s.recent)}<em>건</em></b><span>최근 30일</span></div>
       <div class="ds-stat tone-gray"><b>${nf(s.again)}<em>명</em></b><span>재서약</span></div>
-      <div class="ds-stat tone-red"><b>${nf(s.off)}<em>명</em></b><span>퇴직 · 전출 · 무효</span></div>
+      <div class="ds-stat tone-red"><b>${nf(s.off)}<em>명</em></b><span>만료 · 무효</span></div>
     </div>`;
   }
   function qrPanelHTML() {
@@ -346,7 +379,7 @@
         <button type="button" data-pl-view="records" aria-pressed="${st.view === "records"}">전체 제출 기록</button>
       </div>
       <input type="search" id="pl-q" class="pl-q" placeholder="성명 · 소속 · 직위 · 사번 검색" value="${esc(st.q)}" autocomplete="off">
-      <select id="pl-state" aria-label="상태"><option value="">상태 전체</option>${Object.keys(STATE).map(k => `<option value="${k}"${st.state === k ? " selected" : ""}>${STATE[k][0]}</option>`).join("")}</select>
+      <select id="pl-state" aria-label="상태"><option value="">상태 전체</option>${Object.keys(FILTER).map(k => `<option value="${k}"${st.state === k ? " selected" : ""}>${FILTER[k]}</option>`).join("")}</select>
       <select id="pl-year" aria-label="연도"><option value="">연도 전체</option>${ys.map(y => `<option value="${y}"${st.year === y ? " selected" : ""}>${y}년</option>`).join("")}</select>
       <select id="pl-src" aria-label="구분"><option value="">구분 전체</option>${Object.keys(SRC).map(k => `<option value="${k}"${st.src === k ? " selected" : ""}>${SRC[k][0]}</option>`).join("")}</select>
       <label class="pl-check"><input type="checkbox" id="pl-sign"${st.showSign ? " checked" : ""}> 서명 보기</label>
@@ -373,7 +406,7 @@
           <td class="pl-no">${i + 1}</td><td class="pl-date" data-l="서약일">${esc(kDate(r.at))}</td>
           <td class="pl-name" data-l="성명"><b>${esc(r.name)}</b>${again}${old}<span class="pl-msub">${esc([r.dept, r.position, r.empId].filter(Boolean).join(" · "))}</span></td>
           <td data-l="소속">${esc(r.dept)}</td><td data-l="직위">${esc(r.position)}</td><td class="pl-emp" data-l="사번">${esc(r.empId)}</td>
-          ${sg}<td data-l="구분">${badge(SRC[r.src])}</td><td data-l="상태">${badge(STATE[r.state])}</td></tr>`;
+          ${sg}<td data-l="구분">${badge(SRC[r.src])}</td><td data-l="상태">${stBadge(r)}</td></tr>`;
       }).join("")}</tbody></table></div>`;
   }
   function paintList() {
@@ -484,7 +517,7 @@
     const ua = String(r.ua || "");
     const dev = /iPhone|iPad/.test(ua) ? "iOS" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Macintosh/.test(ua) ? "Mac" : "";
     openModal(`<div class="pl-dt">
-      <div class="pl-dt-hd"><h3>${esc(r.name)}</h3>${badge(STATE[r.state])} ${badge(SRC[r.src])}</div>
+      <div class="pl-dt-hd"><h3>${esc(r.name)}</h3>${stBadge(r)} ${badge(SRC[r.src])}</div>
       <div class="pl-dt-grid">
         <dl class="pl-dl">
           <dt>서약 일시</dt><dd>${esc(kDate(r.at))} ${esc(kTime(r.at))}</dd>
@@ -492,7 +525,8 @@
           <dt>직위</dt><dd>${esc(r.position) || "—"}</dd>
           <dt>사번 / 생년월일</dt><dd>${esc(r.empId) || "—"}</dd>
           <dt>서약 문구</dt><dd>${r.lang === "en" ? "영문" : "국문"}</dd>
-          ${r.state !== "valid" ? `<dt>상태</dt><dd>${esc(STATE[r.state][0])}${r.stateAt ? " · " + esc(r.stateAt) : ""}${r.stateNote ? " — " + esc(r.stateNote) : ""}</dd>` : ""}
+          ${r.state === "left" ? `<dt>퇴사 · 전출</dt><dd>${esc(r.stateAt || "일자 없음")}${r.stateNote ? " — " + esc(r.stateNote) : ""}<span class="pl-msub2">${lastValidDay(r) ? (effState(r) === "leaving" ? esc(lastValidDay(r)) + "까지 유효 · " + esc(addDays(lastValidDay(r), 1)) + " 만료" : esc(addDays(lastValidDay(r), 1)) + " 만료됨") : "만료"}</span></dd>` : ""}
+          ${r.state === "void" ? `<dt>상태</dt><dd>${esc(STATE.void[0])}${r.stateAt ? " · " + esc(r.stateAt) : ""}${r.stateNote ? " — " + esc(r.stateNote) : ""}</dd>` : ""}
           ${r.note ? `<dt>비고</dt><dd class="pl-pre">${esc(r.note)}</dd>` : ""}
           <dt>접수</dt><dd class="pl-meta">${esc(String(r.submitId || "").replace(/-/g, "").slice(0, 8).toUpperCase())}${r.ip ? " · IP " + esc(r.ip) : ""}${dev ? " · " + dev : ""}</dd>
         </dl>
@@ -500,7 +534,7 @@
       </div>
       ${o ? `<div class="pl-orig"><b>처음 제출 값</b> ${esc([o.name, o.dept, o.position, o.empId].filter(Boolean).join(" · "))}${o.at && o.at !== r.at ? " · " + esc(kDate(o.at) + " " + kTime(o.at)) : ""}</div>` : ""}
       ${files.length ? `<div class="pl-files"><b>첨부</b> ${files.map(f => `<a class="nb-file" href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name || "파일")}</a>`).join(" ")}</div>` : ""}
-      ${hist.length > 1 ? `<div class="pl-hist"><b>서약 이력 ${hist.length}건</b><ul>${hist.map(h => `<li${h.id === r.id ? ' class="on"' : ""}><button type="button" data-pl-h="${esc(h.id)}">${esc(kDate(h.at))}</button> ${esc(h.dept)} · ${esc(h.position)} ${badge(STATE[h.state])}</li>`).join("")}</ul></div>` : ""}
+      ${hist.length > 1 ? `<div class="pl-hist"><b>서약 이력 ${hist.length}건</b><ul>${hist.map(h => `<li${h.id === r.id ? ' class="on"' : ""}><button type="button" data-pl-h="${esc(h.id)}">${esc(kDate(h.at))}</button> ${esc(h.dept)} · ${esc(h.position)} ${stBadge(h)}</li>`).join("")}</ul></div>` : ""}
       <div class="modal-actions">
         ${SeMIS.isAdmin() ? '<button class="btn btn-danger" id="pl-del">삭제</button><span style="flex:1"></span>' : ""}
         <button class="btn btn-ghost" id="pl-dt-print">서약서 인쇄</button>
@@ -512,7 +546,7 @@
     $("#pl-dt-print").onclick = () => printPledge(r);
     $$("[data-pl-h]").forEach(b => b.onclick = () => openDetail(b.getAttribute("data-pl-h")));
     const del = $("#pl-del");
-    if (del) del.onclick = () => confirmModal(`${r.name} (${kDate(r.at)}) 서약 기록을 삭제합니다. 되돌릴 수 없습니다 — 퇴직·오기재는 '상태'로 처리하는 것을 권장합니다.`, async () => {
+    if (del) del.onclick = () => confirmModal(`${r.name} (${kDate(r.at)}) 서약 기록을 삭제합니다. 되돌릴 수 없습니다 — 퇴사·전출·오기재는 '상태'로 처리하는 것을 권장합니다.`, async () => {
       try {
         const d = await rpc("semis_v2_pledge_delete", { p_id: r.id });
         if (!d || !d.ok) throw new Error((d && d.error) || "delete");
@@ -551,9 +585,12 @@
         <div class="form-row"><label>상태</label><select id="pe-state">${Object.keys(STATE).map(k => `<option value="${k}"${v.state === k ? " selected" : ""}>${STATE[k][0]}</option>`).join("")}</select></div>
         <div class="form-row"><label>서약 문구</label><select id="pe-lang"><option value="ko"${v.lang !== "en" ? " selected" : ""}>국문</option><option value="en"${v.lang === "en" ? " selected" : ""}>영문</option></select></div>
       </div>
-      <div class="form-grid pl-stateopt${v.state === "valid" ? " hidden" : ""}" id="pe-stbox">
-        <div class="form-row"><label>상태 일자</label><input type="date" id="pe-stat" value="${esc(v.stateAt || todayK())}"></div>
-        <div class="form-row"><label>사유</label><input id="pe-stnote" maxlength="500" value="${esc(v.stateNote || "")}"></div>
+      <div class="pl-stateopt${v.state === "valid" ? " hidden" : ""}" id="pe-stbox">
+        <div class="form-grid">
+          <div class="form-row"><label id="pe-stat-l">${v.state === "left" ? "퇴사 · 전출 일자" : "상태 일자"}</label><input type="date" id="pe-stat" value="${esc(v.stateAt || todayK())}"></div>
+          <div class="form-row"><label>사유</label><input id="pe-stnote" maxlength="500" value="${esc(v.stateNote || "")}"></div>
+        </div>
+        <p class="pl-mini${v.state === "left" ? "" : " hidden"}" id="pe-sthint"></p>
       </div>
       <div class="form-row"><label>비고</label><textarea id="pe-note" maxlength="2000" rows="2">${esc(v.note || "")}</textarea></div>
       <div class="form-row"><label>첨부 ${isNew || v.src === "paper" ? "(서약서 스캔)" : ""}</label>
@@ -566,7 +603,21 @@
       $$("[data-pl-fx]").forEach(b => b.onclick = () => { files.splice(Number(b.getAttribute("data-pl-fx")), 1); paintFiles(); });
     };
     paintFiles();
-    $("#pe-state").onchange = () => $("#pe-stbox").classList.toggle("hidden", $("#pe-state").value === "valid");
+    /* 퇴사·전출 — 일자 다음 날부터 90일째까지 유효, 그다음 날 만료 (안내만, 계산은 표시할 때마다) */
+    const paintState = () => {
+      const sv = $("#pe-state").value, d = $("#pe-stat").value;
+      $("#pe-stbox").classList.toggle("hidden", sv === "valid");
+      $("#pe-stat-l").textContent = sv === "left" ? "퇴사 · 전출 일자" : "상태 일자";
+      const hint = $("#pe-sthint");
+      hint.classList.toggle("hidden", sv !== "left");
+      const last = /^\d{4}-\d{2}-\d{2}$/.test(d) ? addDays(d, KEEP_DAYS) : "";
+      hint.textContent = last ? `${last}까지 유효하고 ${addDays(last, 1)}에 자동 만료됩니다(일자 다음 날부터 ${KEEP_DAYS}일). 서약서 인쇄물에는 표시되지 않습니다.`
+                              : `일자 다음 날부터 ${KEEP_DAYS}일째까지 유효하고 그다음 날 자동 만료됩니다.`;
+    };
+    $("#pe-state").onchange = paintState;
+    $("#pe-stat").oninput = paintState;
+    $("#pe-stat").onchange = paintState;
+    paintState();
     $("#pe-file").onchange = async (e) => {
       const list = Array.from(e.target.files || []);
       e.target.value = "";
@@ -585,6 +636,11 @@
       const time = $("#pe-time").value || (isNew ? "09:00" : kTime(v.at) || "09:00");
       const at = date + "T" + time + ":00+09:00";
       const state = $("#pe-state").value;
+      if (state === "left") {
+        const sd = $("#pe-stat").value;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(sd)) { toast("퇴사 · 전출 일자를 입력하세요.", true); $("#pe-stat").focus(); return; }
+        if (sd < date) { toast("퇴사 · 전출 일자가 서약일보다 빠릅니다.", true); $("#pe-stat").focus(); return; }
+      }
       const p = {
         id: isNew ? "" : v.id, name, dept: $("#pe-dept").value.trim(), position: $("#pe-pos").value.trim(), empId: $("#pe-emp").value.trim(),
         lang: $("#pe-lang").value, state, stateAt: state === "valid" ? "" : $("#pe-stat").value, stateNote: state === "valid" ? "" : $("#pe-stnote").value.trim(),
@@ -627,5 +683,6 @@
     items: () => (st.rows ? people(st.rows) : []).map(p => ({ title: p.lead.name, sub: [p.lead.dept, p.lead.position, kDate(p.lead.at)].filter(Boolean).join(" · "), route: MOD }))
   });
 
-  window.SemisPledges = { load, people, listed, stats, pkey, empKey, qrCard, formUrl, listPrintHTML, state: st, openDetail, openEdit };
+  window.SemisPledges = { load, people, listed, stats, pkey, empKey, qrCard, formUrl, listPrintHTML, state: st, openDetail, openEdit,
+                          effState, isValid, lastValidDay };
 })();

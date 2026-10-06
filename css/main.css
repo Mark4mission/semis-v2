@@ -2660,6 +2660,7 @@ table.fo-tbl { font-size: .86rem; }
 .pl-dl { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 7px 12px; font-size: .9rem; }
 .pl-dl dt { color: var(--text-3); font-weight: 600; }
 .pl-dl dd { overflow-wrap: anywhere; }
+.pl-msub2 { display: block; margin-top: 2px; font-size: .82rem; color: var(--text-2); } /* 퇴사·전출 유효 기한 (v2.56) */
 .pl-meta { font-size: .82rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .pl-pre { white-space: pre-wrap; }
 .pl-dt-sign { border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); min-height: 120px; display: flex; align-items: center; justify-content: center; padding: 10px; background: #fff; }

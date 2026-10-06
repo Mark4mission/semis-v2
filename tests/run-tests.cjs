@@ -10509,6 +10509,90 @@ function makeFetchStub(server) {
       eq(calls.filter(c => c.name === "semis_v2_pledge_submit").pop().b.p.lang, "en", "영문 서약");
       w.close();
     });
+
+    t("PL11 퇴사·전출 만료(v2.56): 일자 다음 날부터 90일째까지 유효 · 그다음 날 만료 · 대표 선정", () => {
+      const e = makeEnv();
+      const P = e.w.SemisPledges;
+      const L = (d) => mkP("x", "홍길동", "500005", "2026-03-01T00:00:00Z", { state: "left", stateAt: d });
+      eq(P.lastValidDay(L("2026-10-01")), "2026-12-30", "10/1 → 12/30까지 유효");
+      eq(P.effState(L("2026-10-01"), "2026-10-01"), "leaving", "퇴사 당일 유효");
+      eq(P.effState(L("2026-10-01"), "2026-12-30"), "leaving", "마지막 유효일");
+      eq(P.effState(L("2026-10-01"), "2026-12-31"), "expired", "다음 날 만료");
+      ok(P.isValid(L("2026-10-01"), "2026-12-30") && !P.isValid(L("2026-10-01"), "2026-12-31"), "유효 판정");
+      eq(P.lastValidDay(L("2027-01-15")), "2027-04-15", "해 넘김 · 평년 2월");
+      eq(P.lastValidDay(L("2028-02-01")), "2028-05-01", "윤년 2월");
+      eq(P.effState(L(""), "2026-10-06"), "expired", "일자 없는 퇴사·전출은 만료");
+      eq(P.effState(mkP("y", "가", "1", "2020-01-01T00:00:00Z"), "2030-01-01"), "valid", "유효 서약은 기한 없음");
+      eq(P.effState(mkP("y", "가", "1", "2026-01-01T00:00:00Z", { state: "void" })), "void", "무효");
+      const rows = [mkP("a1", "홍길동", "500005", "2025-01-10T00:00:00Z"),
+                    mkP("a2", "홍길동", "KJ500005", "2026-03-01T00:00:00Z", { state: "left", stateAt: "2026-04-01" })];
+      const g = P.people(rows)[0];
+      eq(g.lead.id, "a2", "최신 퇴사·전출 서약이 대표(이전 유효 서약이 덮지 않음)");
+      ok(!P.isValid(g.lead, "2026-10-06"), "만료 → 비유효");
+      rows.push(mkP("a3", "홍길동", "500005", "2026-09-01T00:00:00Z"));
+      eq(P.people(rows)[0].lead.id, "a3", "재입사 후 새 서약이 대표");
+      rows.push(mkP("a4", "홍길동", "500005", "2026-09-20T00:00:00Z", { state: "void" }));
+      eq(P.people(rows)[0].lead.id, "a3", "무효는 대표에서 밀림");
+    });
+
+    await ta("PL12 화면(v2.56): 만료 예정 배지 · 필터 · 요약 · 상세 기한 · 수정 창 안내 · 일자 검증 · 서약서 인쇄물에는 미표시", async () => {
+      const kToday = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+      const minus = (ymd, n) => new Date(Date.parse(ymd + "T00:00:00Z") - n * 86400e3).toISOString().slice(0, 10);
+      const log = [];
+      const srv = { pledges: seedP().concat([mkP("p6", "파타하", "600006", "2026-02-01T00:00:00Z", { state: "left", stateAt: minus(kToday, 10), stateNote: "퇴사" })]) };
+      const e = makeEnv({ fetch: pledgeFetch(srv, log) });
+      loginAs(e, "hq");
+      go(e, "ssi");
+      await until(() => qa(e, "#pl-list tr[data-pl-id]").length > 0);
+      eq(qa(e, "#pl-list tr[data-pl-id]").length, 4, "유효 = 유효 3 + 만료 예정 1");
+      ok(/유효 ~/.test(q(e, '#pl-list tr[data-pl-id="p6"]').textContent), "만료 예정 배지(마지막 유효일)");
+      const stt = q(e, ".pl-stats").textContent;
+      ok(/만료 예정 1/.test(stt) && /만료 · 무효/.test(stt), "요약");
+      const sel = q(e, "#pl-state");
+      const pick = (v) => { sel.value = v; sel.dispatchEvent(new e.w.Event("change")); return qa(e, "#pl-list tr[data-pl-id]").map(tr => tr.getAttribute("data-pl-id")); };
+      eq(pick("leaving").join(), "p6", "만료 예정 필터");
+      eq(pick("expired").join(), "p4", "만료 필터(6/30 퇴사 → 9/28까지 유효)");
+      ok(/만료/.test(q(e, '#pl-list tr[data-pl-id="p4"]').textContent), "만료 배지");
+      eq(pick("void").length, 0, "무효 필터");
+      ok(qa(e, "#pl-state option").map(o => o.textContent).join("|").indexOf("퇴직") < 0, "옛 '퇴직 · 전출' 필터 없음");
+      e.w.SemisPledges.openDetail("p6");
+      ok(/퇴사 · 전출/.test(q(e, "#modal-box").textContent) && /까지 유효/.test(q(e, "#modal-box").textContent), "상세 — 유효 기한");
+      e.w.SemisPledges.openDetail("p4");
+      ok(/2026-09-29 만료됨/.test(q(e, "#modal-box").textContent), "상세 — 만료일");
+      // 수정: 퇴사·전출 일자 안내 · 검증
+      e.w.SemisPledges.openDetail("p2");
+      q(e, "#pl-dt-edit").click();
+      q(e, "#pe-state").value = "left"; q(e, "#pe-state").dispatchEvent(new e.w.Event("change"));
+      eq(q(e, "#pe-stat-l").textContent, "퇴사 · 전출 일자", "일자 이름");
+      q(e, "#pe-stat").value = "2026-10-01"; q(e, "#pe-stat").dispatchEvent(new e.w.Event("input"));
+      ok(/2026-12-30까지 유효하고 2026-12-31에 자동 만료/.test(q(e, "#pe-sthint").textContent), "만료 안내");
+      q(e, "#pe-state").value = "void"; q(e, "#pe-state").dispatchEvent(new e.w.Event("change"));
+      ok(q(e, "#pe-sthint").classList.contains("hidden") && q(e, "#pe-stat-l").textContent === "상태 일자", "무효는 안내 없음");
+      q(e, "#pe-state").value = "left"; q(e, "#pe-state").dispatchEvent(new e.w.Event("change"));
+      q(e, "#pe-stat").value = "2026-01-01";
+      q(e, "#pe-save").click();
+      await tick(20);
+      ok(!log.some(x => x.fn === "semis_v2_pledge_save"), "서약일(3/9)보다 빠른 일자는 저장 안 함");
+      q(e, "#pe-stat").value = "2026-10-01";
+      q(e, "#pe-save").click();
+      await until(() => log.some(x => x.fn === "semis_v2_pledge_save"));
+      const sv = log.find(x => x.fn === "semis_v2_pledge_save").b.p;
+      eq(sv.state, "left"); eq(sv.stateAt, "2026-10-01", "퇴사 · 전출 일자 저장");
+      // 개별 서약서 인쇄물에는 상태 · 퇴사 정보 없음
+      const pp = plgJS.slice(plgJS.indexOf("async function printPledge"), plgJS.indexOf("/* ─────────── 화면 ─────────── */"));
+      ok(pp.length > 500 && !/stateAt|effState|stBadge|퇴사|만료/.test(pp), "서약서 인쇄물에 미표시");
+      e.Sync.stop();
+    });
+
+    t("PL13 서버 SQL(v2.56): 만료 규칙 · Logistics 명단 상태 매핑 · 대표는 무효 제외 최신 · 실행 권한", () => {
+      ok(/function semis_v2_private\.pledge_eff_state\(p_state text, p_state_at date\)/.test(PLEDGE_SQL), "표시 상태 함수");
+      ok(/\(now\(\) at time zone 'Asia\/Seoul'\)::date <= p_state_at \+ 90/.test(PLEDGE_SQL), "한국 날짜 · 90일째까지 유효");
+      const lg = PLEDGE_SQL.slice(PLEDGE_SQL.indexOf("function public.semis_logi_pledges"));
+      ok(/case z\.eff when 'leaving' then 'valid' when 'expired' then 'left' else z\.eff end/.test(lg), "Logistics: 만료 예정 → valid · 만료 → left");
+      ok(/\(x\.state <> 'void'\) desc, x\.at desc/.test(lg), "대표 = 무효 제외 최신");
+      ok(/pledge_eff_state\(text, date\) from public, anon, authenticated/.test(PLEDGE_SQL), "내부 함수 실행 권한 회수");
+      ok(/const KEEP_DAYS = 90;/.test(plgJS), "화면도 90일");
+    });
   }
 
   /* ══════════ [SEC] 서버 보안 · 자동공격 방어 (v2.53) ══════════ */

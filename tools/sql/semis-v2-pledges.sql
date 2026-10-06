@@ -13,6 +13,9 @@
    - Logistics: semis_logi_pledges — Logistics 세션(manager 이상)에 사람별 최신 서약의
      성명 · 소속 · 직위 · 서약일 · 상태만(사번 · 서명 · IP 제외)
    - 변경 알림: 'semis-sync' 채널에 key 'pledges'(값 없음)
+   - v2.56 (마이그레이션 semis_v2_security_15_pledge_expiry): 퇴사·전출(state 'left' + state_at)은
+     일자 다음 날부터 90일째까지 유효, 그다음 날 만료 — pledge_eff_state. Logistics 명단은 만료를 'left'로,
+     만료 예정을 'valid'로 돌려준다. 사람별 대표는 무효가 아닌 서약 중 최신.
    ═══════════════════════════════════════════════════════ */
 
 /* 사번 대조 키 — 영문·숫자만, 소문자, 앞의 항공사 코드 KJ 는 뺀다 (KJ100418 = 100418, 1974-07-27 = 19740727) */
@@ -302,7 +305,21 @@ begin
            regexp_matches(src.t, '/object/public/semis-files/([A-Za-z0-9._\-]+(?:/[A-Za-z0-9._\-]+)*)', 'g') m), '[]'::jsonb));
 end $$;
 
-/* ═════════════ Logistics — 서약 명단 조회 (manager 이상, 사람별 최신 1건) ═════════════ */
+/* ═════════════ 퇴사·전출 만료 (v2.56) ═════════════
+   표시 상태 — 화면 js/pledges.js effState 와 같은 규칙.
+   퇴사·전출(left)은 일자 다음 날부터 90일째까지 유효(leaving), 그다음 날 만료(expired). 일자가 없으면 만료.
+   (10/1 퇴사 → 12/30까지 유효, 12/31 만료) */
+create or replace function semis_v2_private.pledge_eff_state(p_state text, p_state_at date) returns text
+language sql stable set search_path = '' as $$
+  select case when p_state = 'void' then 'void'
+              when p_state = 'left' then case when p_state_at is not null
+                                               and (now() at time zone 'Asia/Seoul')::date <= p_state_at + 90
+                                              then 'leaving' else 'expired' end
+              else 'valid' end
+$$;
+
+/* ═════════════ Logistics — 서약 명단 조회 (manager 이상, 사람별 최신 1건) ═════════════
+   대표 = 무효가 아닌 서약 중 최신. 상태는 Logistics 가 아는 값으로: 만료 예정 → valid, 만료 → left */
 create or replace function public.semis_logi_pledges() returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
 begin
@@ -310,18 +327,19 @@ begin
   return jsonb_build_object('ok', true, 'asOf', now(), 'rows', coalesce((
     select jsonb_agg(jsonb_build_object('name', z.name, 'dept', z.dept, 'position', z.position,
                                         'date', to_char(z.at at time zone 'Asia/Seoul', 'YYYY-MM-DD'),
-                                        'state', z.state, 'n', z.n) order by z.at desc)
+                                        'state', case z.eff when 'leaving' then 'valid' when 'expired' then 'left' else z.eff end,
+                                        'n', z.n) order by z.at desc)
       from (select distinct on (semis_v2_private.pledge_pkey(x.emp_id, x.name))
-                   x.name, x.dept, x.position, x.at, x.state,
+                   x.name, x.dept, x.position, x.at, semis_v2_private.pledge_eff_state(x.state, x.state_at) as eff,
                    count(*) over (partition by semis_v2_private.pledge_pkey(x.emp_id, x.name)) as n
               from semis_v2_private.pledges x
-             order by semis_v2_private.pledge_pkey(x.emp_id, x.name), (x.state = 'valid') desc, x.at desc) z), '[]'::jsonb));
+             order by semis_v2_private.pledge_pkey(x.emp_id, x.name), (x.state <> 'void') desc, x.at desc) z), '[]'::jsonb));
 end $$;
 
 /* 실행 권한 — 공개 RPC 는 anon · service_role 만 (함수 안에서 세션 확인) */
 revoke all on function semis_v2_private.emp_key(text), semis_v2_private.pledge_pkey(text, text), semis_v2_private.pledge_ctx(),
   semis_v2_private.pledge_json(semis_v2_private.pledges), semis_v2_private.png_ok(text),
-  semis_v2_private.pledge_stamp(), semis_v2_private.pledge_notify() from public, anon, authenticated;
+  semis_v2_private.pledge_stamp(), semis_v2_private.pledge_notify(), semis_v2_private.pledge_eff_state(text, date) from public, anon, authenticated;
 revoke execute on function public.semis_v2_pledge_submit(jsonb, jsonb), public.semis_v2_pledges(), public.semis_v2_pledge_signs(text[]),
   public.semis_v2_pledge_save(jsonb), public.semis_v2_pledge_delete(text), public.semis_v2_file_refs(), public.semis_logi_pledges()
   from public, authenticated;
