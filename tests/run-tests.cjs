@@ -10631,6 +10631,15 @@ function makeFetchStub(server) {
     ok(/<meta name="referrer" content="strict-origin-when-cross-origin">/.test(raw), "referrer 정책");
   });
 
+  t("SEC13 외부 라이브러리 고정 — supabase-js 로컬 사본(2.117.2, npm 원본과 같은 해시) · 버전 미고정 CDN 없음 (2026-10 보안 점검)", () => {
+    const html = read("index.html");
+    ok(/<script src="assets\/vendor\/supabase-js-2\.117\.2\.min\.js" defer><\/script>/.test(html), "로컬 사본 사용");
+    ok(!/cdn\.jsdelivr\.net\/npm\/@supabase/.test(html), "jsDelivr supabase 없음");
+    ok(!/<script[^>]+src="https?:\/\/[^"]*@\d+(\.\d+)?\//.test(html), "주 버전만 지정한 CDN 스크립트 없음");
+    const buf = fs.readFileSync(path.join(ROOT, "assets/vendor/supabase-js-2.117.2.min.js"));
+    eq(require("crypto").createHash("sha256").update(buf).digest("hex"), "59d39487c3589843b410322d8a3d562ce022aba1e5ccb16898ef3fb2a0da2ecd", "supabase-js 2.117.2 dist/umd/supabase.js 해시");
+  });
+
   t("SEC03 작업증명 계산기 — sha256 표준 일치 · 앞부분 미리 계산(64바이트 넘는 문제) · 해답 검증", () => {
     const e = makeEnv({ boot: false });
     const P = e.w.SemisPow;
