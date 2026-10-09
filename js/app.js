@@ -6,7 +6,7 @@
 
 const SeMIS = (() => {
 
-  const VERSION = "2.56.0";
+  const VERSION = "2.56.1";
   /* v2.53: 데이터 사본은 이 탭의 sessionStorage 에만 둔다(탭을 닫거나 로그아웃하면 사라짐).
      화면 설정(LS_UI)만 localStorage. */
   const LS_DATA = "semis2:data";
