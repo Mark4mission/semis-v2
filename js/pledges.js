@@ -1,12 +1,13 @@
 /* ═══════════════════════════════════════════════════════
-   SeMIS v2 — 비밀 취급 / SSI · 보안서약서 관리 (v2.55 · 만료 v2.56)
+   SeMIS v2 — 비밀 취급 / SSI · 보안서약서 관리 (v2.55 · 만료 v2.56 · 해지 v2.57)
    민감보안정보 취급자 보안서약서(국가항공보안계획 1.2.13 — 신원조사 대체)의 제출 기록 관리.
      · 작성: QR · 링크 → pledge.html (로그인 없이) → RPC semis_v2_pledge_submit
      · 명단: 사람별 최신 서약(재서약은 이력) / 전체 제출 기록 · 검색 · 연도 · 상태 · 구분 필터
      · 상세: 서명 · 처음 제출 값 · 이력 · 개별 서약서 A4 인쇄
      · 수정 · 종이 서약 등록(스캔 첨부) · 상태(유효 / 퇴사·전출 / 무효) · 삭제(시스템관리자)
-     · 퇴사·전출(v2.56): 일자를 넣으면 다음 날부터 90일째까지 유효, 그다음 날 자동 만료 (서약서 인쇄물에는 표시하지 않음)
-     · A4 명단 인쇄(국토부 제출용 — 사번/생년월일 · 서명 포함)
+     · 해지(v2.57 — 국가항공보안계획 8.14.3): 퇴사·전출 · 무효 일자 = 해지일. 그날부터 해지(명단 취소선 · 총원 제외),
+       해지일부터 90일째까지 기록 보관, 91일째 서버가 자동 삭제(pg_cron semis_v2_private.pledge_purge). 서약서 인쇄물에는 표시하지 않음
+     · A4 관리대장 인쇄(국토부 제출용 — 연번 · 이름 · 사번/생년월일 · 소속부서 · 직책 · 지정일 · 해지일 · 서명)
    데이터: 비공개 표 semis_v2_private.pledges — 공용 DB 컬렉션이 아니다(동기화 사본에 싣지 않음).
           RPC semis_v2_pledges · semis_v2_pledge_signs · semis_v2_pledge_save · semis_v2_pledge_delete
           (항공보안HQ 이상 내부 계정). 새 제출은 변경 알림(key 'pledges')으로 바로 반영.
@@ -21,9 +22,10 @@
   const STALE_MS = 60000;
   /* 저장 상태(state) — 유효 / 퇴사·전출(일자 state_at) / 무효 */
   const STATE = { valid: ["유효", "green"], left: ["퇴사 · 전출", "amber"], void: ["무효", "red"] };
-  /* 표시 상태 — 퇴사·전출은 일자에 따라 '만료 예정'(아직 유효) 또는 '만료' (서버 semis_v2_private.pledge_eff_state 와 같은 규칙) */
+  /* 표시 상태 — 퇴사·전출은 일자 전이면 '만료 예정'(아직 유효), 일자부터 '만료'(해지) (서버 semis_v2_private.pledge_eff_state 와 같은 규칙) */
   const EFF = { valid: ["유효", "green"], leaving: ["만료 예정", "amber"], expired: ["만료", "gray"], void: ["무효", "red"] };
-  const FILTER = { valid: "유효", leaving: "만료 예정 (퇴사 · 전출 90일 이내)", expired: "만료", void: "무효" };
+  const FILTER = { valid: "유효", leaving: "만료 예정 (퇴사 · 전출 일자 전)", expired: "만료 (퇴사 · 전출)", void: "무효" };
+  /* 해지 기록 보관 일수 — 해지일부터 90일째까지 보관, 91일째 자동 삭제 (서버 pledge_purge 와 같은 값) */
   const KEEP_DAYS = 90;
   const SRC = { web: ["웹 제출", "blue"], sheet: ["시트 이관", "indigo"], paper: ["종이", "amber"] };
   const NAVY = "#1b3088";
@@ -41,18 +43,27 @@
     const t = Date.parse(String(ymd || "").slice(0, 10) + "T00:00:00Z");
     return isNaN(t) ? "" : new Date(t + n * 86400e3).toISOString().slice(0, 10);
   }
-  /* 퇴사·전출 서약의 마지막 유효일 = 일자 + 90일 (10/1 퇴사 → 12/30까지 유효, 12/31 만료) */
-  function lastValidDay(r) {
-    return r && r.state === "left" && /^\d{4}-\d{2}-\d{2}/.test(String(r.stateAt || "")) ? addDays(r.stateAt, KEEP_DAYS) : "";
+  /* 해지일 = 퇴사·전출 · 무효의 상태 일자 (유효 서약은 "") */
+  function offDay(r) {
+    return r && (r.state === "left" || r.state === "void") && /^\d{4}-\d{2}-\d{2}/.test(String(r.stateAt || "")) ? String(r.stateAt).slice(0, 10) : "";
   }
+  /* 만료 예정(퇴사·전출 일자가 앞날)의 마지막 유효일 = 해지일 전날 */
+  function lastValidDay(r) {
+    const d = r && r.state === "left" ? offDay(r) : "";
+    return d ? addDays(d, -1) : "";
+  }
+  /* 자동 삭제일 = 해지일 + 91일 (10/1 해지 → 12/30까지 보관, 12/31 삭제) */
+  function purgeDay(r) { const d = offDay(r); return d ? addDays(d, KEEP_DAYS + 1) : ""; }
   /* 표시 상태: valid · leaving · expired · void (일자 없는 퇴사·전출은 바로 만료로 본다) */
   function effState(r, today) {
     if (!r || r.state === "void") return "void";
     if (r.state !== "left") return "valid";
-    const last = lastValidDay(r);
-    return last && (today || todayK()) <= last ? "leaving" : "expired";
+    const d = offDay(r);
+    return d && (today || todayK()) < d ? "leaving" : "expired";
   }
   const isValid = (r, today) => { const s = effState(r, today); return s === "valid" || s === "leaving"; };
+  /* 기준일에 해지된 기록의 해지일 (관리대장 해지일 칸) */
+  const offOn = (r, today) => isValid(r, today) ? "" : offDay(r);
   const sDot = (ymd) => String(ymd || "").slice(5).replace("-", ".");
   const nf = (n) => Number(n || 0).toLocaleString("ko-KR");
 
@@ -105,19 +116,21 @@
   }
   function historyOf(r) { const k = pkey(r); return (st.rows || []).filter(x => pkey(x) === k).sort((a, b) => String(b.at).localeCompare(String(a.at))); }
   const hay = (r) => [r.name, r.dept, r.position, r.empId].join(" ").toLowerCase();
-  function match(r) {
+  /* 관리대장 인쇄의 '해지자 포함' — 유효 · 만료 예정 조건일 때 해지(만료 · 무효) 기록을 더한다 */
+  const addsOff = (withOff) => !!withOff && (st.state === "valid" || st.state === "leaving");
+  function match(r, withOff) {
     if (st.year && kDate(r.at).slice(0, 4) !== st.year) return false;
-    if (st.state && (st.state === "valid" ? !isValid(r) : effState(r) !== st.state)) return false;
+    if (st.state && (st.state === "valid" ? !isValid(r) : effState(r) !== st.state) && !(addsOff(withOff) && !isValid(r))) return false;
     if (st.src && r.src !== st.src) return false;
     const q = st.q.trim().toLowerCase();
     if (q && q.split(/\s+/).some(w => hay(r).indexOf(w) < 0)) return false;
     return true;
   }
   /* 현재 조건의 목록 — 사람별 보기는 대표 서약으로 판정 */
-  function listed() {
-    const rows = st.rows || [];
-    if (st.view === "records") return rows.filter(match).map(r => ({ r, n: 0, lead: true }));
-    return people(rows).filter(p => match(p.lead)).map(p => ({ r: p.lead, n: p.n, lead: true }));
+  function listed(opt) {
+    const rows = st.rows || [], wo = !!(opt && opt.withOff);
+    if (st.view === "records") return rows.filter(r => match(r, wo)).map(r => ({ r, n: 0, lead: true }));
+    return people(rows).filter(p => match(p.lead, wo)).map(p => ({ r: p.lead, n: p.n, lead: true }));
   }
   function stats() {
     const rows = st.rows || [];
@@ -237,31 +250,42 @@
       <body><div class="wrap">${qrCard(url)}<p>${esc(url)}</p></div></body></html>`);
   }
 
-  /* 국토부 제출용 명단 */
+  /* 국토부 제출용 관리대장 — 국가항공보안계획 8.14.3 표기: 해지(퇴사 · 전출 · 무효)는 해지일을 적고 취소선, 총원에서 제외 */
+  const LIST_TITLE = "민감보안정보 취급자 관리대장";
   function listPrintHTML(items, opt) {
+    const today = opt.today || todayK();
+    const offN = items.filter(it => !isValid(it.r, today)).length;
     const rowsHtml = items.map((it, i) => {
-      const r = it.r, sg = opt.sign ? (st.signs[r.id] || "") : "";
-      return `<tr><td class="c">${i + 1}</td><td>${esc(r.dept)}</td><td>${esc(r.position)}</td><td class="nm">${esc(r.name)}</td>
-        <td class="c">${esc(r.empId)}</td><td class="c">${esc(kDate(r.at))}</td>
+      const r = it.r, sg = opt.sign ? (st.signs[r.id] || "") : "", od = offOn(r, today);
+      return `<tr${!isValid(r, today) ? ' class="off"' : ""}><td class="c">${i + 1}</td><td class="nm">${esc(r.name)}</td><td class="c">${esc(r.empId)}</td>
+        <td>${esc(r.dept)}</td><td>${esc(r.position)}</td><td class="c">${esc(kDate(r.at))}</td><td class="c od">${esc(od)}</td>
         ${opt.sign ? `<td class="sg">${sg ? `<img src="${sg}" alt="">` : r.src === "paper" ? '<span class="pp">종이 서약서</span>' : ""}</td>` : ""}</tr>`;
     }).join("");
     return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${esc(opt.title)}</title><style>${PRINT_CSS}
       @page { size: A4 portrait; margin: 14mm 12mm 16mm; @bottom-center { content: counter(page) " / " counter(pages); font-size: 8pt; color: #64748b; } }
       h1 { font-size: 17pt; text-align: center; margin: 0 0 3mm; letter-spacing: -.3px; }
       .meta { display: flex; justify-content: space-between; font-size: 9pt; color: #334155; margin-bottom: 3mm; }
+      .meta b { color: #0f172a; }
       table { width: 100%; border-collapse: collapse; font-size: 9pt; }
       thead { display: table-header-group; } tr { break-inside: avoid; }
-      th { background: #0b2545; color: #fff; font-weight: 700; padding: 5px 4px; border: 1px solid #0b2545; }
+      th { background: #0b2545; color: #fff; font-weight: 700; padding: 5px 4px; border: 1px solid #0b2545; line-height: 1.25; }
+      th small { display: block; font-size: 7.5pt; font-weight: 500; }
       td { border: 1px solid #94a3b8; padding: 3px 5px; height: ${opt.sign ? "13mm" : "7mm"}; }
       td.c { text-align: center; white-space: nowrap; } td.nm { font-weight: 700; white-space: nowrap; }
-      td.sg { width: 34mm; text-align: center; padding: 1px 2px; } td.sg img { max-width: 32mm; max-height: 12mm; vertical-align: middle; }
+      td.sg { width: 32mm; text-align: center; padding: 1px 2px; } td.sg img { max-width: 30mm; max-height: 12mm; vertical-align: middle; }
+      tr.off td { color: #475569; }
+      tr.off td:not(.od):not(.sg) { text-decoration: line-through; text-decoration-color: #0f172a; }
+      tr.off td.od { color: #0f172a; font-weight: 700; }
+      tr.off td.sg { position: relative; } tr.off td.sg img { opacity: .5; }
+      tr.off td.sg::after { content: ""; position: absolute; left: 3mm; right: 3mm; top: 50%; border-top: 1px solid #0f172a; }
       .pp { font-size: 8pt; color: #64748b; }
-      .foot { margin-top: 4mm; font-size: 8.5pt; color: #475569; }</style></head><body>
+      .foot { margin-top: 4mm; font-size: 8.5pt; color: #475569; line-height: 1.55; }</style></head><body>
       <h1>${esc(opt.title)}</h1>
-      <div class="meta"><span>에어제타㈜ · ${esc(opt.scope)}</span><span>기준일 ${esc(todayK())} · 총 ${items.length}명</span></div>
-      <table><thead><tr><th style="width:9mm">번호</th><th>소속</th><th>직위</th><th>성명</th><th>사번 / 생년월일</th><th style="width:22mm">서약일</th>${opt.sign ? "<th>서명</th>" : ""}</tr></thead>
-      <tbody>${rowsHtml || `<tr><td colspan="${opt.sign ? 7 : 6}" class="c">대상 없음</td></tr>`}</tbody></table>
-      <p class="foot">국가항공보안계획 1.2.13에 따른 민감보안정보 취급자 보안서약 (신원조사 대체)</p>
+      <div class="meta"><span>에어제타㈜ · ${esc(opt.scope)}</span><span>기준일 ${esc(today)} · <b>총원 ${items.length - offN}명</b>${offN ? ` (해지 ${offN}명 제외)` : ""}</span></div>
+      <table><thead><tr><th style="width:9mm">연번</th><th>이름</th><th style="width:25mm">사번 · 생년월일<small>(본인확인용)</small></th><th>소속부서</th><th>직책</th><th style="width:20mm">지정일</th><th style="width:20mm">해지일</th>${opt.sign ? "<th>서명</th>" : ""}</tr></thead>
+      <tbody>${rowsHtml || `<tr><td colspan="${opt.sign ? 8 : 7}" class="c">대상 없음</td></tr>`}</tbody></table>
+      <p class="foot">국가항공보안계획 8.14.3 관리대장 표기 — 해지(퇴사 · 전출 · 무효)는 해지일을 적고 취소선으로 표시하며 총원에서 제외합니다. 해지일부터 90일이 지난 기록은 삭제됩니다.<br>
+        지정일 = 보안서약일 (국가항공보안계획 1.2.13 — 민감보안정보 취급자 신원조사를 보안서약으로 대체)</p>
     </body></html>`;
   }
   const SORTS = {
@@ -270,19 +294,25 @@
     name: (a, b) => String(a.r.name).localeCompare(String(b.r.name), "ko")
   };
   function openListPrint() {
-    const items = listed();
-    const scope = scopeText();
-    openModal(`<h3>명단 인쇄 (A4)</h3>
-      <div class="form-row"><label>제목</label><input id="plp-title" maxlength="60" value="보안서약서 작성자 명단"></div>
+    const canOff = addsOff(true);
+    const pick = () => { const wo = canOff && $("#plp-off").checked; return { wo, items: listed({ withOff: wo }), scope: scopeText(wo) }; };
+    const count = (items) => { const n = items.filter(it => !isValid(it.r)).length; return `총원 ${items.length - n}명${n ? ` · 해지 ${n}명` : ""}`; };
+    openModal(`<h3>관리대장 인쇄 (A4)</h3>
+      <div class="form-row"><label>제목</label><input id="plp-title" maxlength="60" value="${esc(LIST_TITLE)}"></div>
       <div class="form-grid">
-        <div class="form-row"><label>정렬</label><select id="plp-sort"><option value="date">서약일순</option><option value="dept">소속순</option><option value="name">성명순</option></select></div>
-        <div class="form-row"><label>대상</label><input value="${esc(scope)} · ${items.length}명" disabled></div>
+        <div class="form-row"><label>정렬</label><select id="plp-sort"><option value="date">지정일순</option><option value="dept">소속순</option><option value="name">이름순</option></select></div>
+        <div class="form-row"><label>대상</label><input id="plp-scope" disabled></div>
       </div>
+      ${canOff ? '<label class="pl-check"><input type="checkbox" id="plp-off" checked> 해지자 포함 (해지일 · 취소선)</label>' : ""}
       <label class="pl-check"><input type="checkbox" id="plp-sign" checked> 서명 이미지 포함</label>
       <div class="modal-actions"><button class="btn btn-ghost" id="plp-x">취소</button><button class="btn btn-primary" id="plp-go">인쇄</button></div>`);
+    const paintScope = () => { const p = pick(); $("#plp-scope").value = `${p.scope} · ${count(p.items)}`; };
+    paintScope();
+    if (canOff) $("#plp-off").onchange = paintScope;
     $("#plp-x").onclick = closeModal;
     $("#plp-go").onclick = async () => {
-      const opt = { title: $("#plp-title").value.trim() || "보안서약서 작성자 명단", sign: $("#plp-sign").checked, scope };
+      const { items, scope } = pick();
+      const opt = { title: $("#plp-title").value.trim() || LIST_TITLE, sign: $("#plp-sign").checked, scope };
       const list = items.slice().sort(SORTS[$("#plp-sort").value] || SORTS.date);
       const btn = $("#plp-go");
       btn.disabled = true; btn.textContent = "준비 중…";
@@ -292,9 +322,9 @@
       printHTML(listPrintHTML(list, opt));
     };
   }
-  function scopeText() {
+  function scopeText(withOff) {
     const bits = [st.view === "records" ? "전체 제출 기록" : "사람별 최신 서약"];
-    if (st.state) bits.push(FILTER[st.state]);
+    if (st.state) bits.push(FILTER[st.state] + (addsOff(withOff) ? " + 해지" : ""));
     if (st.year) bits.push(st.year + "년");
     if (st.src) bits.push(SRC[st.src][0]);
     if (st.q.trim()) bits.push("검색 '" + st.q.trim() + "'");
@@ -340,11 +370,13 @@
 
   /* ─────────── 화면 ─────────── */
   const badge = (pair) => pair ? `<span class="badge badge-${esc(pair[1])}">${esc(pair[0])}</span>` : "";
-  /* 상태 배지 — 만료 예정은 마지막 유효일을 함께 */
+  /* 상태 배지 — 만료 예정은 마지막 유효일, 해지는 해지일 · 삭제일을 말풍선으로 */
   function stBadge(r) {
-    const s = effState(r), last = lastValidDay(r);
-    if (s === "leaving") return `<span class="badge badge-amber" title="퇴사 · 전출 ${esc(r.stateAt)} — ${esc(last)}까지 유효">유효 ~${esc(sDot(last))}</span>`;
-    if (s === "expired") return `<span class="badge badge-gray"${last ? ` title="${esc(addDays(last, 1))} 만료"` : ""}>만료</span>`;
+    const s = effState(r), od = offDay(r);
+    if (s === "leaving") return `<span class="badge badge-amber" title="퇴사 · 전출 ${esc(od)} — ${esc(lastValidDay(r))}까지 유효">유효 ~${esc(sDot(lastValidDay(r)))}</span>`;
+    const tip = od ? ` title="해지 ${esc(od)} · ${esc(purgeDay(r))} 기록 삭제"` : "";
+    if (s === "expired") return `<span class="badge badge-gray"${tip}>만료</span>`;
+    if (s === "void") return `<span class="badge badge-red"${tip}>무효</span>`;
     return badge(EFF[s]);
   }
   function statsHTML() {
@@ -402,7 +434,7 @@
         const again = st.view === "people" && it.n > 1 ? ` <span class="badge badge-gray badge-sm" title="서약 ${it.n}회">재서약 ${it.n - 1}</span>` : "";
         const old = st.view === "records" && !leadIds.has(r.id) ? ` <span class="badge badge-gray badge-sm">이전</span>` : "";
         const sg = st.showSign ? `<td class="pl-sgc" data-l="서명">${st.signs[r.id] ? `<img src="${st.signs[r.id]}" alt="${esc(r.name)} 서명">` : r.hasSign ? '<span class="pl-dim">…</span>' : '<span class="pl-dim">없음</span>'}</td>` : "";
-        return `<tr data-pl-id="${esc(r.id)}" tabindex="0">
+        return `<tr data-pl-id="${esc(r.id)}" tabindex="0"${isValid(r) ? "" : ' class="pl-off"'}>
           <td class="pl-no">${i + 1}</td><td class="pl-date" data-l="서약일">${esc(kDate(r.at))}</td>
           <td class="pl-name" data-l="성명"><b>${esc(r.name)}</b>${again}${old}<span class="pl-msub">${esc([r.dept, r.position, r.empId].filter(Boolean).join(" · "))}</span></td>
           <td data-l="소속">${esc(r.dept)}</td><td data-l="직위">${esc(r.position)}</td><td class="pl-emp" data-l="사번">${esc(r.empId)}</td>
@@ -448,7 +480,7 @@
         <span class="spacer"></span>
         <button type="button" class="btn btn-ghost btn-sm" id="pl-refresh" title="명단 다시 읽기">↻ 새로고침</button>
         <button type="button" class="btn btn-ghost btn-sm" id="pl-add">+ 종이 서약 등록</button>
-        <button type="button" class="btn btn-primary btn-sm" id="pl-print" title="A4 명단 인쇄">🖨 명단 인쇄</button>
+        <button type="button" class="btn btn-primary btn-sm" id="pl-print" title="A4 관리대장 인쇄">🖨 명단 인쇄</button>
       </div>
       <div id="pl-page" class="pl-page">
         <div class="pl-top">
@@ -525,8 +557,7 @@
           <dt>직위</dt><dd>${esc(r.position) || "—"}</dd>
           <dt>사번 / 생년월일</dt><dd>${esc(r.empId) || "—"}</dd>
           <dt>서약 문구</dt><dd>${r.lang === "en" ? "영문" : "국문"}</dd>
-          ${r.state === "left" ? `<dt>퇴사 · 전출</dt><dd>${esc(r.stateAt || "일자 없음")}${r.stateNote ? " — " + esc(r.stateNote) : ""}<span class="pl-msub2">${lastValidDay(r) ? (effState(r) === "leaving" ? esc(lastValidDay(r)) + "까지 유효 · " + esc(addDays(lastValidDay(r), 1)) + " 만료" : esc(addDays(lastValidDay(r), 1)) + " 만료됨") : "만료"}</span></dd>` : ""}
-          ${r.state === "void" ? `<dt>상태</dt><dd>${esc(STATE.void[0])}${r.stateAt ? " · " + esc(r.stateAt) : ""}${r.stateNote ? " — " + esc(r.stateNote) : ""}</dd>` : ""}
+          ${r.state === "left" || r.state === "void" ? `<dt>${r.state === "left" ? "퇴사 · 전출" : "무효"}</dt><dd>${esc(offDay(r) || "일자 없음")}${r.stateNote ? " — " + esc(r.stateNote) : ""}<span class="pl-msub2">${offDay(r) ? (effState(r) === "leaving" ? esc(lastValidDay(r)) + "까지 유효 · " + esc(offDay(r)) + " 해지 · " + esc(purgeDay(r)) + " 기록 삭제" : esc(offDay(r)) + " 해지 · " + esc(purgeDay(r)) + " 기록 자동 삭제") : "해지"}</span></dd>` : ""}
           ${r.note ? `<dt>비고</dt><dd class="pl-pre">${esc(r.note)}</dd>` : ""}
           <dt>접수</dt><dd class="pl-meta">${esc(String(r.submitId || "").replace(/-/g, "").slice(0, 8).toUpperCase())}${r.ip ? " · IP " + esc(r.ip) : ""}${dev ? " · " + dev : ""}</dd>
         </dl>
@@ -587,10 +618,10 @@
       </div>
       <div class="pl-stateopt${v.state === "valid" ? " hidden" : ""}" id="pe-stbox">
         <div class="form-grid">
-          <div class="form-row"><label id="pe-stat-l">${v.state === "left" ? "퇴사 · 전출 일자" : "상태 일자"}</label><input type="date" id="pe-stat" value="${esc(v.stateAt || todayK())}"></div>
+          <div class="form-row"><label id="pe-stat-l">${v.state === "left" ? "퇴사 · 전출 일자" : "무효 일자"}</label><input type="date" id="pe-stat" value="${esc(v.stateAt || todayK())}"></div>
           <div class="form-row"><label>사유</label><input id="pe-stnote" maxlength="500" value="${esc(v.stateNote || "")}"></div>
         </div>
-        <p class="pl-mini${v.state === "left" ? "" : " hidden"}" id="pe-sthint"></p>
+        <p class="pl-mini${v.state === "valid" ? " hidden" : ""}" id="pe-sthint"></p>
       </div>
       <div class="form-row"><label>비고</label><textarea id="pe-note" maxlength="2000" rows="2">${esc(v.note || "")}</textarea></div>
       <div class="form-row"><label>첨부 ${isNew || v.src === "paper" ? "(서약서 스캔)" : ""}</label>
@@ -603,16 +634,16 @@
       $$("[data-pl-fx]").forEach(b => b.onclick = () => { files.splice(Number(b.getAttribute("data-pl-fx")), 1); paintFiles(); });
     };
     paintFiles();
-    /* 퇴사·전출 — 일자 다음 날부터 90일째까지 유효, 그다음 날 만료 (안내만, 계산은 표시할 때마다) */
+    /* 퇴사·전출 · 무효 — 일자 = 해지일, 해지일부터 90일째까지 보관 · 91일째 자동 삭제 (안내만, 계산은 표시할 때마다) */
     const paintState = () => {
       const sv = $("#pe-state").value, d = $("#pe-stat").value;
       $("#pe-stbox").classList.toggle("hidden", sv === "valid");
-      $("#pe-stat-l").textContent = sv === "left" ? "퇴사 · 전출 일자" : "상태 일자";
+      $("#pe-stat-l").textContent = sv === "left" ? "퇴사 · 전출 일자" : "무효 일자";
       const hint = $("#pe-sthint");
-      hint.classList.toggle("hidden", sv !== "left");
-      const last = /^\d{4}-\d{2}-\d{2}$/.test(d) ? addDays(d, KEEP_DAYS) : "";
-      hint.textContent = last ? `${last}까지 유효하고 ${addDays(last, 1)}에 자동 만료됩니다(일자 다음 날부터 ${KEEP_DAYS}일). 서약서 인쇄물에는 표시되지 않습니다.`
-                              : `일자 다음 날부터 ${KEEP_DAYS}일째까지 유효하고 그다음 날 자동 만료됩니다.`;
+      hint.classList.toggle("hidden", sv === "valid");
+      const del = /^\d{4}-\d{2}-\d{2}$/.test(d) ? addDays(d, KEEP_DAYS + 1) : "";
+      hint.textContent = !del ? `일자부터 해지되고 ${KEEP_DAYS}일 뒤 기록이 자동 삭제됩니다.`
+        : `${d}부터 해지(관리대장 해지일 · 취소선, 총원 제외) · ${del}에 기록 자동 삭제` + (del <= todayK() ? " — 보관 기간이 지나 저장하면 자정에 삭제됩니다." : "");
     };
     $("#pe-state").onchange = paintState;
     $("#pe-stat").oninput = paintState;
@@ -636,10 +667,10 @@
       const time = $("#pe-time").value || (isNew ? "09:00" : kTime(v.at) || "09:00");
       const at = date + "T" + time + ":00+09:00";
       const state = $("#pe-state").value;
-      if (state === "left") {
-        const sd = $("#pe-stat").value;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(sd)) { toast("퇴사 · 전출 일자를 입력하세요.", true); $("#pe-stat").focus(); return; }
-        if (sd < date) { toast("퇴사 · 전출 일자가 서약일보다 빠릅니다.", true); $("#pe-stat").focus(); return; }
+      if (state !== "valid") {
+        const sd = $("#pe-stat").value, lb = state === "left" ? "퇴사 · 전출 일자" : "무효 일자";
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(sd)) { toast(lb + "를 입력하세요.", true); $("#pe-stat").focus(); return; }
+        if (sd < date) { toast(lb + "가 서약일보다 빠릅니다.", true); $("#pe-stat").focus(); return; }
       }
       const p = {
         id: isNew ? "" : v.id, name, dept: $("#pe-dept").value.trim(), position: $("#pe-pos").value.trim(), empId: $("#pe-emp").value.trim(),
@@ -684,5 +715,5 @@
   });
 
   window.SemisPledges = { load, people, listed, stats, pkey, empKey, qrCard, formUrl, listPrintHTML, state: st, openDetail, openEdit,
-                          effState, isValid, lastValidDay };
+                          effState, isValid, lastValidDay, offDay, purgeDay, KEEP_DAYS };
 })();

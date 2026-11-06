@@ -2644,6 +2644,7 @@ table.fo-tbl { font-size: .86rem; }
 .pl-tbl .pl-date, .pl-tbl .pl-emp { font-variant-numeric: tabular-nums; }
 .pl-tbl td:nth-child(4), .pl-tbl td:nth-child(5) { white-space: normal; min-width: 90px; }
 .pl-sgc img { height: 34px; width: auto; max-width: 120px; display: block; }
+.pl-tbl tr.pl-off .pl-name b { text-decoration: line-through; color: var(--text-2); } /* 해지(만료 · 무효) — 관리대장과 같은 표기 (v2.57) */
 .pl-dim { color: var(--text-3); font-size: .8rem; }
 .pl-msub { display: none; }
 .pl-recent { margin-top: 14px; }
@@ -2660,7 +2661,7 @@ table.fo-tbl { font-size: .86rem; }
 .pl-dl { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 7px 12px; font-size: .9rem; }
 .pl-dl dt { color: var(--text-3); font-weight: 600; }
 .pl-dl dd { overflow-wrap: anywhere; }
-.pl-msub2 { display: block; margin-top: 2px; font-size: .82rem; color: var(--text-2); } /* 퇴사·전출 유효 기한 (v2.56) */
+.pl-msub2 { display: block; margin-top: 2px; font-size: .82rem; color: var(--text-2); } /* 해지일 · 기록 삭제일 (v2.57) */
 .pl-meta { font-size: .82rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .pl-pre { white-space: pre-wrap; }
 .pl-dt-sign { border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); min-height: 120px; display: flex; align-items: center; justify-content: center; padding: 10px; background: #fff; }

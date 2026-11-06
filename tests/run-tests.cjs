@@ -10345,7 +10345,7 @@ function makeFetchStub(server) {
       ok(/c\.role in \('admin', 'hq'\)/.test(PLEDGE_SQL), "서버도 HQ 이상 내부 계정만");
     });
 
-    await ta("PL05 A4 명단(국토부 제출용): 사번/생년월일 · 서명 포함 · 종이 서약 표시 · 정렬 · 제목", async () => {
+    await ta("PL05 A4 관리대장(국토부 제출용): 사번/생년월일 · 서명 포함 · 종이 서약 표시 · 정렬 · 제목 · 해지자 취소선(8.14.3)", async () => {
       const e = makeEnv({ fetch: pledgeFetch({}) });
       loginAs(e, "hq");
       go(e, "ssi");
@@ -10361,11 +10361,32 @@ function makeFetchStub(server) {
       ok(html.indexOf("KJ100001") >= 0 && html.indexOf("1974-07-27") >= 0, "사번 · 생년월일 그대로(가리지 않음)");
       ok(html.indexOf(SIGN) >= 0, "서명 이미지");
       ok(/종이 서약서/.test(html), "종이 서약 표시");
-      ok(/총 4명/.test(html) && /thead \{ display: table-header-group/.test(html), "인원 · 머리글 반복");
+      ok(/총원 3명<\/b> \(해지 1명 제외\)/.test(html) && /thead \{ display: table-header-group/.test(html), "총원은 해지 제외 · 머리글 반복");
+      const heads = (html.match(/<th[^>]*>[^<]+/g) || []).map(x => x.replace(/<th[^>]*>/, ""));
+      eq(heads.join("|"), "연번|이름|사번 · 생년월일|소속부서|직책|지정일|해지일|서명", "국토부 표기 열 순서");
+      ok(/본인확인용/.test(html), "생년월일 본인확인용");
+      const trOf = (h, nm) => { const i = h.indexOf(">" + nm + "<"); return h.slice(h.lastIndexOf("<tr", i), h.indexOf("</tr>", i)); };
+      const off = trOf(html, "사아자");
+      ok(/^<tr class="off">/.test(off) && /<td class="c od">2026-06-30<\/td>/.test(off), "해지자: 취소선 행 · 해지일");
+      ok(!/class="off"/.test(trOf(html, "라마바")) && /<td class="c od"><\/td>/.test(trOf(html, "라마바")), "유효자: 해지일 비움");
+      ok(/tr\.off td:not\(\.od\):not\(\.sg\) \{ text-decoration: line-through/.test(html) && /tr\.off td\.sg::after/.test(html), "취소선(해지일 칸 제외 · 서명은 가로줄)");
+      ok(/8\.14\.3/.test(html), "근거 조항");
       const noSign = P.listPrintHTML(items, { title: "T", sign: false, scope: "" });
       ok(noSign.indexOf(SIGN) < 0 && noSign.indexOf("<th>서명</th>") < 0, "서명 제외 선택");
       q(e, "#pl-print").click();
-      ok(q(e, "#plp-title") && q(e, "#plp-sign").checked, "인쇄 선택 창");
+      ok(q(e, "#plp-title") && q(e, "#plp-title").value === "민감보안정보 취급자 관리대장" && q(e, "#plp-sign").checked, "인쇄 선택 창 · 제목");
+      ok(!q(e, "#plp-off") && /총원 3명 · 해지 1명/.test(q(e, "#plp-scope").value), "상태 전체 — 해지자는 이미 포함");
+      e.w.SeMIS.closeModal();
+      sel.value = "valid"; sel.dispatchEvent(new e.w.Event("change"));
+      eq(P.listed().length, 3, "유효 3명");
+      eq(P.listed({ withOff: true }).length, 4, "해지자 포함 = 유효 3 + 해지 1");
+      q(e, "#pl-print").click();
+      ok(q(e, "#plp-off") && q(e, "#plp-off").checked && /유효 \+ 해지/.test(q(e, "#plp-scope").value) && /총원 3명 · 해지 1명/.test(q(e, "#plp-scope").value), "유효 조건 — 해지자 포함(기본)");
+      q(e, "#plp-off").checked = false; q(e, "#plp-off").dispatchEvent(new e.w.Event("change"));
+      ok(/총원 3명$/.test(q(e, "#plp-scope").value), "해지자 빼기");
+      ok(q(e, '#pl-list tr[data-pl-id="p2"]') && !q(e, "#pl-list tr.pl-off"), "화면: 유효만이면 취소선 없음");
+      sel.value = ""; sel.dispatchEvent(new e.w.Event("change"));
+      ok(q(e, '#pl-list tr.pl-off[data-pl-id="p4"]'), "화면: 해지자 이름 취소선");
     });
 
     await ta("PL06 상세 · 수정 · 종이 서약 등록 · 삭제는 시스템관리자만", async () => {
@@ -10510,36 +10531,41 @@ function makeFetchStub(server) {
       w.close();
     });
 
-    t("PL11 퇴사·전출 만료(v2.56): 일자 다음 날부터 90일째까지 유효 · 그다음 날 만료 · 대표 선정", () => {
+    t("PL11 해지(v2.57 · 8.14.3): 퇴사·전출 일자 = 해지일(당일부터 만료) · 앞날이면 만료 예정 · 91일째 삭제일 · 대표 선정", () => {
       const e = makeEnv();
       const P = e.w.SemisPledges;
       const L = (d) => mkP("x", "홍길동", "500005", "2026-03-01T00:00:00Z", { state: "left", stateAt: d });
-      eq(P.lastValidDay(L("2026-10-01")), "2026-12-30", "10/1 → 12/30까지 유효");
-      eq(P.effState(L("2026-10-01"), "2026-10-01"), "leaving", "퇴사 당일 유효");
-      eq(P.effState(L("2026-10-01"), "2026-12-30"), "leaving", "마지막 유효일");
-      eq(P.effState(L("2026-10-01"), "2026-12-31"), "expired", "다음 날 만료");
-      ok(P.isValid(L("2026-10-01"), "2026-12-30") && !P.isValid(L("2026-10-01"), "2026-12-31"), "유효 판정");
-      eq(P.lastValidDay(L("2027-01-15")), "2027-04-15", "해 넘김 · 평년 2월");
-      eq(P.lastValidDay(L("2028-02-01")), "2028-05-01", "윤년 2월");
+      eq(P.offDay(L("2026-10-01")), "2026-10-01", "해지일 = 퇴사 · 전출 일자");
+      eq(P.effState(L("2026-10-01"), "2026-09-30"), "leaving", "전날까지 유효(만료 예정)");
+      eq(P.lastValidDay(L("2026-10-01")), "2026-09-30", "마지막 유효일 = 전날");
+      eq(P.effState(L("2026-10-01"), "2026-10-01"), "expired", "당일부터 해지");
+      ok(P.isValid(L("2026-10-01"), "2026-09-30") && !P.isValid(L("2026-10-01"), "2026-10-01"), "유효 판정");
+      eq(P.purgeDay(L("2026-10-01")), "2026-12-31", "10/1 해지 → 12/30까지 보관 · 12/31 삭제");
+      eq(P.purgeDay(L("2027-12-01")), "2028-03-01", "해 넘김 · 윤년 2월");
+      eq(P.KEEP_DAYS, 90, "보관 90일");
+      const V = mkP("v", "가", "1", "2026-01-01T00:00:00Z", { state: "void", stateAt: "2026-05-01" });
+      eq(P.effState(V), "void", "무효");
+      ok(P.offDay(V) === "2026-05-01" && P.purgeDay(V) === "2026-07-31", "무효도 해지일 · 삭제일");
       eq(P.effState(L(""), "2026-10-06"), "expired", "일자 없는 퇴사·전출은 만료");
+      eq(P.purgeDay(L("")), "", "일자 없으면 삭제일 없음");
       eq(P.effState(mkP("y", "가", "1", "2020-01-01T00:00:00Z"), "2030-01-01"), "valid", "유효 서약은 기한 없음");
-      eq(P.effState(mkP("y", "가", "1", "2026-01-01T00:00:00Z", { state: "void" })), "void", "무효");
+      eq(P.offDay(mkP("y", "가", "1", "2020-01-01T00:00:00Z")), "", "유효 서약은 해지일 없음");
       const rows = [mkP("a1", "홍길동", "500005", "2025-01-10T00:00:00Z"),
                     mkP("a2", "홍길동", "KJ500005", "2026-03-01T00:00:00Z", { state: "left", stateAt: "2026-04-01" })];
       const g = P.people(rows)[0];
       eq(g.lead.id, "a2", "최신 퇴사·전출 서약이 대표(이전 유효 서약이 덮지 않음)");
-      ok(!P.isValid(g.lead, "2026-10-06"), "만료 → 비유효");
+      ok(!P.isValid(g.lead, "2026-10-06"), "해지 → 비유효");
       rows.push(mkP("a3", "홍길동", "500005", "2026-09-01T00:00:00Z"));
       eq(P.people(rows)[0].lead.id, "a3", "재입사 후 새 서약이 대표");
       rows.push(mkP("a4", "홍길동", "500005", "2026-09-20T00:00:00Z", { state: "void" }));
       eq(P.people(rows)[0].lead.id, "a3", "무효는 대표에서 밀림");
     });
 
-    await ta("PL12 화면(v2.56): 만료 예정 배지 · 필터 · 요약 · 상세 기한 · 수정 창 안내 · 일자 검증 · 서약서 인쇄물에는 미표시", async () => {
+    await ta("PL12 화면(v2.57): 만료 예정 배지 · 필터 · 요약 · 상세 해지일 · 수정 창 안내 · 일자 검증 · 서약서 인쇄물에는 미표시", async () => {
       const kToday = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
       const minus = (ymd, n) => new Date(Date.parse(ymd + "T00:00:00Z") - n * 86400e3).toISOString().slice(0, 10);
       const log = [];
-      const srv = { pledges: seedP().concat([mkP("p6", "파타하", "600006", "2026-02-01T00:00:00Z", { state: "left", stateAt: minus(kToday, 10), stateNote: "퇴사" })]) };
+      const srv = { pledges: seedP().concat([mkP("p6", "파타하", "600006", "2026-02-01T00:00:00Z", { state: "left", stateAt: minus(kToday, -10), stateNote: "퇴사 예정" })]) };
       const e = makeEnv({ fetch: pledgeFetch(srv, log) });
       loginAs(e, "hq");
       go(e, "ssi");
@@ -10551,23 +10577,25 @@ function makeFetchStub(server) {
       const sel = q(e, "#pl-state");
       const pick = (v) => { sel.value = v; sel.dispatchEvent(new e.w.Event("change")); return qa(e, "#pl-list tr[data-pl-id]").map(tr => tr.getAttribute("data-pl-id")); };
       eq(pick("leaving").join(), "p6", "만료 예정 필터");
-      eq(pick("expired").join(), "p4", "만료 필터(6/30 퇴사 → 9/28까지 유효)");
+      eq(pick("expired").join(), "p4", "만료 필터(6/30 퇴사 → 당일부터 해지)");
       ok(/만료/.test(q(e, '#pl-list tr[data-pl-id="p4"]').textContent), "만료 배지");
       eq(pick("void").length, 0, "무효 필터");
       ok(qa(e, "#pl-state option").map(o => o.textContent).join("|").indexOf("퇴직") < 0, "옛 '퇴직 · 전출' 필터 없음");
       e.w.SemisPledges.openDetail("p6");
       ok(/퇴사 · 전출/.test(q(e, "#modal-box").textContent) && /까지 유효/.test(q(e, "#modal-box").textContent), "상세 — 유효 기한");
       e.w.SemisPledges.openDetail("p4");
-      ok(/2026-09-29 만료됨/.test(q(e, "#modal-box").textContent), "상세 — 만료일");
+      ok(/2026-06-30 해지 · 2026-09-29 기록 자동 삭제/.test(q(e, "#modal-box").textContent), "상세 — 해지일 · 삭제일");
       // 수정: 퇴사·전출 일자 안내 · 검증
       e.w.SemisPledges.openDetail("p2");
       q(e, "#pl-dt-edit").click();
       q(e, "#pe-state").value = "left"; q(e, "#pe-state").dispatchEvent(new e.w.Event("change"));
       eq(q(e, "#pe-stat-l").textContent, "퇴사 · 전출 일자", "일자 이름");
       q(e, "#pe-stat").value = "2026-10-01"; q(e, "#pe-stat").dispatchEvent(new e.w.Event("input"));
-      ok(/2026-12-30까지 유효하고 2026-12-31에 자동 만료/.test(q(e, "#pe-sthint").textContent), "만료 안내");
+      ok(/2026-10-01부터 해지\(관리대장 해지일 · 취소선, 총원 제외\) · 2026-12-31에 기록 자동 삭제/.test(q(e, "#pe-sthint").textContent), "해지 · 삭제 안내");
+      q(e, "#pe-stat").value = minus(kToday, 100); q(e, "#pe-stat").dispatchEvent(new e.w.Event("input"));
+      ok(/자정에 삭제/.test(q(e, "#pe-sthint").textContent), "보관 기간 지난 일자 경고");
       q(e, "#pe-state").value = "void"; q(e, "#pe-state").dispatchEvent(new e.w.Event("change"));
-      ok(q(e, "#pe-sthint").classList.contains("hidden") && q(e, "#pe-stat-l").textContent === "상태 일자", "무효는 안내 없음");
+      ok(!q(e, "#pe-sthint").classList.contains("hidden") && q(e, "#pe-stat-l").textContent === "무효 일자", "무효도 해지 안내");
       q(e, "#pe-state").value = "left"; q(e, "#pe-state").dispatchEvent(new e.w.Event("change"));
       q(e, "#pe-stat").value = "2026-01-01";
       q(e, "#pe-save").click();
@@ -10584,14 +10612,26 @@ function makeFetchStub(server) {
       e.Sync.stop();
     });
 
-    t("PL13 서버 SQL(v2.56): 만료 규칙 · Logistics 명단 상태 매핑 · 대표는 무효 제외 최신 · 실행 권한", () => {
+    t("PL13 서버 SQL(v2.57): 해지 규칙 · Logistics 명단 상태 매핑 · 해지일 · 대표는 무효 제외 최신 · 실행 권한", () => {
       ok(/function semis_v2_private\.pledge_eff_state\(p_state text, p_state_at date\)/.test(PLEDGE_SQL), "표시 상태 함수");
-      ok(/\(now\(\) at time zone 'Asia\/Seoul'\)::date <= p_state_at \+ 90/.test(PLEDGE_SQL), "한국 날짜 · 90일째까지 유효");
+      ok(/\(now\(\) at time zone 'Asia\/Seoul'\)::date < p_state_at\s/.test(PLEDGE_SQL) && !/<= p_state_at \+ 90/.test(PLEDGE_SQL), "한국 날짜 · 퇴사·전출 당일부터 해지");
       const lg = PLEDGE_SQL.slice(PLEDGE_SQL.indexOf("function public.semis_logi_pledges"));
       ok(/case z\.eff when 'leaving' then 'valid' when 'expired' then 'left' else z\.eff end/.test(lg), "Logistics: 만료 예정 → valid · 만료 → left");
       ok(/\(x\.state <> 'void'\) desc, x\.at desc/.test(lg), "대표 = 무효 제외 최신");
-      ok(/pledge_eff_state\(text, date\) from public, anon, authenticated/.test(PLEDGE_SQL), "내부 함수 실행 권한 회수");
+      ok(/'off', case when z\.eff in \('expired', 'void'\) then to_char\(z\.state_at, 'YYYY-MM-DD'\) end/.test(lg), "Logistics: 해지일");
+      ok(/pledge_eff_state\(text, date\),\s*semis_v2_private\.pledge_purge\(\) from public, anon, authenticated/.test(PLEDGE_SQL), "내부 함수 실행 권한 회수");
       ok(/const KEEP_DAYS = 90;/.test(plgJS), "화면도 90일");
+    });
+
+    t("PL14 서버 SQL(v2.57): 해지 90일 보관 뒤 자동 삭제 — 이력 · 감사 기록 함께 · 매일 00:05 KST · 실행 권한", () => {
+      const pg = PLEDGE_SQL.slice(PLEDGE_SQL.indexOf("function semis_v2_private.pledge_purge"), PLEDGE_SQL.indexOf("select cron.schedule('semis-v2-pledge-purge'"));
+      ok(pg.length > 300 && /security definer/.test(pg), "삭제 함수");
+      ok(/x\.state in \('left', 'void'\) and x\.state_at is not null and x\.state_at \+ 90 < v_today/.test(pg), "해지일부터 90일째까지 보관 · 91일째 삭제");
+      ok(/l\.state = 'left'[\s\S]{0,120}x\.at <= l\.at/.test(pg), "대표가 지워지면 이전 서약(이력)도 함께");
+      ok(/delete from semis_v2_private\.audit a where a\.action like 'pledge\\_%' and a\.detail ->> 'id' = any\(v_ids\)/.test(pg), "관련 감사 기록 삭제");
+      ok(/'pledge_purge', jsonb_build_object\('n', cardinality\(v_ids\)/.test(pg) && !/'name'/.test(pg), "삭제 기록은 건수만");
+      ok(/select cron\.schedule\('semis-v2-pledge-purge', '5 15 \* \* \*', \$\$select semis_v2_private\.pledge_purge\(\)\$\$\);/.test(PLEDGE_SQL), "매일 15:05 UTC = 00:05 KST");
+      ok(/semis_v2_private\.pledge_purge\(\) from public, anon, authenticated/.test(PLEDGE_SQL), "삭제 함수는 앱에서 못 부름");
     });
   }
 

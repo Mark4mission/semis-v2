@@ -16,6 +16,11 @@
    - v2.56 (마이그레이션 semis_v2_security_15_pledge_expiry): 퇴사·전출(state 'left' + state_at)은
      일자 다음 날부터 90일째까지 유효, 그다음 날 만료 — pledge_eff_state. Logistics 명단은 만료를 'left'로,
      만료 예정을 'valid'로 돌려준다. 사람별 대표는 무효가 아닌 서약 중 최신.
+   - v2.57 (마이그레이션 semis_v2_security_16_pledge_cancel — 국가항공보안계획 8.14.3 관리대장 표기):
+     퇴사·전출 · 무효 일자 = 해지일. 퇴사·전출은 그날부터 만료(해지), 앞날이면 그 전날까지 만료 예정(유효).
+     해지일부터 90일째까지 보관, 91일째 pledge_purge 가 삭제(pg_cron semis-v2-pledge-purge, 매일 00:05 KST) —
+     사람별 대표(퇴사·전출)가 지우는 날이면 그 사람의 이전 서약(이력)도 함께, 관련 감사 기록도 지운다.
+     Logistics 명단에 해지일 'off'.
    ═══════════════════════════════════════════════════════ */
 
 /* 사번 대조 키 — 영문·숫자만, 소문자, 앞의 항공사 코드 KJ 는 뺀다 (KJ100418 = 100418, 1974-07-27 = 19740727) */
@@ -305,21 +310,57 @@ begin
            regexp_matches(src.t, '/object/public/semis-files/([A-Za-z0-9._\-]+(?:/[A-Za-z0-9._\-]+)*)', 'g') m), '[]'::jsonb));
 end $$;
 
-/* ═════════════ 퇴사·전출 만료 (v2.56) ═════════════
+/* ═════════════ 해지 · 보관 기한 (v2.57 — 국가항공보안계획 8.14.3) ═════════════
    표시 상태 — 화면 js/pledges.js effState 와 같은 규칙.
-   퇴사·전출(left)은 일자 다음 날부터 90일째까지 유효(leaving), 그다음 날 만료(expired). 일자가 없으면 만료.
-   (10/1 퇴사 → 12/30까지 유효, 12/31 만료) */
+   퇴사·전출(left) 일자 = 해지일: 그날부터 만료(expired), 앞날이면 그 전날까지 만료 예정(leaving · 유효). 일자가 없으면 만료.
+   (10/1 퇴사 → 9/30까지 유효, 10/1 해지 · 12/30까지 보관, 12/31 삭제) */
 create or replace function semis_v2_private.pledge_eff_state(p_state text, p_state_at date) returns text
 language sql stable set search_path = '' as $$
   select case when p_state = 'void' then 'void'
               when p_state = 'left' then case when p_state_at is not null
-                                               and (now() at time zone 'Asia/Seoul')::date <= p_state_at + 90
+                                               and (now() at time zone 'Asia/Seoul')::date < p_state_at
                                               then 'leaving' else 'expired' end
               else 'valid' end
 $$;
 
+/* 보관 기한이 지난 해지 기록 삭제 — 해지일(state_at)부터 90일째까지 보관, 91일째 삭제.
+   사람별 대표(무효 제외 최신)가 퇴사·전출로 지워지면 그 사람의 이전 서약(이력)도 함께 지운다
+   (남기면 오래된 유효 서약이 다시 대표가 되어 유효자로 보인다). 관련 감사 기록(pledge_*)도 지우고 건수만 남긴다.
+   첨부(종이 서약서 스캔)는 저장소 관리의 '연결 없는 파일'로 정리된다(저장소 직접 삭제는 저장소 API 만 가능). */
+create or replace function semis_v2_private.pledge_purge() returns integer
+language plpgsql volatile security definer set search_path = '' as $$
+declare
+  v_today date := (now() at time zone 'Asia/Seoul')::date;
+  v_ids text[];
+begin
+  with lead as (
+    select distinct on (semis_v2_private.pledge_pkey(x.emp_id, x.name))
+           semis_v2_private.pledge_pkey(x.emp_id, x.name) as k, x.at, x.state, x.state_at
+      from semis_v2_private.pledges x
+     order by semis_v2_private.pledge_pkey(x.emp_id, x.name), (x.state <> 'void') desc, x.at desc
+  ), gone as (
+    select x.id from semis_v2_private.pledges x
+     where x.state in ('left', 'void') and x.state_at is not null and x.state_at + 90 < v_today
+    union
+    select x.id from semis_v2_private.pledges x
+      join lead l on l.k = semis_v2_private.pledge_pkey(x.emp_id, x.name)
+     where l.state = 'left' and l.state_at is not null and l.state_at + 90 < v_today and x.at <= l.at
+  )
+  select array_agg(g.id) into v_ids from gone g;
+  if v_ids is null then return 0; end if;
+  delete from semis_v2_private.audit a where a.action like 'pledge\_%' and a.detail ->> 'id' = any(v_ids);
+  delete from semis_v2_private.pledges x where x.id = any(v_ids);
+  insert into semis_v2_private.audit(actor, action, detail, ip)
+  values (null, 'pledge_purge', jsonb_build_object('n', cardinality(v_ids), 'day', v_today), '');
+  return cardinality(v_ids);
+end $$;
+
+/* 매일 00:05 KST (15:05 UTC) — 같은 이름이면 일정만 바뀐다 */
+select cron.schedule('semis-v2-pledge-purge', '5 15 * * *', $$select semis_v2_private.pledge_purge()$$);
+
 /* ═════════════ Logistics — 서약 명단 조회 (manager 이상, 사람별 최신 1건) ═════════════
-   대표 = 무효가 아닌 서약 중 최신. 상태는 Logistics 가 아는 값으로: 만료 예정 → valid, 만료 → left */
+   대표 = 무효가 아닌 서약 중 최신. 상태는 Logistics 가 아는 값으로: 만료 예정 → valid, 만료 → left.
+   해지(만료 · 무효)면 해지일 'off' (YYYY-MM-DD) */
 create or replace function public.semis_logi_pledges() returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
 begin
@@ -328,9 +369,10 @@ begin
     select jsonb_agg(jsonb_build_object('name', z.name, 'dept', z.dept, 'position', z.position,
                                         'date', to_char(z.at at time zone 'Asia/Seoul', 'YYYY-MM-DD'),
                                         'state', case z.eff when 'leaving' then 'valid' when 'expired' then 'left' else z.eff end,
+                                        'off', case when z.eff in ('expired', 'void') then to_char(z.state_at, 'YYYY-MM-DD') end,
                                         'n', z.n) order by z.at desc)
       from (select distinct on (semis_v2_private.pledge_pkey(x.emp_id, x.name))
-                   x.name, x.dept, x.position, x.at, semis_v2_private.pledge_eff_state(x.state, x.state_at) as eff,
+                   x.name, x.dept, x.position, x.at, x.state_at, semis_v2_private.pledge_eff_state(x.state, x.state_at) as eff,
                    count(*) over (partition by semis_v2_private.pledge_pkey(x.emp_id, x.name)) as n
               from semis_v2_private.pledges x
              order by semis_v2_private.pledge_pkey(x.emp_id, x.name), (x.state <> 'void') desc, x.at desc) z), '[]'::jsonb));
@@ -339,7 +381,8 @@ end $$;
 /* 실행 권한 — 공개 RPC 는 anon · service_role 만 (함수 안에서 세션 확인) */
 revoke all on function semis_v2_private.emp_key(text), semis_v2_private.pledge_pkey(text, text), semis_v2_private.pledge_ctx(),
   semis_v2_private.pledge_json(semis_v2_private.pledges), semis_v2_private.png_ok(text),
-  semis_v2_private.pledge_stamp(), semis_v2_private.pledge_notify(), semis_v2_private.pledge_eff_state(text, date) from public, anon, authenticated;
+  semis_v2_private.pledge_stamp(), semis_v2_private.pledge_notify(), semis_v2_private.pledge_eff_state(text, date),
+  semis_v2_private.pledge_purge() from public, anon, authenticated;
 revoke execute on function public.semis_v2_pledge_submit(jsonb, jsonb), public.semis_v2_pledges(), public.semis_v2_pledge_signs(text[]),
   public.semis_v2_pledge_save(jsonb), public.semis_v2_pledge_delete(text), public.semis_v2_file_refs(), public.semis_logi_pledges()
   from public, authenticated;
