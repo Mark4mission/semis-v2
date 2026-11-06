@@ -252,6 +252,10 @@
 
   /* 국토부 제출용 관리대장 — 국가항공보안계획 8.14.3 표기: 해지(퇴사 · 전출 · 무효)는 해지일을 적고 취소선, 총원에서 제외 */
   const LIST_TITLE = "민감보안정보 취급자 관리대장";
+  /* 회사 CI(심벌 + AIRZETA) — QR 카드와 같은 모양 · 색, 인쇄 머리말용 */
+  const CI_SVG = `<svg class="ci" viewBox="0 0 200 40" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AIRZETA">
+      <g transform="translate(-4 -5.5) scale(.5)"><polygon points="84.6,15.1 61.3,15.1 10.9,55.1 37.2,55.1 37.2,38.9 65,38.9" fill="#df4552"/><polygon points="86.1,41.8 67.3,41.8 67.3,63.2 39.5,63.2 12.6,87.9 52.4,87.9" fill="${NAVY}"/></g>
+      <text x="46" y="31" textLength="150" lengthAdjust="spacingAndGlyphs" font-family="'Arial Black', Arial, Helvetica, sans-serif" font-size="30" font-weight="900" font-style="italic" fill="${NAVY}">AIRZETA</text></svg>`;
   function listPrintHTML(items, opt) {
     const today = opt.today || todayK();
     const offN = items.filter(it => !isValid(it.r, today)).length;
@@ -263,14 +267,16 @@
     }).join("");
     return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${esc(opt.title)}</title><style>${PRINT_CSS}
       @page { size: A4 portrait; margin: 14mm 12mm 16mm; @bottom-center { content: counter(page) " / " counter(pages); font-size: 8pt; color: #64748b; } }
-      h1 { font-size: 17pt; text-align: center; margin: 0 0 3mm; letter-spacing: -.3px; }
+      .hd { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 4mm; margin: 0 0 3mm; }
+      .hd .ci { height: 6.5mm; width: auto; display: block; }
+      h1 { font-size: 17pt; text-align: center; margin: 0; letter-spacing: -.3px; }
       .meta { display: flex; justify-content: space-between; font-size: 9pt; color: #334155; margin-bottom: 3mm; }
       .meta b { color: #0f172a; }
       table { width: 100%; border-collapse: collapse; font-size: 9pt; }
       thead { display: table-header-group; } tr { break-inside: avoid; }
       th { background: #0b2545; color: #fff; font-weight: 700; padding: 5px 4px; border: 1px solid #0b2545; line-height: 1.25; }
       th small { display: block; font-size: 7.5pt; font-weight: 500; }
-      td { border: 1px solid #94a3b8; padding: 3px 5px; height: ${opt.sign ? "13mm" : "7mm"}; }
+      td { border: 1px solid #94a3b8; padding: 3px 5px; height: ${opt.sign ? "13mm" : "7mm"}; text-align: center; }
       td.c { text-align: center; white-space: nowrap; } td.nm { font-weight: 700; white-space: nowrap; }
       td.sg { width: 32mm; text-align: center; padding: 1px 2px; } td.sg img { max-width: 30mm; max-height: 12mm; vertical-align: middle; }
       tr.off td { color: #475569; }
@@ -280,7 +286,7 @@
       tr.off td.sg::after { content: ""; position: absolute; left: 3mm; right: 3mm; top: 50%; border-top: 1px solid #0f172a; }
       .pp { font-size: 8pt; color: #64748b; }
       .foot { margin-top: 4mm; font-size: 8.5pt; color: #475569; line-height: 1.55; }</style></head><body>
-      <h1>${esc(opt.title)}</h1>
+      <div class="hd">${CI_SVG}<h1>${esc(opt.title)}</h1><span></span></div>
       <div class="meta"><span>에어제타㈜ · ${esc(opt.scope)}</span><span>기준일 ${esc(today)} · <b>총원 ${items.length - offN}명</b>${offN ? ` (해지 ${offN}명 제외)` : ""}</span></div>
       <table><thead><tr><th style="width:9mm">연번</th><th>이름</th><th style="width:25mm">사번 · 생년월일<small>(본인확인용)</small></th><th>소속부서</th><th>직책</th><th style="width:20mm">지정일</th><th style="width:20mm">해지일</th>${opt.sign ? "<th>서명</th>" : ""}</tr></thead>
       <tbody>${rowsHtml || `<tr><td colspan="${opt.sign ? 8 : 7}" class="c">대상 없음</td></tr>`}</tbody></table>

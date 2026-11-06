@@ -10371,6 +10371,8 @@ function makeFetchStub(server) {
       ok(!/class="off"/.test(trOf(html, "라마바")) && /<td class="c od"><\/td>/.test(trOf(html, "라마바")), "유효자: 해지일 비움");
       ok(/tr\.off td:not\(\.od\):not\(\.sg\) \{ text-decoration: line-through/.test(html) && /tr\.off td\.sg::after/.test(html), "취소선(해지일 칸 제외 · 서명은 가로줄)");
       ok(/8\.14\.3/.test(html), "근거 조항");
+      ok(/<div class="hd"><svg class="ci"[^>]*aria-label="AIRZETA"/.test(html) && /#df4552/.test(html), "머리말 왼쪽 회사 CI");
+      ok(/td \{ border: 1px solid #94a3b8;[^}]*text-align: center; \}/.test(html), "모든 칸 가운데 정렬");
       const noSign = P.listPrintHTML(items, { title: "T", sign: false, scope: "" });
       ok(noSign.indexOf(SIGN) < 0 && noSign.indexOf("<th>서명</th>") < 0, "서명 제외 선택");
       q(e, "#pl-print").click();
