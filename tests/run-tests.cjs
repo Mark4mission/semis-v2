@@ -10140,11 +10140,12 @@ function makeFetchStub(server) {
         { hex: "71bd07", reg: "HL7507", type: "B763", flight: null, lat: 37.4602, lon: 126.4407, alt: null, gnd: true, gs: 0, trk: 0, vr: 0, sqk: null, emg: false, seen_at: nowIso(), pos_at: nowIso(), gnd_since: new Date(Date.now() - 3600000).toISOString() }],
       events: [{ hex: "71bd07", reg: "HL7507", flight: "KJ262", kind: "arr", apt: "ICN", at: new Date(Date.now() - 3600000).toISOString(), inferred: false },
                { hex: "71bc21", reg: "HL7421", flight: "KJ271", kind: "dep", apt: "PVG", at: new Date(Date.now() - 2 * 3600000).toISOString(), inferred: true }] });
-    function flightFetch(log) {
+    function flightFetch(log, hdrs) {
       const base = makeFetchStub({});
       const f = (url, o) => {
         const u = String(url);
         (log || []).push(u);
+        if (u.indexOf("/functions/v1/semis-logi-adsb") >= 0 && hdrs) hdrs.push((o && o.headers) || {});
         if (u.indexOf("/functions/v1/semis-logi-adsb") >= 0)
           return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(ADSB()), headers: { get: () => null } });
         if (u.indexOf("/rest/v1/rpc/semis_v2_fleet") >= 0) {
@@ -10168,9 +10169,9 @@ function makeFetchStub(server) {
       ok(/flight: "wide"/.test(appJS), "넓은 화면");
       ok(e.w.SemisFlight && e.w.SemisFlightCore, "모듈 로드");
     });
-    await ta("FL02 운항 현황 화면: 위치·기체 목록(서버) → 요약 · 인천 접근 · 지상 · 기록 · 인쇄 버튼", async () => {
-      const log = [];
-      const e = makeEnv({ fetch: flightFetch(log) });
+    await ta("FL02 운항 현황 화면: 위치·기체 목록(서버) → 요약 · 인천 접근 · 지상 · 기록 · 인쇄 버튼 · 위치 요청에 로그인 세션 머리글(v2.57.2)", async () => {
+      const log = [], hdrs = [];
+      const e = makeEnv({ fetch: flightFetch(log, hdrs) });
       loginAs(e, "manager");
       go(e, "flight");
       await until(() => q(e, "#fo-fleetbox tbody") && qa(e, "#fo-fleetbox tbody tr").length === 3);
@@ -10183,6 +10184,8 @@ function makeFetchStub(server) {
       ok(q(e, "#fo-map").textContent.indexOf("지도") >= 0, "지도 자리(Leaflet 없으면 안내)");
       ok(log.some(u => /semis-logi-adsb\?trail=1&events=1/.test(u)), "경로·기록 포함 조회");
       ok(!log.some(u => /\/rest\/v1\/semis_logi_store/.test(u)), "Logistics 공용 DB 직접 조회 없음");
+      const tk = e.w.SemisSync.auth.token();
+      ok(tk && hdrs.length && hdrs.every(h => h["x-semis-token"] === tk && h.apikey), "위치 요청 = anon 키 + 로그인 세션 머리글(H:drive 위치 서버 출입)");
       const rep = e.w.SemisFlight.reportHTML();
       ok(/운항 현황/.test(rep) && rep.indexOf("HL7421") >= 0 && rep.indexOf("adsb.lol") >= 0 && /@page \{ size: A4/.test(rep), "A4 보고서");
       e.Sync.stop();

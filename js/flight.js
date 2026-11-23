@@ -53,8 +53,10 @@
         loadFleet().catch(() => {});
         const key = window.SemisSync && SemisSync.ANON;
         const qs = [wantTrail ? "trail=1" : "", wantEvents ? "events=1" : ""].filter(Boolean).join("&");
+        /* 위치 서버(H:drive 와 공유)는 로그인 세션을 확인한다 — H:drive semis_logi_flight_gate 가 v2 세션도 받음 */
+        const tok = window.SemisSync && SemisSync.auth && typeof SemisSync.auth.token === "function" ? SemisSync.auth.token() : "";
         const r = await fetch(FN_URL + (qs ? "?" + qs : ""), {
-          cache: "no-store", headers: key ? { apikey: key, Authorization: "Bearer " + key } : {} });
+          cache: "no-store", headers: Object.assign(key ? { apikey: key, Authorization: "Bearer " + key } : {}, tok ? { "x-semis-token": tok } : {}) });
         if (!r || !r.ok) throw new Error("HTTP " + (r ? r.status : "-"));
         const j = await r.json();
         if (!j || Array.isArray(j) || !Array.isArray(j.ac)) throw new Error("응답 형식");
