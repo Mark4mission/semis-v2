@@ -379,6 +379,11 @@ function makeFetchStub(server) {
       });
       return { ok: true, rows };
     },
+    semis_v2_stamps(b, o) {
+      const u = userOf(o);
+      if (!u) return { ok: false, error: "auth" };
+      return { ok: true, rows: server.rows.filter(r => viewMode(r.key, u.role, u.rank, u.vclass) !== "none").map(r => ({ key: r.key, updated_at: r.updated_at })) };
+    },
     semis_v2_push(b, o) {
       const u = userOf(o);
       if (!u) return { ok: false, error: "auth" };
@@ -517,7 +522,7 @@ function makeFetchStub(server) {
     let m;
     if ((m = /\/rest\/v1\/rpc\/([a-z_0-9]+)/.exec(u))) {
       const f = rpc[m[1]];
-      if (!f) return reply(404, {});
+      if (!f || (server.noStamps && m[1] === "semis_v2_stamps")) return reply(404, {});
       try { return reply(200, f(body || {}, o)); } catch (e) { return reply(403, { code: "42501", message: String(e.message) }); }
     }
     if (u.indexOf("/rest/v1/chat_messages") >= 0) {
@@ -2908,6 +2913,44 @@ function makeFetchStub(server) {
     ok(server.rows.some(r => r.key === "inspections"), "서버에 없던 키는 시드 업로드");
     ok(!server.rows.some(r => r.key === "menus"), "가린 사본(메뉴)은 시드하지 않음");
     ok(!server.rows.some(r => r.key === "billing" || r.key === "vault"), "읽을 수 없는 키는 업로드 없음");
+    e.Sync.stop();
+  });
+
+  await ta("S04b 전체 다시 받기(폴링 · 재연결) = 서버 시각만 먼저 · 바뀐 컬렉션 · 가린 사본만 값 받기 · 시각 RPC 없으면 예전처럼", async () => {
+    const server = {
+      fail: false,
+      rows: [{ key: "notices", value: [{ id: "srv1", title: "서버공지", body: "b", author: "s", pinned: false, created: "2026-01-01" }], updated_at: "2026-07-15T00:00:00Z", updated_by: "other" }]
+    };
+    const stub = makeFetchStub(server);
+    const e = makeEnv({ fetch: stub });
+    loginAs(e, "manager");
+    await e.Sync.init();
+    await e.Sync._flush().catch(() => {});
+    const rpcs = (n0) => stub.calls.slice(n0).filter(c => /\/rpc\/semis_v2_(pull|stamps)$/.test(c.url))
+      .map(c => ({ fn: c.url.replace(/^.*\/rpc\//, ""), keys: c.body && c.body.p_keys }));
+    await e.Sync.pull(false);     // 처음 받은 뒤 이 탭이 서버에 올린 컬렉션(시드)은 시각이 바뀌어 한 번 다시 받는다
+    let n0 = stub.calls.length;
+    await e.Sync.pull(false);
+    let r = rpcs(n0);
+    eq(r[0].fn, "semis_v2_stamps", "시각 먼저");
+    ok(!r.some(x => x.fn === "semis_v2_pull" && !Array.isArray(x.keys)), "전체 사본 받기 없음");
+    ok(r.filter(x => x.fn === "semis_v2_pull").every(x => x.keys.every(k => e.Sync.isPartial(k))), "바뀐 것 없음 = 가린 사본만");
+    ok(!r.some(x => x.fn === "semis_v2_pull" && x.keys.indexOf("notices") >= 0), "notices 다시 받지 않음");
+    const i = server.rows.findIndex(x => x.key === "notices");
+    server.rows[i] = Object.assign({}, server.rows[i], { updated_at: "2026-11-27T00:00:00Z",
+      value: server.rows[i].value.concat([{ id: "srv2", title: "새 공지", body: "", author: "s", pinned: false, created: "2026-11-27" }]) });
+    n0 = stub.calls.length;
+    await e.Sync.pull(false);
+    r = rpcs(n0);
+    ok(r.some(x => x.fn === "semis_v2_pull" && x.keys.indexOf("notices") >= 0), "바뀐 컬렉션만 받음");
+    ok(e.S.data.notices.some(n => n.id === "srv2"), "반영");
+    eq(e.Sync._serverAt("notices"), "2026-11-27T00:00:00Z", "서버 시각 갱신");
+    server.noStamps = true;
+    n0 = stub.calls.length;
+    await e.Sync.pull(false);
+    r = rpcs(n0);
+    ok(r.some(x => x.fn === "semis_v2_pull" && !Array.isArray(x.keys)), "시각 RPC 가 없으면(404) 예전처럼 전부");
+    eq(e.Sync.status, "online");
     e.Sync.stop();
   });
 

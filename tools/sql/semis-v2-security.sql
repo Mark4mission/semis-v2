@@ -696,6 +696,20 @@ begin
      where x.val is not null), '[]'::jsonb));
 end $$;
 
+/* 서버 시각만(값 없이 수 KB) — 폴링 · 재연결 때 바뀐 컬렉션을 고른다(마이그레이션 semis_v2_security_17_stamps).
+   볼 수 없는 컬렉션은 빠진다. 가린 사본은 시각이 같아도 권한에 따라 달라지므로 화면이 늘 다시 받는다 */
+create or replace function public.semis_v2_stamps() returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare c record;
+begin
+  select * into c from semis_v2_private.ctx() limit 1;
+  if not found or c.kind <> 'user' then return jsonb_build_object('ok', false, 'error', 'auth'); end if;
+  return jsonb_build_object('ok', true, 'rows', coalesce((
+    select jsonb_agg(jsonb_build_object('key', s.key, 'updated_at', s.updated_at))
+      from public.semis_store s
+     where semis_v2_private.view_mode_for(s.key, c.kind, c.role, c.rank, c.vclass) <> 'none'), '[]'::jsonb));
+end $$;
+
 create or replace function public.semis_v2_push(p_rows jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare c record; r jsonb; k text; v jsonb; oldv jsonb; mode text; denied text[] := '{}'; done text[] := '{}';

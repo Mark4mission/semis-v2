@@ -45,6 +45,9 @@
 
   let status = "init";            // init | online | syncing | offline
   let snapshots = {};             // key → canonical JSON (마지막 동기화 시점)
+  /* serverAt: key → 마지막으로 받은 서버 updated_at("" = 행 없음) — 다시 받을 때 바뀐 컬렉션만 고른다.
+     권한(가림)이 바뀌면 같은 시각이라도 받는 사본이 달라지므로 비운다 */
+  let serverAt = {}, accessSig = "", stampsOff = false;
   let pushTimer = null, retryTimer = null, pollTimer = null, beatTimer = null;
   let realtimeClient = null, realtimeOn = false, channel = null;
   let hooked = false, lostFired = false;
@@ -75,6 +78,8 @@
   const readKeys = () => SYNC_KEYS.filter(canRead);
   const writeKeys = () => SYNC_KEYS.filter(canWrite);
   function setSession(d) {
+    const sig = JSON.stringify([d.kind, Number(d.rank) || 0, d.access || {}, d.def || null, d.user && d.user.id || ""]);
+    if (sig !== accessSig) { serverAt = {}; accessSig = sig; }
     sess = { kind: d.kind, rank: Number(d.rank) || 0, access: d.access || {}, def: Array.isArray(d.def) ? d.def : null,
              user: d.user || null, minute: d.minute || null, council: d.council || null };
     ss.set(SS_ME, JSON.stringify(sess));
@@ -138,6 +143,12 @@
   async function fetchRows(keys) {
     const d = await rpc("semis_v2_pull", keys && keys.length ? { p_keys: keys } : {});
     if (!d || d.ok !== true) throw httpErr("pull", d && d.error === "auth" ? 401 : 500);
+    return Array.isArray(d.rows) ? d.rows : [];
+  }
+  /* 서버 시각만(수 KB) — 폴링 · 재연결 때 전체 사본(500KB 넘음) 대신 먼저 보고 바뀐 것만 받는다(무료 요금제 전송량 한도) */
+  async function fetchStamps() {
+    const d = await rpc("semis_v2_stamps", {});
+    if (!d || d.ok !== true) throw httpErr("stamps", d && d.error === "auth" ? 401 : 500);
     return Array.isArray(d.rows) ? d.rows : [];
   }
   /* 쓰기 — 한 번에 모두 반영되거나 모두 거부된다 */
@@ -332,8 +343,21 @@
        pending 이 비면, 아직 서버에 반영되지 않은 로컬 변경을 서버의 옛 값으로
        덮어써 "저장한 항목이 사라졌다가 새로고침하면 다시 보이는" 일이 생긴다. */
     const before = Array.from(new Set(pendingKeys().concat(dirtyKeys())));
-    let rows;
-    try { rows = await fetchRows(onlyKeys ? want : null); }
+    let rows, stamps = null;
+    try {
+      /* 전체 다시 받기(폴링 · 재연결 · 수동 동기화) = 서버 시각만 먼저 · 바뀐 것 · 미전송분 · 가린 사본만 값을 받는다.
+         처음 받기 · 서버 시각을 모르는 컬렉션이 있거나 서버에 시각 RPC 가 없으면 예전처럼 전부 */
+      if (!initial && !onlyKeys && !stampsOff && want.every(k => serverAt[k] !== undefined)) {
+        try { stamps = await fetchStamps(); }
+        catch (e) { if (e && e.status === 404) stampsOff = true; else throw e; }
+      }
+      if (stamps) {
+        stamps = stamps.filter(r => r && want.indexOf(r.key) >= 0);
+        const mine = new Set(pendingKeys().concat(dirtyKeys(), before));
+        const need = stamps.filter(r => mine.has(r.key) || isPartial(r.key) || String(r.updated_at || "") !== serverAt[r.key]).map(r => r.key);
+        rows = need.length ? await fetchRows(need) : [];
+      } else rows = await fetchRows(onlyKeys ? want : null);
+    }
     catch (e) {
       if (e && (e.status === 401 || e.status === 403)) await checkSession();
       throw e;
@@ -343,8 +367,10 @@
     const force = !!initial && ss.get(SS_FORCE) === "1";
     let changed = false;
     const present = {};
+    if (stamps) stamps.forEach(r => { present[r.key] = true; });
     rows.forEach(row => {
       present[row.key] = true;
+      serverAt[row.key] = String(row.updated_at || "");
       const remote = canon(row.value);
       if (force && canWrite(row.key)) return; // 강제 push 모드(백업 복원)면 로컬 우선
       if (pend.includes(row.key)) {
@@ -359,6 +385,7 @@
       }
       snapshots[row.key] = remote;
     });
+    if (!onlyKeys) want.forEach(k => { if (!present[k]) serverAt[k] = ""; });   // 서버에 행이 없음(또는 볼 수 없음)
     // 서버 데이터 반영 후 정규화 — 구버전 서버 데이터가 로컬 마이그레이션(신규 메뉴/필드)을
     // 되돌리지 않도록 보정하고, 보정분은 dirty로 잡혀 서버에 push됨(쓰기 권한이 있을 때만)
     try { if (SeMIS.normalizeData && SeMIS.normalizeData()) changed = true; } catch (e) {}
@@ -637,6 +664,6 @@
     get status() { return status; },
     CLIENT_ID, SYNC_KEYS,
     _flush() { if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; } return push(); },
-    _canon: canon
+    _canon: canon, _serverAt: (k) => serverAt[k]
   };
 })();
